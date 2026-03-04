@@ -39,7 +39,7 @@
 
   <div class="card">
     <div class="actions">
-      <button onclick="callApi('/api/panel/ping','POST')">Panel Ping</button>
+      <button onclick="callApi('/api/panel/ping','POST', collectPanelBase())">Panel Ping</button>
       <button onclick="callApi('/api/panel/register','POST', collectRegister())">Panel Register</button>
       <button onclick="callApi('/api/plan/pull','POST', collectPlan())">Pull Plan</button>
       <button class="alt" onclick="callApi('/api/fingerprint/refresh','POST')">Refresh Fingerprint</button>
@@ -105,7 +105,14 @@
 
   function collectRegister() {
     return {
-      registration_token: document.getElementById('reg_token').value || ''
+      registration_token: document.getElementById('reg_token').value || '',
+      admin_base_url: document.getElementById('panel_url').value || ''
+    };
+  }
+
+  function collectPanelBase() {
+    return {
+      admin_base_url: document.getElementById('panel_url').value || ''
     };
   }
 

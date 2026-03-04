@@ -51,6 +51,8 @@ def _panel_url(cfg: dict, key: str) -> str:
         return base
     if path.startswith('http://') or path.startswith('https://'):
         return path
+    if not base:
+        return ''
     if not path.startswith('/'):
         path = f'/{path}'
     return f'{base}{path}'

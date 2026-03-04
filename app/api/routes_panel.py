@@ -67,7 +67,9 @@ def api_panel_test_url():
     cfg = ensure_config()
     cfg['admin_base_url'] = base
     cfg['updated_at'] = utc_now()
-    write_json(CONFIG_PATH, cfg, mode=0o600)
+    ok_write, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok_write:
+        return jsonify(ok=False, error=f'Could not persist admin_base_url: {write_err}', base_url=base), 500
 
     dev = ensure_device()
     fp = ensure_fingerprint()
@@ -82,10 +84,30 @@ def api_panel_ping():
     fp = ensure_fingerprint()
     host = get_hostname()
     ip = get_ip()
+    data = request.get_json(force=True, silent=True) or {}
+
+    request_base = _safe_base_url((data.get('admin_base_url') or ''))
+    if request_base:
+        cfg['admin_base_url'] = request_base
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
 
     url = _panel_url(cfg, 'panel_ping_path')
     if not url:
-        return jsonify(ok=False, error='admin_base_url missing'), 400
+        return jsonify(
+            ok=False,
+            error='admin_base_url missing',
+            admin_base_url=_safe_base_url(cfg.get('admin_base_url', '')),
+            panel_ping_path=cfg.get('panel_ping_path'),
+        ), 400
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return jsonify(
+            ok=False,
+            error='invalid_panel_url',
+            resolved_url=url,
+            admin_base_url=_safe_base_url(cfg.get('admin_base_url', '')),
+            panel_ping_path=cfg.get('panel_ping_path'),
+        ), 400
 
     payload = _panel_ping_payload(dev, fp, host, ip)
     code, resp, err = http_post_json(url, payload, timeout=8)
@@ -109,7 +131,7 @@ def api_panel_ping():
     mode = 'play' if linked and cfg.get('selected_stream_slug') else 'setup'
     update_state(cfg, dev, fp, mode=mode, message='panel ping', panel_state_overrides=st)
 
-    return jsonify(ok=(code == 200), panel_link_state=st, response=resp, http=code)
+    return jsonify(ok=(code == 200), panel_link_state=st, response=resp, http=code, resolved_url=url)
 
 
 @bp_panel.post('/api/panel/register')
@@ -121,13 +143,32 @@ def api_panel_register():
     ip = get_ip()
 
     data = request.get_json(force=True, silent=True) or {}
+    request_base = _safe_base_url((data.get('admin_base_url') or ''))
+    if request_base:
+        cfg['admin_base_url'] = request_base
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+
     token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
     if not token:
         return jsonify(ok=False, error='registration_token missing'), 400
 
     url = _panel_url(cfg, 'panel_register_path')
     if not url:
-        return jsonify(ok=False, error='admin_base_url missing'), 400
+        return jsonify(
+            ok=False,
+            error='admin_base_url missing',
+            admin_base_url=_safe_base_url(cfg.get('admin_base_url', '')),
+            panel_register_path=cfg.get('panel_register_path'),
+        ), 400
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return jsonify(
+            ok=False,
+            error='invalid_panel_url',
+            resolved_url=url,
+            admin_base_url=_safe_base_url(cfg.get('admin_base_url', '')),
+            panel_register_path=cfg.get('panel_register_path'),
+        ), 400
 
     payload = _panel_register_payload(cfg, dev, fp, host, ip, token)
     code, resp, err = http_post_json(url, payload, timeout=8)
@@ -153,7 +194,7 @@ def api_panel_register():
     mode = 'play' if linked and cfg.get('selected_stream_slug') else 'setup'
     update_state(cfg, dev, fp, mode=mode, message='panel register', panel_state_overrides=st)
 
-    return jsonify(ok=linked, panel_link_state=st, response=resp, http=code), (200 if linked else 400)
+    return jsonify(ok=linked, panel_link_state=st, response=resp, http=code, resolved_url=url), (200 if linked else 400)
 
 
 @bp_panel.get('/api/panel/link-status')
