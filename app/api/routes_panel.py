@@ -49,6 +49,19 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
     payload = _panel_ping_payload(dev, fp, host, ip)
     payload['registrationToken'] = token
     payload['panelRegisterPath'] = cfg.get('panel_register_path')
+    # Panel register DTO expects these fields at top-level (not only nested in fingerprint).
+    pi_serial = (
+        (dev.get('pi_serial') or '').strip()
+        or (((fp.get('cpu') or {}).get('serial') if isinstance(fp.get('cpu'), dict) else '') or '').strip()
+        or f"unknown-{(dev.get('device_uuid') or 'device').replace('-', '')[:8]}"
+    )
+    machine_id = (
+        (dev.get('machine_id') or '').strip()
+        or (fp.get('machine_id') or '').strip()
+        or f"unknown-{(dev.get('device_uuid') or 'device').replace('-', '')[:8]}"
+    )
+    payload['piSerial'] = pi_serial
+    payload['machineId'] = machine_id
     return payload
 
 
