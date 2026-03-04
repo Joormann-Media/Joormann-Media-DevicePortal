@@ -1,0 +1,13 @@
+[Unit]
+Description=Device WiFi Autoconnect
+Wants=NetworkManager.service
+After=NetworkManager.service
+#Before=device-portal.service kiosk.service raspi-player.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/device-wifi-autoconnect
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

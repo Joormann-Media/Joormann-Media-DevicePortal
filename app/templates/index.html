@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Joormann-Media DevicePortal</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background:#f6f7fb; color:#101828; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    h1 { font-size: 1.35rem; margin: 0 0 10px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap:10px; }
+    .muted { color:#667085; }
+    .row { margin: 4px 0; }
+    button,input { padding: 9px 11px; border:1px solid #d0d5dd; border-radius: 8px; }
+    button { cursor: pointer; background: #111827; color:#fff; }
+    button.alt { background:#fff; color:#111827; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .mono { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 12px; }
+    .ok { color:#067647; }
+    .err { color:#b42318; }
+    pre { white-space: pre-wrap; margin:0; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Joormann-Media DevicePortal</h1>
+    <div class="row muted">Local setup & diagnostics</div>
+    <div class="grid" style="margin-top:10px;">
+      <div><strong>Hostname:</strong> {{ hostname }}</div>
+      <div><strong>IP:</strong> {{ ip }}</div>
+      <div><strong>Panel linked:</strong> {{ panel.linked and 'yes' or 'no' }}</div>
+      <div><strong>Mode:</strong> {{ state.mode }}</div>
+      <div><strong>Device Slug:</strong> {{ cfg.device_slug or '—' }}</div>
+      <div><strong>Stream Slug:</strong> {{ cfg.selected_stream_slug or '—' }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="actions">
+      <button onclick="callApi('/api/panel/ping','POST')">Panel Ping</button>
+      <button onclick="callApi('/api/panel/register','POST', collectRegister())">Panel Register</button>
+      <button onclick="callApi('/api/plan/pull','POST', collectPlan())">Pull Plan</button>
+      <button class="alt" onclick="callApi('/api/fingerprint/refresh','POST')">Refresh Fingerprint</button>
+      <button class="alt" onclick="window.location.reload()">Reload</button>
+    </div>
+    <div style="margin-top:10px;" class="grid">
+      <div>
+        <label class="muted" for="panel_url">Panel URL</label>
+        <input id="panel_url" style="width:100%;" placeholder="https://panel.example.com" value="{{ cfg.admin_base_url }}">
+      </div>
+      <div>
+        <label class="muted" for="reg_token">Registration Token</label>
+        <input id="reg_token" style="width:100%;" placeholder="optional" value="{{ cfg.registration_token }}">
+      </div>
+      <div>
+        <label class="muted" for="stream_slug">Stream Slug</label>
+        <input id="stream_slug" style="width:100%;" placeholder="stream-slug" value="{{ cfg.selected_stream_slug }}">
+      </div>
+      <div>
+        <label class="muted" for="device_slug">Device Slug</label>
+        <input id="device_slug" style="width:100%;" placeholder="device-slug" value="{{ cfg.device_slug }}">
+      </div>
+    </div>
+    <div class="actions" style="margin-top:8px;">
+      <button class="alt" onclick="testUrl()">Test/Save Panel URL</button>
+    </div>
+  </div>
+
+  <div class="card mono">
+    <div><strong>Device UUID:</strong> {{ dev.device_uuid }}</div>
+    <div><strong>Auth Key:</strong> {{ dev.auth_key }}</div>
+    <div><strong>Machine ID:</strong> {{ dev.machine_id or '—' }}</div>
+    <div><strong>Pi Serial:</strong> {{ dev.pi_serial or '—' }}</div>
+  </div>
+
+  <div class="card">
+    <div class="muted" style="margin-bottom:6px;">API Response</div>
+    <pre id="out" class="mono">{}</pre>
+  </div>
+</div>
+
+<script>
+  async function callApi(path, method, payload) {
+    const out = document.getElementById('out');
+    out.textContent = 'loading...';
+    try {
+      const opts = { method, headers: { 'Accept': 'application/json' } };
+      if (payload) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(payload);
+      }
+      const res = await fetch(path, opts);
+      const txt = await res.text();
+      try {
+        out.textContent = JSON.stringify(JSON.parse(txt), null, 2);
+      } catch (_) {
+        out.textContent = txt;
+      }
+    } catch (e) {
+      out.textContent = String(e);
+    }
+  }
+
+  function collectRegister() {
+    return {
+      registration_token: document.getElementById('reg_token').value || ''
+    };
+  }
+
+  function collectPlan() {
+    return {
+      admin_base_url: document.getElementById('panel_url').value || '',
+      deviceSlug: document.getElementById('device_slug').value || '',
+      streamSlug: document.getElementById('stream_slug').value || ''
+    };
+  }
+
+  function testUrl() {
+    callApi('/api/panel/test-url', 'POST', { url: document.getElementById('panel_url').value || '' });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[Unit]
+Description=Joormann-Media Player Placeholder
+After=network-online.target device-portal.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+ExecStart=/usr/local/bin/jm-player
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

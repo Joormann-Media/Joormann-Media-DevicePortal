@@ -1,0 +1,17 @@
+[Unit]
+Description=Joormann-Media DevicePortal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/jm-deviceportal
+EnvironmentFile=-/etc/default/jm-deviceportal
+ExecStart=/usr/bin/python3 -m gunicorn -w 2 -b 0.0.0.0:5070 app.main:app
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
