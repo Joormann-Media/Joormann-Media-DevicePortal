@@ -171,9 +171,9 @@ if [[ -n "${wps_started_method}" ]]; then
     elapsed=$((elapsed + 3))
   done
 
-  emit_result "false" "wps_timeout" "WPS wurde gestartet, aber es wurde keine WLAN-Verbindung hergestellt." "${wps_started_method}" "Bitte Router-WPS-Taste druecken und erneut versuchen (Wartefenster meist 30-120 Sekunden)." "${IFACE}"
+  emit_result "true" "wps_started" "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken." "${wps_started_method}" "Noch keine Verbindung erkannt. Je nach Router kann es 30-120 Sekunden dauern." "${IFACE}"
   collect_wifi_info
-  exit 7
+  exit 0
 fi
 
 DETAILS_COMBINED="$(printf '%s || ' "${attempt_details[@]}" | sed 's/ || $//')"

@@ -6,25 +6,66 @@
     return document.getElementById(id);
   }
 
+  function plainText(input) {
+    if (typeof input !== "string") return "";
+    return input
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   async function fetchJson(url, options = {}) {
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 0;
+    const optsInput = { ...options };
+    delete optsInput.timeoutMs;
+
     const opts = {
       headers: {
         Accept: "application/json",
       },
-      ...options,
+      ...optsInput,
     };
     if (opts.body && typeof opts.body !== "string") {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(opts.body);
     }
 
-    const res = await fetch(url, opts);
-    const txt = await res.text();
+    let timeoutId = null;
+    if (timeoutMs > 0 && typeof AbortController !== "undefined") {
+      const controller = new AbortController();
+      timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+      opts.signal = controller.signal;
+    }
+
+    let res;
+    let txt = "";
+    try {
+      res = await fetch(url, opts);
+      txt = await res.text();
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        throw new Error(`Request timeout after ${Math.round(timeoutMs / 1000)}s`);
+      }
+      throw err;
+    } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
     let payload;
     try {
       payload = txt ? JSON.parse(txt) : {};
     } catch (_) {
-      payload = { ok: false, error: { code: "invalid_json", message: txt || "Invalid JSON response" } };
+      const preview = plainText(txt).slice(0, 220);
+      payload = {
+        ok: false,
+        error: {
+          code: "invalid_json",
+          message: `Server returned non-JSON response (HTTP ${res.status})`,
+          detail: preview || "No response body",
+        },
+      };
     }
     if (!res.ok || payload.ok === false) {
       const err = payload.error || {};
@@ -43,7 +84,14 @@
     const div = document.createElement("div");
     div.className = `alert alert-${cls} alert-dismissible fade show py-2 mb-2`;
     div.role = "alert";
-    div.innerHTML = `<span>${message}</span><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+    const span = document.createElement("span");
+    span.textContent = String(message || "");
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "btn-close";
+    close.setAttribute("data-bs-dismiss", "alert");
+    close.setAttribute("aria-label", "Close");
+    div.append(span, close);
     host.prepend(div);
     setTimeout(() => {
       if (div.parentNode) {
@@ -255,14 +303,24 @@
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>WPS startet...';
+    toast("WPS wird gestartet...", "secondary");
     try {
-      const payload = await fetchJson("/api/network/wps", { method: "POST" });
+      const payload = await fetchJson("/api/network/wps", { method: "POST", timeoutMs: 20000 });
       const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
       const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
       const net = ((payload.data || {}).network || {});
       const connectedInfo = net.ssid ? ` Verbunden mit SSID: ${net.ssid}.` : "";
       toast(`${message}${connectedInfo} ${hint}`, "success");
       await refreshNetwork();
+      for (let i = 0; i < 10; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+        await refreshNetwork();
+        const wifi = ((((networkState || {}).interfaces || {}).wifi) || {});
+        if (wifi.connected) {
+          toast(`WLAN verbunden: ${wifi.ssid || "SSID unbekannt"}`, "success");
+          break;
+        }
+      }
     } finally {
       btn.disabled = false;
       btn.innerHTML = original;

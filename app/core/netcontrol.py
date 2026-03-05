@@ -114,7 +114,10 @@ def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
     iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
     if iface not in ALLOWED_WIFI_INTERFACES:
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
-    rc, out, err = _run_script("wps_start.sh", [iface, "120"], timeout=140, use_sudo=True)
+    # Avoid blocking HTTP for the full WPS window (typically 120s),
+    # because reverse proxies often time out earlier (e.g. 60s -> 504).
+    # The UI already polls network state after triggering WPS.
+    rc, out, err = _run_script("wps_start.sh", [iface, "0"], timeout=25, use_sudo=True)
     parsed = _parse_kv_output(out)
     detail = parsed.get("details") or err or out
     if rc != 0:
