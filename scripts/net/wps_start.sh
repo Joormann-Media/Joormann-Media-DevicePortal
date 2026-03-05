@@ -7,6 +7,9 @@ DEFAULT_IFACE="wlan0"
 NMCLI="$(command -v nmcli || true)"
 IW="$(command -v iw || true)"
 WPA_CLI="$(command -v wpa_cli || true)"
+DHCPCD_BIN="$(command -v dhcpcd || true)"
+DHCLIENT_BIN="$(command -v dhclient || true)"
+TIMEOUT_BIN="$(command -v timeout || true)"
 
 emit_result() {
   local success="$1"
@@ -79,6 +82,26 @@ collect_wifi_info() {
     fi
   fi
 
+  if [[ -z "${ssid}" && -n "${WPA_CLI}" ]]; then
+    local wpa_status_line
+    wpa_status_line="$("${WPA_CLI}" -i "${IFACE}" status 2>/dev/null || true)"
+    if [[ -n "${wpa_status_line}" ]]; then
+      ssid="$(echo "${wpa_status_line}" | sed -n 's/^ssid=//p' | head -n1)"
+      bssid="${bssid:-$(echo "${wpa_status_line}" | sed -n 's/^bssid=//p' | head -n1)}"
+      freq="${freq:-$(echo "${wpa_status_line}" | sed -n 's/^freq=//p' | head -n1)}"
+      if [[ -z "${conn}" && -n "${ssid}" ]]; then
+        conn="${ssid}"
+      fi
+      if [[ -z "${state}" ]]; then
+        state="$(echo "${wpa_status_line}" | sed -n 's/^wpa_state=//p' | head -n1)"
+      fi
+    fi
+  fi
+
+  if [[ -z "${signal}" && -n "${IW}" ]]; then
+    signal="$("${IW}" dev "${IFACE}" link 2>/dev/null | awk '/signal:/ {print int($2); exit}')"
+  fi
+
   ip="$(ip -4 -o addr show dev "${IFACE}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
 
   echo "ssid=${ssid}"
@@ -98,7 +121,44 @@ is_connected() {
   if [[ "${state}" == 100* ]] || [[ -n "${conn}" && "${conn}" != "--" ]]; then
     return 0
   fi
+  if [[ -n "${WPA_CLI}" ]]; then
+    local wpa_state ssid
+    wpa_state="$("${WPA_CLI}" -i "${IFACE}" status 2>/dev/null | sed -n 's/^wpa_state=//p' | head -n1)"
+    ssid="$("${WPA_CLI}" -i "${IFACE}" status 2>/dev/null | sed -n 's/^ssid=//p' | head -n1)"
+    if [[ "${wpa_state}" == "COMPLETED" && -n "${ssid}" ]]; then
+      return 0
+    fi
+  fi
   return 1
+}
+
+ensure_ipv4() {
+  local ip_now
+  ip_now="$(ip -4 -o addr show dev "${IFACE}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+  if [[ -n "${ip_now}" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${DHCPCD_BIN}" ]]; then
+    if [[ -n "${TIMEOUT_BIN}" ]]; then
+      "${TIMEOUT_BIN}" 20 "${DHCPCD_BIN}" -n "${IFACE}" >/dev/null 2>&1 || true
+      ip_now="$(ip -4 -o addr show dev "${IFACE}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+      if [[ -z "${ip_now}" ]]; then
+        "${TIMEOUT_BIN}" 25 "${DHCPCD_BIN}" "${IFACE}" >/dev/null 2>&1 || true
+      fi
+    else
+      "${DHCPCD_BIN}" -n "${IFACE}" >/dev/null 2>&1 || true
+    fi
+    return 0
+  fi
+
+  if [[ -n "${DHCLIENT_BIN}" ]]; then
+    if [[ -n "${TIMEOUT_BIN}" ]]; then
+      "${TIMEOUT_BIN}" 20 "${DHCLIENT_BIN}" -1 "${IFACE}" >/dev/null 2>&1 || true
+    else
+      "${DHCLIENT_BIN}" -1 "${IFACE}" >/dev/null 2>&1 || true
+    fi
+  fi
 }
 
 IFACE="$(detect_iface)"
@@ -163,6 +223,7 @@ if [[ -n "${wps_started_method}" ]]; then
   elapsed=0
   while [[ ${elapsed} -le ${WAIT_SECONDS} ]]; do
     if is_connected; then
+      ensure_ipv4
       emit_result "true" "connected" "WLAN erfolgreich per WPS verbunden." "${wps_started_method}" "Verbindung hergestellt. Netzwerkinformationen wurden aktualisiert." "${IFACE}"
       collect_wifi_info
       exit 0
