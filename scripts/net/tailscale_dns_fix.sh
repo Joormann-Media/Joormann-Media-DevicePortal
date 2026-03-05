@@ -3,7 +3,6 @@ set -euo pipefail
 
 NMCLI="$(command -v nmcli || true)"
 TAILSCALE="$(command -v tailscale || true)"
-SYSTEMCTL="$(command -v systemctl || true)"
 
 if [[ -z "${TAILSCALE}" ]]; then
   echo "success=false"
@@ -24,22 +23,13 @@ TS_OUT="$("${TAILSCALE}" set --accept-dns=false 2>&1)"
 TS_RC=$?
 set -e
 if [[ ${TS_RC} -ne 0 ]]; then
-  set +e
-  TS_OUT="$("${TAILSCALE}" up --accept-dns=false 2>&1)"
-  TS_RC=$?
-  set -e
-  if [[ ${TS_RC} -ne 0 ]]; then
-    TS_OUT="${TS_OUT//$'\n'/ }"
-    echo "success=false"
-    echo "code=tailscale_config_failed"
-    echo "message=Failed to disable Tailscale DNS takeover"
-    echo "details=${TS_OUT}"
-    exit 2
-  fi
-fi
-
-if [[ -n "${SYSTEMCTL}" ]]; then
-  "${SYSTEMCTL}" restart NetworkManager >/dev/null 2>&1 || true
+  TS_OUT="${TS_OUT//$'\n'/ }"
+  echo "success=false"
+  echo "code=tailscale_config_failed"
+  echo "message=Failed to disable Tailscale DNS takeover"
+  echo "details=${TS_OUT}"
+  echo "hint=This Tailscale version may not support 'tailscale set'. Avoid automatic 'tailscale up' because it can reset runtime flags."
+  exit 2
 fi
 
 ACTIVE_CONN="$("${NMCLI}" -t -f NAME,TYPE,DEVICE connection show --active 2>/dev/null | awk -F: '$2=="802-3-ethernet" && $3!="" {print $1; exit}')"
