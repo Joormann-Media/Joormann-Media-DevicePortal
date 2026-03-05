@@ -19,6 +19,7 @@ Die Netzwerkkontrolle wird über dedizierte Wrapper-Skripte (`scripts/net/*`) um
 - Keine direkten Kommandos aus Request-Daten.
 - Skriptpfade werden serverseitig auf bekannte Pfade aufgelöst.
 - LAN-Interface ist whitelisted (`eth0`).
+- WLAN-Interface für WPS ist whitelisted (`wlan0`).
 - `subprocess.run(..., timeout=...)` mit `capture_output=True`.
 - Keine Ausgabe von WLAN-Passwörtern.
 

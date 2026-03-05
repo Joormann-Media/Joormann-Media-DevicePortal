@@ -19,6 +19,7 @@ REPO_NET_SCRIPTS = REPO_ROOT / "scripts" / "net"
 DEPLOY_NET_SCRIPTS = Path(os.getenv("NETCONTROL_BIN_DIR", "/opt/deviceportal/bin"))
 
 ALLOWED_LAN_INTERFACES = {"eth0"}
+ALLOWED_WIFI_INTERFACES = {"wlan0"}
 DEFAULT_WIFI_IFACE = "wlan0"
 
 
@@ -98,6 +99,8 @@ def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
 
 def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
     iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    if iface not in ALLOWED_WIFI_INTERFACES:
+        raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     rc, out, err = _run_script("wps_start.sh", [iface], timeout=35, use_sudo=True)
     if rc != 0:
         raise NetControlError(code="wps_failed", message="Failed to start WPS", detail=err or out)
