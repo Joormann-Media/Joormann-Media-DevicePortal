@@ -146,3 +146,23 @@ def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
             "ip": parsed.get("ip", ""),
         },
     }
+
+
+def disable_tailscale_dns_override() -> dict:
+    rc, out, err = _run_script("tailscale_dns_fix.sh", [], timeout=30, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "tailscale_dns_fix_failed"),
+            message=parsed.get("message", "Failed to disable Tailscale DNS takeover"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "code": parsed.get("code", "ok"),
+        "message": parsed.get("message", "Tailscale DNS takeover disabled"),
+        "connection": parsed.get("connection", ""),
+        "dns": parsed.get("dns", ""),
+        "search": parsed.get("search", ""),
+    }

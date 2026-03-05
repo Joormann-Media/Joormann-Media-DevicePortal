@@ -348,6 +348,25 @@
     }
   }
 
+  async function fixTailscaleDns() {
+    const btn = q("btn-fix-tailscale-dns");
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Fix läuft...';
+    try {
+      const payload = await fetchJson("/api/system/tailscale/disable-dns", { method: "POST", timeoutMs: 30000 });
+      const data = payload.data || {};
+      q("sys-dnsfix-connection").textContent = data.connection || "-";
+      q("sys-dnsfix-dns").textContent = data.dns || "-";
+      q("sys-dnsfix-search").textContent = data.search || "-";
+      await refreshNetwork();
+      toast(data.message || "Tailscale DNS-Override deaktiviert.", "success");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+
   function bindButtons() {
     q("btn-refresh-status").addEventListener("click", () => run(refreshState));
     q("btn-refresh-fingerprint").addEventListener("click", () => run(refreshFingerprint));
@@ -363,6 +382,8 @@
     els.btnLanToggle.addEventListener("click", () => run(toggleLan));
     q("btn-wps").addEventListener("click", () => run(startWps));
     q("btn-refresh-network").addEventListener("click", () => run(refreshNetwork));
+    q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
+    q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
 
     q("btn-confirm-unlink").addEventListener("click", async () => {
       const modal = bootstrap.Modal.getOrCreateInstance(q("unlinkModal"));

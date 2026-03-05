@@ -181,9 +181,38 @@
       </div>
 
       <div class="tab-pane fade" id="system-pane" role="tabpanel" aria-labelledby="system-tab">
-        <div class="portal-card p-4">
-          <h2 class="h5">System Einstellungen</h2>
-          <p class="mb-0 text-secondary">Kommt später – System Settings in Arbeit.</p>
+        <div class="row g-3">
+          <div class="col-12 col-xl-7">
+            <div class="portal-card p-4">
+              <h2 class="h5">System Einstellungen</h2>
+              <p class="text-secondary mb-3">
+                Behebt DNS-Probleme durch Tailscale MagicDNS/Resolver-Override
+                (`tailscale --accept-dns=false`) und triggert danach NetworkManager neu.
+              </p>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <button id="btn-fix-tailscale-dns" class="btn btn-outline-warning btn-sm">
+                  Tailscale DNS-Override deaktivieren
+                </button>
+                <button id="btn-system-refresh-network" class="btn btn-outline-secondary btn-sm">
+                  Netzwerkdaten aktualisieren
+                </button>
+              </div>
+              <small class="text-secondary">
+                Nutze das, wenn `github.com` o. a. Hosts nicht aufgelöst werden, obwohl `ping 1.1.1.1` funktioniert.
+              </small>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-5">
+            <div class="portal-card p-4 h-100">
+              <h3 class="h6">Letzter DNS-Fix</h3>
+              <dl class="portal-kv mb-0">
+                <dt>Connection</dt><dd id="sys-dnsfix-connection">-</dd>
+                <dt>DNS Server</dt><dd id="sys-dnsfix-dns">-</dd>
+                <dt>Search</dt><dd id="sys-dnsfix-search">-</dd>
+              </dl>
+            </div>
+          </div>
         </div>
       </div>
     </div>

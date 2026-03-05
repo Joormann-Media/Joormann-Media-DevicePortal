@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from app.core.netcontrol import (
     NetControlError,
+    disable_tailscale_dns_override,
     get_network_info,
     set_bluetooth_enabled,
     set_lan_enabled,
@@ -113,3 +114,13 @@ def api_network_wps():
             ),
             status,
         )
+
+
+@bp_network.post("/api/system/tailscale/disable-dns")
+def api_system_tailscale_disable_dns():
+    try:
+        result = disable_tailscale_dns_override()
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
