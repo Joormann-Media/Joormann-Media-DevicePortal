@@ -114,7 +114,7 @@ def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
     iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
     if iface not in ALLOWED_WIFI_INTERFACES:
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
-    rc, out, err = _run_script("wps_start.sh", [iface], timeout=35, use_sudo=True)
+    rc, out, err = _run_script("wps_start.sh", [iface, "120"], timeout=140, use_sudo=True)
     parsed = _parse_kv_output(out)
     detail = parsed.get("details") or err or out
     if rc != 0:
@@ -133,4 +133,13 @@ def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
         ),
         "details": detail,
         "hint": parsed.get("hint", "Je nach Router kann die Verbindung 30-120 Sekunden dauern."),
+        "network": {
+            "ssid": parsed.get("ssid", ""),
+            "connection": parsed.get("connection", ""),
+            "bssid": parsed.get("bssid", ""),
+            "signal": parsed.get("signal", ""),
+            "frequency_mhz": parsed.get("frequency_mhz", ""),
+            "security": parsed.get("security", ""),
+            "ip": parsed.get("ip", ""),
+        },
     }

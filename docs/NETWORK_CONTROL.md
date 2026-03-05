@@ -52,7 +52,7 @@ Nur folgende Aktionen werden per sudo freigegeben:
 
 ```bash
 bash -n scripts/net/wps_start.sh
-scripts/net/wps_start.sh wlan0
+scripts/net/wps_start.sh wlan0 120
 curl -s -X POST http://127.0.0.1:5070/api/network/wps | jq
 ```
 

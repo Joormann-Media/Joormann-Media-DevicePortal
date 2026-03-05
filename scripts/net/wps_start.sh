@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REQUESTED_IFACE="${1:-}"
+WAIT_SECONDS="${2:-120}"
 DEFAULT_IFACE="wlan0"
 NMCLI="$(command -v nmcli || true)"
 IW="$(command -v iw || true)"
@@ -53,6 +54,53 @@ detect_iface() {
   echo "${DEFAULT_IFACE}"
 }
 
+collect_wifi_info() {
+  local ssid bssid signal security freq ip conn state
+  ssid=""
+  bssid=""
+  signal=""
+  security=""
+  freq=""
+  ip=""
+  conn=""
+  state=""
+
+  if [[ -n "${NMCLI}" ]]; then
+    conn="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
+    state="$("${NMCLI}" -t -f GENERAL.STATE device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.STATE://p' | head -n1)"
+    local wifi_line
+    wifi_line="$("${NMCLI}" -t -f ACTIVE,SSID,BSSID,SIGNAL,FREQ,SECURITY dev wifi list ifname "${IFACE}" 2>/dev/null | awk -F: '$1=="yes"||$1=="*" {print; exit}')"
+    if [[ -n "${wifi_line}" ]]; then
+      ssid="$(echo "${wifi_line}" | cut -d: -f2)"
+      bssid="$(echo "${wifi_line}" | cut -d: -f3)"
+      signal="$(echo "${wifi_line}" | cut -d: -f4)"
+      freq="$(echo "${wifi_line}" | cut -d: -f5)"
+      security="$(echo "${wifi_line}" | cut -d: -f6-)"
+    fi
+  fi
+
+  ip="$(ip -4 -o addr show dev "${IFACE}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+
+  echo "ssid=${ssid}"
+  echo "bssid=${bssid}"
+  echo "signal=${signal}"
+  echo "security=${security}"
+  echo "frequency_mhz=${freq}"
+  echo "ip=${ip}"
+  echo "connection=${conn}"
+  echo "device_state=${state}"
+}
+
+is_connected() {
+  local state conn
+  state="$("${NMCLI}" -t -f GENERAL.STATE device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.STATE://p' | head -n1)"
+  conn="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
+  if [[ "${state}" == 100* ]] || [[ -n "${conn}" && "${conn}" != "--" ]]; then
+    return 0
+  fi
+  return 1
+}
+
 IFACE="$(detect_iface)"
 if [[ ! -d "/sys/class/net/${IFACE}" ]]; then
   emit_result "false" "wifi_interface_missing" "Failed to start WPS" "No usable Wi-Fi interface found (checked: ${IFACE})." "Pruefe WLAN-Adapter und NetworkManager Device-Status." "${IFACE}"
@@ -68,6 +116,7 @@ if [[ "${WIFI_RADIO_STATE}" == "disabled" || "${WIFI_RADIO_STATE}" == "off" ]]; 
 fi
 
 attempt_details=()
+wps_started_method=""
 
 run_attempt() {
   local label="$1"
@@ -79,25 +128,52 @@ run_attempt() {
   set -e
   out="${out//$'\n'/ }"
   if [[ ${rc} -eq 0 ]]; then
-    emit_result "true" "ok" "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken." "${label}: ${out}" "Je nach Router kann die Verbindung 30-120 Sekunden dauern." "${IFACE}"
-    exit 0
+    wps_started_method="${label}"
+    return 0
   fi
   attempt_details+=("${label} (rc=${rc}): ${out}")
+  return 1
 }
 
 NMCLI_HELP="$("${NMCLI}" device wifi connect --help 2>&1 || true)"
 if echo "${NMCLI_HELP}" | grep -q -- "--wps-pbc"; then
-  run_attempt "nmcli device wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect -- --wps-pbc ifname "${IFACE}"
-  run_attempt "nmcli device wifi connect --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect --wps-pbc ifname "${IFACE}"
-  run_attempt "nmcli dev wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect -- --wps-pbc ifname "${IFACE}"
+  run_attempt "nmcli device wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect -- --wps-pbc ifname "${IFACE}" || true
+  if [[ -z "${wps_started_method}" ]]; then
+    run_attempt "nmcli device wifi connect --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect --wps-pbc ifname "${IFACE}" || true
+  fi
+  if [[ -z "${wps_started_method}" ]]; then
+    run_attempt "nmcli dev wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect -- --wps-pbc ifname "${IFACE}" || true
+  fi
 else
   attempt_details+=("nmcli reports no --wps-pbc support on this version")
 fi
 
-if [[ -n "${WPA_CLI}" ]]; then
-  run_attempt "wpa_cli -i ${IFACE} wps_pbc" "${WPA_CLI}" -i "${IFACE}" wps_pbc
-else
-  attempt_details+=("wpa_cli command not available")
+if [[ -z "${wps_started_method}" ]]; then
+  if [[ -n "${WPA_CLI}" ]]; then
+    run_attempt "wpa_cli -i ${IFACE} wps_pbc" "${WPA_CLI}" -i "${IFACE}" wps_pbc || true
+  else
+    attempt_details+=("wpa_cli command not available")
+  fi
+fi
+
+if [[ -n "${wps_started_method}" ]]; then
+  if ! [[ "${WAIT_SECONDS}" =~ ^[0-9]+$ ]]; then
+    WAIT_SECONDS="120"
+  fi
+  elapsed=0
+  while [[ ${elapsed} -le ${WAIT_SECONDS} ]]; do
+    if is_connected; then
+      emit_result "true" "connected" "WLAN erfolgreich per WPS verbunden." "${wps_started_method}" "Verbindung hergestellt. Netzwerkinformationen wurden aktualisiert." "${IFACE}"
+      collect_wifi_info
+      exit 0
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+
+  emit_result "false" "wps_timeout" "WPS wurde gestartet, aber es wurde keine WLAN-Verbindung hergestellt." "${wps_started_method}" "Bitte Router-WPS-Taste druecken und erneut versuchen (Wartefenster meist 30-120 Sekunden)." "${IFACE}"
+  collect_wifi_info
+  exit 7
 fi
 
 DETAILS_COMBINED="$(printf '%s || ' "${attempt_details[@]}" | sed 's/ || $//')"

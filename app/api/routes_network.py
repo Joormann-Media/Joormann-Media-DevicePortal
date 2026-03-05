@@ -91,12 +91,16 @@ def api_network_wps():
                 ),
                 details=result.get("details", ""),
                 hint=result.get("hint", "Je nach Router kann die Verbindung 30-120 Sekunden dauern."),
-                data={"iface": result.get("ifname", ifname), "code": result.get("code", "ok")},
+                data={
+                    "iface": result.get("ifname", ifname),
+                    "code": result.get("code", "ok"),
+                    "network": result.get("network", {}),
+                },
             ),
             200,
         )
     except NetControlError as exc:
-        status = 400 if exc.code in ("invalid_interface", "wifi_interface_missing") else 500
+        status = 400 if exc.code in ("invalid_interface", "wifi_interface_missing", "wps_timeout") else 500
         return (
             jsonify(
                 ok=False,
