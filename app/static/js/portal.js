@@ -305,21 +305,42 @@
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>WPS startet...';
     toast("WPS wird gestartet...", "secondary");
     try {
-      const payload = await fetchJson("/api/network/wps", { method: "POST", timeoutMs: 20000 });
-      const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
-      const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
-      const net = ((payload.data || {}).network || {});
-      const connectedInfo = net.ssid ? ` Verbunden mit SSID: ${net.ssid}.` : "";
-      toast(`${message}${connectedInfo} ${hint}`, "success");
+      let triggerError = null;
+      try {
+        const payload = await fetchJson("/api/network/wps", { method: "POST", timeoutMs: 20000 });
+        const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
+        const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
+        const net = ((payload.data || {}).network || {});
+        const connectedInfo = net.ssid ? ` Verbunden mit SSID: ${net.ssid}.` : "";
+        toast(`${message}${connectedInfo} ${hint}`, "success");
+      } catch (err) {
+        triggerError = err instanceof Error ? err : new Error(String(err));
+        toast(
+          `WPS-Trigger meldet Fehler, Verbindung wird trotzdem weiter geprüft: ${triggerError.message || "Unbekannter Fehler"}`,
+          "secondary",
+        );
+      }
+
       await refreshNetwork();
+      let connected = false;
       for (let i = 0; i < 10; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 6000));
         await refreshNetwork();
         const wifi = ((((networkState || {}).interfaces || {}).wifi) || {});
         if (wifi.connected) {
           toast(`WLAN verbunden: ${wifi.ssid || "SSID unbekannt"}`, "success");
+          connected = true;
           break;
         }
+      }
+
+      if (!connected && triggerError) {
+        toast(
+          "WPS wurde offenbar nicht sauber gestartet oder Verbindung blieb aus. Bitte WPS am Router erneut drücken und nochmal versuchen.",
+          "danger",
+        );
+      } else if (!connected) {
+        toast("WPS gestartet, aber noch keine WLAN-Verbindung erkannt.", "secondary");
       }
     } finally {
       btn.disabled = false;
