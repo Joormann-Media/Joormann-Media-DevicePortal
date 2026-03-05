@@ -61,6 +61,11 @@ WIFI_CONNECTED="0"
 WIFI_SSID=""
 WIFI_SIGNAL=""
 WIFI_RADIO="unknown"
+WIFI_BSSID=""
+WIFI_SECURITY=""
+WIFI_FREQ=""
+WIFI_RATE=""
+WIFI_CONN_NAME=""
 
 if [[ "$NMCLI_PRESENT" == "1" ]]; then
   WIFI_RADIO="$(safe_cmd nmcli -t -f WIFI general | head -n1)"
@@ -70,12 +75,18 @@ if [[ "$NMCLI_PRESENT" == "1" ]]; then
     WIFI_ENABLED="0"
   fi
 
-  WIFI_LINE="$(safe_cmd nmcli -t -f ACTIVE,SSID,SIGNAL dev wifi | awk -F: '$1=="yes"||$1=="*" {print; exit}')"
+  WIFI_LINE="$(safe_cmd nmcli -t -f ACTIVE,SSID,BSSID,SIGNAL,FREQ,RATE,SECURITY dev wifi list ifname "$WIFI_IF" | awk -F: '$1=="yes"||$1=="*" {print; exit}')"
   if [[ -n "$WIFI_LINE" ]]; then
     WIFI_CONNECTED="1"
     WIFI_SSID="$(echo "$WIFI_LINE" | cut -d: -f2)"
-    WIFI_SIGNAL="$(echo "$WIFI_LINE" | cut -d: -f3)"
+    WIFI_BSSID="$(echo "$WIFI_LINE" | cut -d: -f3)"
+    WIFI_SIGNAL="$(echo "$WIFI_LINE" | cut -d: -f4)"
+    WIFI_FREQ="$(echo "$WIFI_LINE" | cut -d: -f5)"
+    WIFI_RATE="$(echo "$WIFI_LINE" | cut -d: -f6)"
+    WIFI_SECURITY="$(echo "$WIFI_LINE" | cut -d: -f7-)"
   fi
+
+  WIFI_CONN_NAME="$(safe_cmd nmcli -t -f NAME,TYPE,DEVICE connection show --active | awk -F: -v dev="$WIFI_IF" '$2=="802-11-wireless" && $3==dev {print $1; exit}')"
 fi
 
 BT_ENABLED="0"
@@ -99,7 +110,7 @@ fi
 
 export HOSTNAME_VAL LAN_IF WIFI_IF
 export LAN_ENABLED LAN_CARRIER LAN_IP LAN_MAC LAN_EXISTS
-export WIFI_ENABLED WIFI_CONNECTED WIFI_SSID WIFI_SIGNAL WIFI_IP WIFI_MAC WIFI_EXISTS WIFI_RADIO
+export WIFI_ENABLED WIFI_CONNECTED WIFI_SSID WIFI_BSSID WIFI_SIGNAL WIFI_FREQ WIFI_RATE WIFI_SECURITY WIFI_CONN_NAME WIFI_IP WIFI_MAC WIFI_EXISTS WIFI_RADIO
 export BT_ENABLED
 export GATEWAY DNS_RAW
 export NMCLI_PRESENT RFKILL_PRESENT TAILSCALE_PRESENT TAILSCALE_IP
@@ -146,7 +157,12 @@ payload = {
             "enabled": b("WIFI_ENABLED"),
             "connected": b("WIFI_CONNECTED"),
             "ssid": s("WIFI_SSID"),
+            "connection": s("WIFI_CONN_NAME"),
+            "bssid": s("WIFI_BSSID"),
             "signal": maybe_int(s("WIFI_SIGNAL")),
+            "frequency_mhz": maybe_int(s("WIFI_FREQ")),
+            "rate": s("WIFI_RATE"),
+            "security": s("WIFI_SECURITY"),
             "ip": s("WIFI_IP"),
             "mac": s("WIFI_MAC"),
             "radio": s("WIFI_RADIO"),

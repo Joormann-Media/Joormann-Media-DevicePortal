@@ -130,7 +130,11 @@
     q("wifi-enabled").textContent = yn(!!wifi.enabled);
     q("wifi-connected").textContent = yn(!!wifi.connected);
     q("wifi-ssid").textContent = wifi.ssid || "-";
+    q("wifi-connection").textContent = wifi.connection || "-";
+    q("wifi-bssid").textContent = wifi.bssid || "-";
     q("wifi-signal").textContent = Number.isInteger(wifi.signal) ? String(wifi.signal) : "-";
+    q("wifi-frequency").textContent = Number.isInteger(wifi.frequency_mhz) ? `${wifi.frequency_mhz} MHz` : "-";
+    q("wifi-security").textContent = wifi.security || "-";
     q("wifi-ip").textContent = wifi.ip || "-";
     q("wifi-mac").textContent = wifi.mac || "-";
 
