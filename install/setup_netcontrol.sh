@@ -6,11 +6,19 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
-REPO_DIR="${1:-/opt/jm-deviceportal}"
+SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+REPO_DIR="${1:-$DEFAULT_REPO_DIR}"
 SERVICE_USER="${2:-www-data}"
 SRC_DIR="$REPO_DIR/scripts/net"
 DST_DIR="/opt/deviceportal/bin"
 SUDOERS_FILE="/etc/sudoers.d/deviceportal-net"
+
+if [[ ! -d "$SRC_DIR" ]]; then
+  echo "Netcontrol source directory not found: $SRC_DIR" >&2
+  echo "Usage: sudo ./install/setup_netcontrol.sh [REPO_DIR] [SERVICE_USER]" >&2
+  exit 2
+fi
 
 apt-get update
 apt-get install -y network-manager rfkill bluez iproute2
