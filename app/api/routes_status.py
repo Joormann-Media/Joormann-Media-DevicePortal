@@ -57,6 +57,16 @@ def api_fingerprint_refresh():
     return jsonify(ok=True, fingerprint=fp)
 
 
+@bp_status.post('/api/status/fingerprint/refresh')
+def api_status_fingerprint_refresh():
+    return api_fingerprint_refresh()
+
+
 @bp_status.get('/api/state')
 def api_state():
     return jsonify(ok=True, state=get_state())
+
+
+@bp_status.get('/api/status/state')
+def api_status_state():
+    return api_state()

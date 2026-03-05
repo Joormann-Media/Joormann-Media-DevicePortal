@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Flask, jsonify
 
+from app.api.routes_network import bp_network
 from app.api.routes_panel import bp_panel
 from app.api.routes_plan import bp_plan
 from app.api.routes_status import bp_status
@@ -21,6 +22,7 @@ def create_app() -> Flask:
     app.register_blueprint(bp_status)
     app.register_blueprint(bp_panel)
     app.register_blueprint(bp_plan)
+    app.register_blueprint(bp_network)
     app.register_blueprint(bp_ui)
 
     @app.errorhandler(Exception)

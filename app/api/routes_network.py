@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+from flask import Blueprint, jsonify, request
+
+from app.core.netcontrol import (
+    NetControlError,
+    get_network_info,
+    set_bluetooth_enabled,
+    set_lan_enabled,
+    set_wifi_enabled,
+    start_wps,
+)
+
+bp_network = Blueprint("network", __name__)
+
+
+def _ok(data: dict, status: int = 200):
+    return jsonify(ok=True, data=data), status
+
+
+def _error(code: str, message: str, status: int = 400, detail: str = ""):
+    payload = {"code": code, "message": message}
+    if detail:
+        payload["detail"] = detail
+    return jsonify(ok=False, error=payload), status
+
+
+@bp_network.get("/api/network/info")
+def api_network_info():
+    try:
+        info = get_network_info()
+        return _ok(info)
+    except NetControlError as exc:
+        http_status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=http_status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/wifi/toggle")
+def api_network_wifi_toggle():
+    data = request.get_json(force=True, silent=True) or {}
+    if "enabled" not in data or not isinstance(data.get("enabled"), bool):
+        return _error("invalid_payload", "Field 'enabled' (bool) is required", status=400)
+    try:
+        result = set_wifi_enabled(bool(data["enabled"]))
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code == "script_missing" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/bluetooth/toggle")
+def api_network_bluetooth_toggle():
+    data = request.get_json(force=True, silent=True) or {}
+    if "enabled" not in data or not isinstance(data.get("enabled"), bool):
+        return _error("invalid_payload", "Field 'enabled' (bool) is required", status=400)
+    try:
+        result = set_bluetooth_enabled(bool(data["enabled"]))
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code == "script_missing" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/lan/toggle")
+def api_network_lan_toggle():
+    data = request.get_json(force=True, silent=True) or {}
+    if "enabled" not in data or not isinstance(data.get("enabled"), bool):
+        return _error("invalid_payload", "Field 'enabled' (bool) is required", status=400)
+    ifname = (data.get("ifname") or "eth0").strip()
+    try:
+        result = set_lan_enabled(bool(data["enabled"]), ifname=ifname)
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code == "script_missing" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/wps")
+def api_network_wps():
+    data = request.get_json(force=True, silent=True) or {}
+    ifname = (data.get("ifname") or "wlan0").strip()
+    try:
+        result = start_wps(ifname=ifname)
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code == "script_missing" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
