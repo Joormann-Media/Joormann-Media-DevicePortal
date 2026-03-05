@@ -1,17 +1,93 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IFACE="${1:-wlan0}"
+REQUESTED_IFACE="${1:-}"
+DEFAULT_IFACE="wlan0"
 NMCLI="$(command -v nmcli || true)"
-if [[ -z "$NMCLI" ]]; then
-  echo "nmcli not found" >&2
+IW="$(command -v iw || true)"
+
+emit_result() {
+  local success="$1"
+  local code="$2"
+  local message="$3"
+  local details="$4"
+  local hint="$5"
+  local iface="$6"
+  echo "success=${success}"
+  echo "code=${code}"
+  echo "message=${message}"
+  echo "details=${details}"
+  echo "hint=${hint}"
+  echo "iface=${iface}"
+}
+
+if [[ -z "${NMCLI}" ]]; then
+  emit_result "false" "nmcli_missing" "Failed to start WPS" "nmcli command not found" "Installiere NetworkManager/nmcli." "${REQUESTED_IFACE:-$DEFAULT_IFACE}"
   exit 127
 fi
 
-if "$NMCLI" dev wifi connect --wps-pbc ifname "$IFACE"; then
-  echo "wps_started_ifname=$IFACE"
-  exit 0
+if ! systemctl is-active --quiet NetworkManager; then
+  emit_result "false" "networkmanager_inactive" "Failed to start WPS" "NetworkManager service is not active." "Starte NetworkManager: sudo systemctl start NetworkManager" "${REQUESTED_IFACE:-$DEFAULT_IFACE}"
+  exit 3
 fi
 
-"$NMCLI" dev wifi connect --wps-pbc
-echo "wps_started_generic=true"
+detect_iface() {
+  local iface
+  iface="$("${NMCLI}" -t -f DEVICE,TYPE,STATE dev status 2>/dev/null | awk -F: '$2=="wifi" && $1!="" {print $1; exit}')"
+  if [[ -n "${iface}" ]]; then
+    echo "${iface}"
+    return 0
+  fi
+  if [[ -n "${IW}" ]]; then
+    iface="$("${IW}" dev 2>/dev/null | awk '$1=="Interface"{print $2; exit}')"
+    if [[ -n "${iface}" ]]; then
+      echo "${iface}"
+      return 0
+    fi
+  fi
+  if [[ -n "${REQUESTED_IFACE}" ]]; then
+    echo "${REQUESTED_IFACE}"
+    return 0
+  fi
+  echo "${DEFAULT_IFACE}"
+}
+
+IFACE="$(detect_iface)"
+if [[ ! -d "/sys/class/net/${IFACE}" ]]; then
+  emit_result "false" "wifi_interface_missing" "Failed to start WPS" "No usable Wi-Fi interface found (checked: ${IFACE})." "Pruefe WLAN-Adapter und NetworkManager Device-Status." "${IFACE}"
+  exit 4
+fi
+
+WIFI_RADIO_STATE="$("${NMCLI}" radio wifi 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ "${WIFI_RADIO_STATE}" == "disabled" || "${WIFI_RADIO_STATE}" == "off" ]]; then
+  "${NMCLI}" radio wifi on >/dev/null 2>&1 || {
+    emit_result "false" "wifi_radio_off" "Failed to start WPS" "Wi-Fi radio is off and could not be enabled." "Aktiviere WLAN am Geraet oder via nmcli radio wifi on." "${IFACE}"
+    exit 5
+  }
+fi
+
+attempt_details=()
+
+run_attempt() {
+  local label="$1"
+  shift
+  local out
+  set +e
+  out="$("$@" 2>&1)"
+  local rc=$?
+  set -e
+  out="${out//$'\n'/ }"
+  if [[ ${rc} -eq 0 ]]; then
+    emit_result "true" "ok" "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken." "${label}: ${out}" "Je nach Router kann die Verbindung 30-120 Sekunden dauern." "${IFACE}"
+    exit 0
+  fi
+  attempt_details+=("${label} (rc=${rc}): ${out}")
+}
+
+run_attempt "nmcli device wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect -- --wps-pbc ifname "${IFACE}"
+run_attempt "nmcli device wifi connect --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect --wps-pbc ifname "${IFACE}"
+run_attempt "nmcli dev wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect -- --wps-pbc ifname "${IFACE}"
+
+DETAILS_COMBINED="$(printf '%s || ' "${attempt_details[@]}" | sed 's/ || $//')"
+emit_result "false" "wps_failed" "Failed to start WPS" "${DETAILS_COMBINED}" "Pruefe, ob dein Router WPS-PBC unterstuetzt und druecke danach die WPS-Taste." "${IFACE}"
+exit 6

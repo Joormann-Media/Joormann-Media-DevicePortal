@@ -29,8 +29,10 @@
     if (!res.ok || payload.ok === false) {
       const err = payload.error || {};
       const message = err.message || payload.error || `HTTP ${res.status}`;
-      const detail = err.detail || payload.detail || "";
-      throw new Error(detail ? `${message} (${detail})` : message);
+      const detail = err.detail || payload.detail || payload.details || "";
+      const hint = payload.hint || "";
+      const suffix = [detail, hint].filter(Boolean).join(" | ");
+      throw new Error(suffix ? `${message} (${suffix})` : message);
     }
     return payload;
   }
@@ -245,9 +247,20 @@
   }
 
   async function startWps() {
-    await fetchJson("/api/network/wps", { method: "POST" });
-    toast("WPS started", "success");
-    setTimeout(refreshNetwork, 3000);
+    const btn = q("btn-wps");
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>WPS startet...';
+    try {
+      const payload = await fetchJson("/api/network/wps", { method: "POST" });
+      const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
+      const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
+      toast(`${message} ${hint}`, "success");
+      setTimeout(refreshNetwork, 3000);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
   }
 
   function bindButtons() {

@@ -57,6 +57,19 @@ def _run_script(script_name: str, args: list[str], timeout: int, use_sudo: bool)
     return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
 
 
+def _parse_kv_output(raw: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for line in (raw or "").splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        parsed[key] = value.strip()
+    return parsed
+
+
 def get_network_info() -> dict:
     rc, out, err = _run_script("network_info.sh", [], timeout=8, use_sudo=False)
     if rc != 0:
@@ -102,6 +115,22 @@ def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
     if iface not in ALLOWED_WIFI_INTERFACES:
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     rc, out, err = _run_script("wps_start.sh", [iface], timeout=35, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
     if rc != 0:
-        raise NetControlError(code="wps_failed", message="Failed to start WPS", detail=err or out)
-    return {"ifname": iface, "stdout": out}
+        raise NetControlError(
+            code=parsed.get("code", "wps_failed"),
+            message=parsed.get("message", "Failed to start WPS"),
+            detail=detail,
+        )
+    return {
+        "ifname": parsed.get("iface", iface),
+        "success": parsed.get("success", "true").lower() == "true",
+        "code": parsed.get("code", "ok"),
+        "message": parsed.get(
+            "message",
+            "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.",
+        ),
+        "details": detail,
+        "hint": parsed.get("hint", "Je nach Router kann die Verbindung 30-120 Sekunden dauern."),
+    }

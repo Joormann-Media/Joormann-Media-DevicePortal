@@ -48,6 +48,14 @@ Nur folgende Aktionen werden per sudo freigegeben:
 - `POST /api/network/lan/toggle`
 - `POST /api/network/wps`
 
+## WPS Schnelltest
+
+```bash
+bash -n scripts/net/wps_start.sh
+scripts/net/wps_start.sh wlan0
+curl -s -X POST http://127.0.0.1:5070/api/network/wps | jq
+```
+
 ## Troubleshooting
 
 1. `sudo: a password is required`

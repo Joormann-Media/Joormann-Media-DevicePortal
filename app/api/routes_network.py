@@ -81,7 +81,31 @@ def api_network_wps():
     ifname = (data.get("ifname") or "wlan0").strip()
     try:
         result = start_wps(ifname=ifname)
-        return _ok(result)
+        return (
+            jsonify(
+                ok=True,
+                success=True,
+                message=result.get(
+                    "message",
+                    "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.",
+                ),
+                details=result.get("details", ""),
+                hint=result.get("hint", "Je nach Router kann die Verbindung 30-120 Sekunden dauern."),
+                data={"iface": result.get("ifname", ifname), "code": result.get("code", "ok")},
+            ),
+            200,
+        )
     except NetControlError as exc:
-        status = 500 if exc.code == "script_missing" else 400
-        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+        status = 400 if exc.code in ("invalid_interface", "wifi_interface_missing") else 500
+        return (
+            jsonify(
+                ok=False,
+                success=False,
+                message=exc.message,
+                details=exc.detail,
+                hint="Pruefe WLAN-Adapter, NetworkManager und druecke danach die WPS-Taste am Router.",
+                data={"iface": ifname, "code": exc.code},
+                error={"code": exc.code, "message": exc.message, "detail": exc.detail},
+            ),
+            status,
+        )
