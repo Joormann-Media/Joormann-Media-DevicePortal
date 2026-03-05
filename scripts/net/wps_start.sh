@@ -5,6 +5,7 @@ REQUESTED_IFACE="${1:-}"
 DEFAULT_IFACE="wlan0"
 NMCLI="$(command -v nmcli || true)"
 IW="$(command -v iw || true)"
+WPA_CLI="$(command -v wpa_cli || true)"
 
 emit_result() {
   local success="$1"
@@ -84,9 +85,20 @@ run_attempt() {
   attempt_details+=("${label} (rc=${rc}): ${out}")
 }
 
-run_attempt "nmcli device wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect -- --wps-pbc ifname "${IFACE}"
-run_attempt "nmcli device wifi connect --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect --wps-pbc ifname "${IFACE}"
-run_attempt "nmcli dev wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect -- --wps-pbc ifname "${IFACE}"
+NMCLI_HELP="$("${NMCLI}" device wifi connect --help 2>&1 || true)"
+if echo "${NMCLI_HELP}" | grep -q -- "--wps-pbc"; then
+  run_attempt "nmcli device wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect -- --wps-pbc ifname "${IFACE}"
+  run_attempt "nmcli device wifi connect --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect --wps-pbc ifname "${IFACE}"
+  run_attempt "nmcli dev wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect -- --wps-pbc ifname "${IFACE}"
+else
+  attempt_details+=("nmcli reports no --wps-pbc support on this version")
+fi
+
+if [[ -n "${WPA_CLI}" ]]; then
+  run_attempt "wpa_cli -i ${IFACE} wps_pbc" "${WPA_CLI}" -i "${IFACE}" wps_pbc
+else
+  attempt_details+=("wpa_cli command not available")
+fi
 
 DETAILS_COMBINED="$(printf '%s || ' "${attempt_details[@]}" | sed 's/ || $//')"
 emit_result "false" "wps_failed" "Failed to start WPS" "${DETAILS_COMBINED}" "Pruefe, ob dein Router WPS-PBC unterstuetzt und druecke danach die WPS-Taste." "${IFACE}"
