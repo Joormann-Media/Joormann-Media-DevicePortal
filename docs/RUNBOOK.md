@@ -46,8 +46,8 @@ Konfigurierbar per ENV:
 Quelle: [app/core/paths.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/core/paths.py)
 
 Empfehlung Prod:
-- `CONFIG_PATH=/etc/device/config.json`
-- `DEVICE_PATH=/etc/device/device.json`
+- `CONFIG_PATH=<PORTAL_DIR>/var/data/config.json`
+- `DEVICE_PATH=<PORTAL_DIR>/var/data/device.json`
 - Files Eigentümer auf Service-User (`www-data`) oder passende ACL.
 
 ## 4) Reverse Proxy (Nginx) – im Repo nicht enthalten
@@ -101,11 +101,11 @@ journalctl -u device-portal.service -f
 - Prüfen, ob Panel-URL korrekt und JSON liefert.
 - HTML-Login-Seite statt JSON deutet auf Auth/Route-Mismatch hin.
 
-### Problem: Persistenzfehler unter `/etc/device/*`
+### Problem: Persistenzfehler unter `<PORTAL_DIR>/var/data/*`
 - Rechte/Ownership prüfen:
 ```bash
-sudo ls -la /etc/device
-sudo chown -R www-data:www-data /etc/device
+sudo ls -la /opt/jm-deviceportal/var/data
+sudo chown -R www-data:www-data /opt/jm-deviceportal/var/data
 ```
 
 ## 7) Empfohlene Betriebs-Hardening Schritte

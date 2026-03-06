@@ -14,9 +14,18 @@ SERVICE_FILE_DST="/etc/systemd/system/device-portal.service"
 apt-get update
 apt-get install -y python3 python3-venv python3-pip
 
-install -d -m 0755 /etc/device
-install -d -m 0755 "$REPO_DIR/var"
+install -d -m 0775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/var"
+install -d -m 0775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/var/data"
 install -d -m 0775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/var/assets"
+
+# Migrate legacy persisted files from /etc/device to repository-local data directory.
+for f in config.json device.json fingerprint.json state.json plan.json; do
+  if [[ -f "/etc/device/${f}" && ! -f "$REPO_DIR/var/data/${f}" ]]; then
+    cp "/etc/device/${f}" "$REPO_DIR/var/data/${f}"
+    chown "$SERVICE_USER:$SERVICE_USER" "$REPO_DIR/var/data/${f}"
+    chmod 0640 "$REPO_DIR/var/data/${f}" || true
+  fi
+done
 
 if [[ -f "$SERVICE_FILE_SRC" ]]; then
   cp "$SERVICE_FILE_SRC" "$SERVICE_FILE_DST"

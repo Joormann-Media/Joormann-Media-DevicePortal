@@ -5,11 +5,11 @@ Local Flask portal for Raspberry Pi setup/diagnostics and panel linking.
 
 ## Config files
 Defaults (overridable by env vars):
-- `CONFIG_PATH`: `/etc/device/config.json`
-- `DEVICE_PATH`: `/etc/device/device.json`
-- `FINGERPRINT_PATH`: `/etc/device/fingerprint.json`
-- `STATE_PATH`: `/etc/device/state.json`
-- `PLAN_PATH`: `/etc/device/plan.json`
+- `CONFIG_PATH`: `<PORTAL_DIR>/var/data/config.json`
+- `DEVICE_PATH`: `<PORTAL_DIR>/var/data/device.json`
+- `FINGERPRINT_PATH`: `<PORTAL_DIR>/var/data/fingerprint.json`
+- `STATE_PATH`: `<PORTAL_DIR>/var/data/state.json`
+- `PLAN_PATH`: `<PORTAL_DIR>/var/data/plan.json`
 - `ASSET_DIR`: `<PORTAL_DIR>/var/assets`
 
 ## Main endpoints

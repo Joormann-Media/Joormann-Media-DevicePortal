@@ -7,8 +7,10 @@ sudo ./install/setup_portal.sh /opt/jm-deviceportal www-data
 ```
 
 - installiert Python-Prereqs
-- legt `/etc/device` und `<REPO_DIR>/var/assets` an
+- legt `<REPO_DIR>/var/data` und `<REPO_DIR>/var/assets` an
 - setzt `<REPO_DIR>/var/assets` auf den Service-User (Standard: `www-data`) damit Event-/WPS-State-Dateien schreibbar sind
+- setzt `<REPO_DIR>/var/data` auf den Service-User (Standard: `www-data`) damit Config/State/Plan schreibbar sind
+- migriert vorhandene Legacy-Dateien aus `/etc/device/*.json` nach `<REPO_DIR>/var/data/*.json` (falls Ziel noch fehlt)
 - installiert/aktiviert `device-portal.service` aus `docs/systemd/device-portal.service`
 
 ## 2) Netzwerk-Steuerung einrichten
@@ -29,4 +31,5 @@ sudo ./install/setup_netcontrol.sh /opt/jm-deviceportal www-data
 - Das Flask-Backend ruft nur vordefinierte Wrapper-Skripte auf.
 - Standard-Skriptverzeichnis im Code: `/opt/deviceportal/bin`, Fallback im Repo: `scripts/net`.
 - Optional kann `NETCONTROL_BIN_DIR` gesetzt werden, um den Pfad zu überschreiben.
+- Standard-Datenpfade im Code: `<Portal-Ordner>/var/data/*.json` (über `CONFIG_PATH`, `DEVICE_PATH`, `FINGERPRINT_PATH`, `STATE_PATH`, `PLAN_PATH` überschreibbar).
 - Standard-Assetpfad im Code: `<Portal-Ordner>/var/assets` (über `ASSET_DIR` überschreibbar).
