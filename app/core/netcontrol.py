@@ -72,6 +72,27 @@ def _parse_kv_output(raw: str) -> dict[str, str]:
     return parsed
 
 
+def _split_nmcli_escaped(line: str) -> list[str]:
+    fields: list[str] = []
+    buf: list[str] = []
+    escape = False
+    for ch in line:
+        if escape:
+            buf.append(ch)
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == ":":
+            fields.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    fields.append("".join(buf))
+    return fields
+
+
 def get_network_info() -> dict:
     rc, out, err = _run_script("network_info.sh", [], timeout=8, use_sudo=False)
     if rc != 0:
@@ -117,24 +138,15 @@ def _parse_wifi_scan_output(raw: str) -> list[dict]:
     for line in (raw or "").splitlines():
         if not line.strip():
             continue
-        parts = line.split(":")
+        parts = _split_nmcli_escaped(line)
         in_use_field = parts[0] if len(parts) > 0 else ""
         in_use = in_use_field.strip() in ("*", "yes")
         if len(parts) >= 5:
-            security = parts[-1]
-            signal = parts[-2]
-            bssid = parts[-3]
-            ssid = ":".join(parts[1:-3])
-        elif len(parts) == 4:
-            security = parts[-1]
-            signal = parts[-2]
-            bssid = ""
+            # Expected: IN-USE,SSID,BSSID,SIGNAL,SECURITY
             ssid = parts[1]
-        elif len(parts) == 3:
-            security = parts[-1]
-            signal = parts[-2]
-            bssid = ""
-            ssid = parts[1]
+            bssid = parts[2]
+            signal = parts[3]
+            security = ":".join(parts[4:])
         else:
             ssid = parts[1] if len(parts) > 1 else ""
             signal = ""
@@ -163,14 +175,15 @@ def _parse_wifi_profiles_output(raw: str) -> list[dict]:
     for line in (raw or "").splitlines():
         if not line.strip():
             continue
-        parts = line.split(":")
+        parts = _split_nmcli_escaped(line)
         if len(parts) < 5:
             continue
-        name = ":".join(parts[:-4]).strip()
-        uuid = parts[-4].strip()
-        conn_type = parts[-3].strip()
-        autoconnect = parts[-2].strip().lower() == "yes"
-        prio_raw = parts[-1].strip()
+        # Expected: NAME,UUID,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY
+        name = parts[0].strip()
+        uuid = parts[1].strip()
+        conn_type = parts[2].strip()
+        autoconnect = parts[3].strip().lower() == "yes"
+        prio_raw = parts[4].strip()
         if conn_type not in ("wifi", "802-11-wireless"):
             continue
         try:

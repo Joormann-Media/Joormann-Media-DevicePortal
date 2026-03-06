@@ -39,7 +39,7 @@ run_nmcli() {
 case "${CMD}" in
   scan)
     IFACE="${1:-$(detect_iface)}"
-    run_nmcli -t --escape no -f IN-USE,SSID,BSSID,SIGNAL,SECURITY dev wifi list --rescan yes ifname "${IFACE}"
+    run_nmcli -t -f IN-USE,SSID,BSSID,SIGNAL,SECURITY dev wifi list --rescan yes ifname "${IFACE}"
     ;;
   connect)
     SSID="${1:-}"
@@ -64,7 +64,7 @@ case "${CMD}" in
     fi
     ;;
   profiles)
-    run_nmcli -t --escape no -f NAME,UUID,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show
+    run_nmcli -t -f NAME,UUID,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show
     ;;
   profile-set)
     SSID="${1:-}"
