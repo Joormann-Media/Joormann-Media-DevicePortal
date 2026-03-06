@@ -312,6 +312,8 @@
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                       <h3 class="h6 mb-0"><i class="bi bi-folder me-1"></i>Inhalt</h3>
                       <div class="d-flex flex-wrap gap-1">
+                        <button id="btn-storage-fm-new-folder" class="btn btn-outline-primary btn-sm">+ Neuer Ordner</button>
+                        <button id="btn-storage-fm-rename" class="btn btn-outline-secondary btn-sm">✏ Rename</button>
                         <button id="btn-storage-fm-select-all" class="btn btn-outline-secondary btn-sm">Select all</button>
                         <button id="btn-storage-fm-unselect-all" class="btn btn-outline-secondary btn-sm">Unselect all</button>
                         <button id="btn-storage-fm-delete-selected" class="btn btn-outline-danger btn-sm">Delete selected</button>
@@ -328,7 +330,7 @@
                       <h3 class="h6 mb-2"><i class="bi bi-cloud-arrow-up me-1"></i>Upload</h3>
                       <div id="storage-fm-upload-dropzone" class="storage-fm-upload-dropzone border rounded p-3 text-center mb-2">
                         <div class="fw-semibold">Dateien hier reinziehen</div>
-                        <div class="small text-secondary">oder klicken zum Auswählen</div>
+                        <div class="small text-secondary">oder klicken zum Auswählen (max 512 MB pro Datei)</div>
                         <input id="storage-fm-upload-picker" type="file" multiple hidden>
                       </div>
                       <div id="storage-fm-upload-progress-wrap" class="d-none">
@@ -604,10 +606,16 @@
         <div class="modal-body">
           <p class="mb-2">Du bist dabei, <strong id="storage-delete-count">0</strong> Eintrag/Einträge zu löschen.</p>
           <p class="mb-2 text-danger">Diese Aktion kann nicht rückgängig gemacht werden.</p>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" value="1" id="storage-delete-hardcore">
+            <label class="form-check-label small" for="storage-delete-hardcore">
+              Hardcore-Bestätigung aktivieren (Tippe <code>DELETE</code>)
+            </label>
+          </div>
           <label for="storage-delete-confirm-word" class="form-label small text-secondary mb-1">
-            Gib zur Bestätigung <code>DELETE</code> ein:
+            Optional nur bei Hardcore:
           </label>
-          <input id="storage-delete-confirm-word" type="text" class="form-control" autocomplete="off" spellcheck="false" placeholder="DELETE">
+          <input id="storage-delete-confirm-word" type="text" class="form-control" autocomplete="off" spellcheck="false" placeholder="DELETE" disabled>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>

@@ -31,6 +31,7 @@
   };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
+  const STORAGE_FM_UPLOAD_MAX_FILE_BYTES = 512 * 1024 * 1024;
 
   function q(id) {
     return document.getElementById(id);
@@ -423,6 +424,15 @@
     return fetchJson(`/api/network/storage/file-manager/preview?${query.toString()}`);
   }
 
+  function storageFmFileUrl(deviceId, path, download = false) {
+    const query = new URLSearchParams({
+      device_id: String(deviceId || ""),
+      path: String(path || ""),
+    });
+    if (download) query.set("download", "1");
+    return `/api/network/storage/file-manager/file?${query.toString()}`;
+  }
+
   function renderStorageFmBreadcrumb(treeData) {
     const host = q("storage-fm-breadcrumb");
     clearNode(host);
@@ -558,6 +568,8 @@
       }
 
       if (entry.type === "directory" && !(entry.blocked || entry.is_symlink)) {
+        const actions = document.createElement("div");
+        actions.className = "d-flex gap-1 mt-1";
         const openBtn = document.createElement("button");
         openBtn.type = "button";
         openBtn.className = "btn btn-outline-secondary btn-sm mt-1";
@@ -566,7 +578,34 @@
           event.stopPropagation();
           run(() => storageFileManagerLoadPath(path));
         });
-        row.append(top, meta, openBtn);
+        const renameBtn = document.createElement("button");
+        renameBtn.type = "button";
+        renameBtn.className = "btn btn-outline-secondary btn-sm mt-1";
+        renameBtn.textContent = "✏ Rename";
+        renameBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          run(() => storageFileManagerRenameByPath(path));
+        });
+        actions.append(openBtn, renameBtn);
+        row.append(top, meta, actions);
+      } else if (entry.type === "file" && !(entry.blocked || entry.is_symlink)) {
+        const actions = document.createElement("div");
+        actions.className = "d-flex gap-1 mt-1";
+        const dl = document.createElement("a");
+        dl.className = "btn btn-outline-secondary btn-sm mt-1";
+        dl.href = storageFmFileUrl(storageFmState.deviceId, path, true);
+        dl.innerHTML = "⬇ Download";
+        dl.addEventListener("click", (event) => event.stopPropagation());
+        const renameBtn = document.createElement("button");
+        renameBtn.type = "button";
+        renameBtn.className = "btn btn-outline-secondary btn-sm mt-1";
+        renameBtn.textContent = "✏ Rename";
+        renameBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          run(() => storageFileManagerRenameByPath(path));
+        });
+        actions.append(dl, renameBtn);
+        row.append(top, meta, actions);
       } else {
         row.append(top, meta);
       }
@@ -580,24 +619,37 @@
     clearNode(host);
 
     const info = preview || {};
-    const meta = document.createElement("dl");
-    meta.className = "portal-kv mb-2";
-    const rows = [
-      ["Name", info.name || "-"],
-      ["Typ", info.type || "-"],
-      ["MIME", info.mime_type || "-"],
-      ["Größe", info.type === "directory" ? "-" : formatBytes(info.size_bytes || 0)],
-      ["Pfad", info.path || "/"],
-      ["Geändert", info.modified_at || "-"],
-    ];
-    for (const [label, value] of rows) {
-      const dt = document.createElement("dt");
-      dt.textContent = label;
-      const dd = document.createElement("dd");
-      dd.textContent = String(value || "-");
-      meta.append(dt, dd);
-    }
-    host.append(meta);
+    const appendDownload = () => {
+      if (String(info.type || "") !== "file" || !info.path) return;
+      const wrap = document.createElement("div");
+      wrap.className = "mb-2";
+      const dl = document.createElement("a");
+      dl.className = "btn btn-outline-secondary btn-sm";
+      dl.href = storageFmFileUrl(storageFmState.deviceId, info.path, true);
+      dl.innerHTML = "⬇ Download";
+      wrap.append(dl);
+      host.append(wrap);
+    };
+    const appendMeta = () => {
+      const meta = document.createElement("dl");
+      meta.className = "portal-kv mb-0 mt-2";
+      const rows = [
+        ["Name", info.name || "-"],
+        ["Typ", info.type || "-"],
+        ["MIME", info.mime_type || "-"],
+        ["Größe", info.type === "directory" ? "-" : formatBytes(info.size_bytes || 0)],
+        ["Pfad", info.path || "/"],
+        ["Geändert", info.modified_at || "-"],
+      ];
+      for (const [label, value] of rows) {
+        const dt = document.createElement("dt");
+        dt.textContent = label;
+        const dd = document.createElement("dd");
+        dd.textContent = String(value || "-");
+        meta.append(dt, dd);
+      }
+      host.append(meta);
+    };
 
     const kind = String(info.preview_kind || "info");
     if (kind === "blocked") {
@@ -605,6 +657,8 @@
       blocked.className = "alert alert-danger py-2 mb-0";
       blocked.textContent = info.preview_message || "Dieser Eintrag ist blockiert.";
       host.append(blocked);
+      appendDownload();
+      appendMeta();
       return;
     }
     if (kind === "too_large") {
@@ -612,6 +666,8 @@
       warning.className = "alert alert-warning py-2 mb-0";
       warning.textContent = info.preview_message || "Datei zu groß für Vorschau.";
       host.append(warning);
+      appendDownload();
+      appendMeta();
       return;
     }
     if (kind === "text") {
@@ -621,6 +677,8 @@
       pre.style.overflow = "auto";
       pre.textContent = String(info.text_excerpt || "");
       host.append(pre);
+      appendDownload();
+      appendMeta();
       return;
     }
     if (kind === "image" && info.file_url) {
@@ -629,6 +687,8 @@
       img.alt = info.name || "Preview";
       img.src = `${info.file_url}&t=${Date.now()}`;
       host.append(img);
+      appendDownload();
+      appendMeta();
       return;
     }
     if (kind === "pdf" && info.file_url) {
@@ -639,6 +699,8 @@
       link.className = "btn btn-outline-secondary btn-sm";
       link.textContent = "PDF öffnen";
       host.append(link);
+      appendDownload();
+      appendMeta();
       return;
     }
     if (Array.isArray(info.children_preview) && info.children_preview.length) {
@@ -650,12 +712,17 @@
         list.append(li);
       }
       host.append(list);
+      appendDownload();
+      appendMeta();
       return;
     }
+
     const fallback = document.createElement("div");
     fallback.className = "text-secondary";
     fallback.textContent = info.preview_message || "Keine direkte Vorschau verfügbar.";
     host.append(fallback);
+    appendDownload();
+    appendMeta();
   }
 
   async function storageFileManagerSelectEntry(path) {
@@ -765,7 +832,9 @@
     }
     storageDeletePendingPaths = paths;
     q("storage-delete-count").textContent = String(paths.length);
+    q("storage-delete-hardcore").checked = false;
     q("storage-delete-confirm-word").value = "";
+    q("storage-delete-confirm-word").disabled = true;
     const modal = bootstrap.Modal.getOrCreateInstance(q("storageDeleteConfirmModal"));
     modal.show();
   }
@@ -776,8 +845,9 @@
       toast("Keine Einträge ausgewählt.", "secondary");
       return;
     }
+    const requireHardConfirm = !!q("storage-delete-hardcore").checked;
     const confirmWord = String(q("storage-delete-confirm-word").value || "").trim().toUpperCase();
-    if (confirmWord !== "DELETE") {
+    if (requireHardConfirm && confirmWord !== "DELETE") {
       toast("Löschen nicht bestätigt. Bitte DELETE eingeben.", "danger");
       return;
     }
@@ -788,6 +858,7 @@
         paths,
         confirm_word: confirmWord,
         confirm_count: paths.length,
+        require_hard_confirm: requireHardConfirm,
       },
       timeoutMs: 45000,
     });
@@ -843,9 +914,75 @@
   function storageFmAddFiles(fileList) {
     Array.from(fileList || []).forEach((file) => {
       if (!file) return;
+      if ((file.size || 0) > STORAGE_FM_UPLOAD_MAX_FILE_BYTES) {
+        toast(`${file.name}: Datei ist größer als 512 MB.`, "danger");
+        return;
+      }
       storageFmState.uploadQueue.push({ file });
     });
     renderStorageFmUploadQueue();
+  }
+
+  function storageFmResolveRenamePath() {
+    const selected = Array.from(storageFmState.selectedPaths || []);
+    if (selected.length === 1) return selected[0];
+    if (selected.length > 1) {
+      throw new Error("Für Rename bitte genau einen Eintrag auswählen.");
+    }
+    if (storageFmState.activeEntryPath) return String(storageFmState.activeEntryPath);
+    throw new Error("Bitte zuerst einen Eintrag auswählen.");
+  }
+
+  async function storageFileManagerCreateFolder() {
+    if (!storageFmState.active || !storageFmState.deviceId) {
+      throw new Error("Kein Laufwerk ausgewählt.");
+    }
+    const name = window.prompt("Name des neuen Ordners:");
+    if (name === null) return;
+    const folderName = String(name || "").trim();
+    if (!folderName) {
+      throw new Error("Ordnername darf nicht leer sein.");
+    }
+    await fetchJson("/api/network/storage/file-manager/mkdir", {
+      method: "POST",
+      body: {
+        device_id: storageFmState.deviceId,
+        path: storageFmState.currentPath || "",
+        name: folderName,
+      },
+      timeoutMs: 20000,
+    });
+    toast("Ordner erstellt.", "success");
+    await storageFileManagerLoadPath(storageFmState.currentPath);
+  }
+
+  async function storageFileManagerRenameByPath(path) {
+    const targetPath = String(path || "").trim();
+    if (!targetPath) {
+      throw new Error("Ungültiger Eintrag.");
+    }
+    const entry = (storageFmState.entries || []).find((item) => String(item.path || "") === targetPath);
+    const currentName = String(entry?.name || targetPath.split("/").pop() || "").trim();
+    const input = window.prompt("Neuer Name:", currentName);
+    if (input === null) return;
+    const newName = String(input || "").trim();
+    if (!newName || newName === currentName) return;
+    await fetchJson("/api/network/storage/file-manager/rename", {
+      method: "POST",
+      body: {
+        device_id: storageFmState.deviceId,
+        path: targetPath,
+        new_name: newName,
+      },
+      timeoutMs: 20000,
+    });
+    toast("Eintrag umbenannt.", "success");
+    await storageFileManagerLoadPath(storageFmState.currentPath);
+  }
+
+  async function storageFileManagerRenameSelected() {
+    const targetPath = storageFmResolveRenamePath();
+    await storageFileManagerRenameByPath(targetPath);
   }
 
   function storageFmSetUploadProgress(current, total, text = "") {
@@ -2089,6 +2226,8 @@
     q("btn-storage-refresh").addEventListener("click", () => run(refreshStorageStatus));
     q("btn-storage-fm-back").addEventListener("click", () => closeStorageFileManager());
     q("btn-storage-fm-dir-up").addEventListener("click", () => run(storageFileManagerGoUp));
+    q("btn-storage-fm-new-folder").addEventListener("click", () => run(storageFileManagerCreateFolder));
+    q("btn-storage-fm-rename").addEventListener("click", () => run(storageFileManagerRenameSelected));
     q("btn-storage-fm-select-all").addEventListener("click", () => storageFileManagerSelectAll());
     q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
     q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
@@ -2112,9 +2251,16 @@
       run(storageFmUploadAll);
     });
     q("btn-storage-delete-confirm").addEventListener("click", () => run(storageFileManagerDeleteConfirmed));
+    q("storage-delete-hardcore").addEventListener("change", () => {
+      const hard = !!q("storage-delete-hardcore").checked;
+      q("storage-delete-confirm-word").disabled = !hard;
+      if (!hard) q("storage-delete-confirm-word").value = "";
+    });
     q("storageDeleteConfirmModal").addEventListener("hidden.bs.modal", () => {
       storageDeletePendingPaths = [];
       q("storage-delete-confirm-word").value = "";
+      q("storage-delete-hardcore").checked = false;
+      q("storage-delete-confirm-word").disabled = true;
     });
     q("btn-storage-modal-mount").addEventListener("click", () => run(async () => {
       if (!selectedStorageDeviceId) return;

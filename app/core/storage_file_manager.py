@@ -23,9 +23,9 @@ except Exception:  # pragma: no cover - optional dependency
 _TEXT_MIME_PREFIXES = ("text/", "application/json", "application/xml", "application/javascript")
 _MAX_REL_PATH_LEN = 1024
 _MAX_FILENAME_LEN = 255
-_TEXT_MAX_BYTES = 512 * 1024
-_TEXT_PREVIEW_MAX_CHARS = 12000
-_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+_TEXT_MAX_BYTES = 64 * 1024
+_TEXT_PREVIEW_MAX_CHARS = 8000
+_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 _IMAGE_MAX_PIXELS = 40_000_000
 _IMAGE_MAX_SIDE = 9000
 _PDF_MAX_BYTES = 12 * 1024 * 1024
@@ -44,6 +44,19 @@ class StorageRoot:
 
 
 class StorageFileManagerService:
+    @staticmethod
+    def sanitize_entry_name(name: str) -> str:
+        value = str(name or "").strip()
+        if not value:
+            raise NetControlError(code="storage_name_invalid", message="Name is required")
+        if "\x00" in value or "/" in value or "\\" in value:
+            raise NetControlError(code="storage_name_invalid", message="Invalid name")
+        if value in (".", ".."):
+            raise NetControlError(code="storage_name_invalid", message="Invalid name")
+        if len(value) > _MAX_FILENAME_LEN:
+            raise NetControlError(code="storage_name_invalid", message="Name is too long")
+        return value
+
     def sanitize_relative_path(self, relative_path: str) -> str:
         raw = str(relative_path or "")
         if "\x00" in raw:
@@ -323,7 +336,7 @@ class StorageFileManagerService:
         out["preview_message"] = "Vorschau für diesen Dateityp nicht unterstützt."
         return out
 
-    def resolve_downloadable_file(self, device_id: str, relative_path: str) -> tuple[Path, str]:
+    def resolve_downloadable_file(self, device_id: str, relative_path: str, *, enforce_preview_limit: bool = True) -> tuple[Path, str]:
         root = self.resolve_root(device_id)
         target = self.resolve_relative_path(root, relative_path)
         if not target.exists():
@@ -334,7 +347,7 @@ class StorageFileManagerService:
             raise NetControlError(code="storage_path_not_file", message="Path is not a file")
         mime, _ = mimetypes.guess_type(target.name)
         st = target.stat()
-        if int(st.st_size) > _FILE_ROUTE_MAX_BYTES:
+        if enforce_preview_limit and int(st.st_size) > _FILE_ROUTE_MAX_BYTES:
             raise NetControlError(code="storage_preview_too_large", message="File too large for preview endpoint")
         return target, (mime or "application/octet-stream")
 
@@ -427,6 +440,62 @@ class StorageFileManagerService:
             "skipped_count": len(skipped),
         }
 
+    def create_folder(self, device_id: str, relative_path: str, folder_name: str) -> dict[str, Any]:
+        root = self.resolve_root(device_id)
+        parent = self.resolve_relative_path(root, relative_path)
+        if not parent.exists():
+            raise NetControlError(code="storage_path_not_found", message="Directory not found")
+        if parent.is_symlink():
+            raise NetControlError(code="storage_symlink_blocked", message="Symlink entries are blocked for security")
+        if not parent.is_dir():
+            raise NetControlError(code="storage_path_not_directory", message="Path is not a directory")
+
+        safe_name = self.sanitize_entry_name(folder_name)
+        target = (parent / safe_name).resolve(strict=False)
+        if target != root.mount_path and root.mount_path not in target.parents:
+            raise NetControlError(code="storage_path_forbidden", message="Path is outside the allowed storage root")
+        self._assert_no_symlink_on_path(root, target)
+        if target.exists():
+            raise NetControlError(code="storage_folder_exists", message="Folder already exists")
+        try:
+            target.mkdir(mode=0o775, parents=False, exist_ok=False)
+        except OSError as exc:
+            raise NetControlError(code="storage_folder_create_failed", message="Could not create folder", detail=str(exc)) from exc
+        return {
+            "device_id": root.device_id,
+            "name": safe_name,
+            "path": self.relative_to_root(root, target),
+            "parent_path": self.relative_to_root(root, parent),
+        }
+
+    def rename_entry(self, device_id: str, relative_path: str, new_name: str) -> dict[str, Any]:
+        root = self.resolve_root(device_id)
+        target = self.resolve_relative_path(root, relative_path)
+        if not target.exists():
+            raise NetControlError(code="storage_path_not_found", message="Entry not found")
+        if target == root.mount_path:
+            raise NetControlError(code="storage_rename_root_blocked", message="Storage root cannot be renamed")
+        if target.is_symlink():
+            raise NetControlError(code="storage_symlink_blocked", message="Symlink entries are blocked for security")
+
+        safe_name = self.sanitize_entry_name(new_name)
+        destination = (target.parent / safe_name).resolve(strict=False)
+        if destination != root.mount_path and root.mount_path not in destination.parents:
+            raise NetControlError(code="storage_path_forbidden", message="Path is outside the allowed storage root")
+        self._assert_no_symlink_on_path(root, destination)
+        if destination.exists() and destination != target:
+            raise NetControlError(code="storage_rename_exists", message="Target name already exists")
+        try:
+            target.rename(destination)
+        except OSError as exc:
+            raise NetControlError(code="storage_rename_failed", message="Could not rename entry", detail=str(exc)) from exc
+        return {
+            "device_id": root.device_id,
+            "old_path": self.relative_to_root(root, target),
+            "new_path": self.relative_to_root(root, destination),
+            "new_name": safe_name,
+        }
+
     def _build_breadcrumb(self, root: StorageRoot, current: Path) -> list[dict[str, str]]:
         breadcrumb: list[dict[str, str]] = [{"name": root.display_name, "path": ""}]
         rel = self.relative_to_root(root, current)
@@ -491,13 +560,14 @@ class StorageDeleteService:
         selected_paths: list[str],
         confirm_word: str = "",
         confirm_count: int = 0,
+        require_hard_confirm: bool = False,
     ) -> dict[str, Any]:
         if not isinstance(selected_paths, list) or not selected_paths:
             raise NetControlError(code="invalid_delete_selection", message="No storage entries selected")
         clean_paths = [self.fm_service.sanitize_relative_path(item) for item in selected_paths if str(item or "").strip()]
         if not clean_paths:
             raise NetControlError(code="invalid_delete_selection", message="No storage entries selected")
-        if str(confirm_word or "").strip().upper() != _DELETE_CONFIRM_WORD:
+        if require_hard_confirm and str(confirm_word or "").strip().upper() != _DELETE_CONFIRM_WORD:
             raise NetControlError(code="storage_delete_confirmation_missing", message="Delete confirmation is required")
         if int(confirm_count or 0) != len(clean_paths):
             raise NetControlError(code="storage_delete_confirmation_mismatch", message="Delete confirmation count mismatch")

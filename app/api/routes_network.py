@@ -447,6 +447,7 @@ def api_network_storage_file_manager_delete():
     device_id = str(data.get("device_id") or "").strip()
     selected_paths = data.get("paths")
     confirm_word = str(data.get("confirm_word") or "").strip()
+    require_hard_confirm = bool(data.get("require_hard_confirm", False))
     try:
         confirm_count = int(data.get("confirm_count") or 0)
     except Exception:
@@ -460,6 +461,7 @@ def api_network_storage_file_manager_delete():
                 selected_paths=selected_paths,
                 confirm_word=confirm_word,
                 confirm_count=confirm_count,
+                require_hard_confirm=require_hard_confirm,
             )
         )
     except NetControlError as exc:
@@ -471,11 +473,56 @@ def api_network_storage_file_manager_delete():
 def api_network_storage_file_manager_file():
     device_id = str(request.args.get("device_id") or "").strip()
     rel_path = str(request.args.get("path") or "").strip()
+    download = str(request.args.get("download") or "").strip().lower() in ("1", "true", "yes")
     if not device_id or not rel_path:
         return _error("invalid_payload", "Query fields 'device_id' and 'path' are required", status=400)
     try:
-        file_path, mime = storage_fm.resolve_downloadable_file(device_id=device_id, relative_path=rel_path)
-        return send_file(str(file_path), mimetype=mime, as_attachment=False, conditional=True)
+        file_path, mime = storage_fm.resolve_downloadable_file(
+            device_id=device_id,
+            relative_path=rel_path,
+            enforce_preview_limit=not download,
+        )
+        return send_file(
+            str(file_path),
+            mimetype=mime,
+            as_attachment=download,
+            download_name=file_path.name if download else None,
+            conditional=True,
+        )
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed",) else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/file-manager/mkdir")
+def api_network_storage_file_manager_mkdir():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    rel_path = str(data.get("path") or "").strip()
+    folder_name = str(data.get("name") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    if not folder_name:
+        return _error("invalid_payload", "Field 'name' is required", status=400)
+    try:
+        return _ok(storage_fm.create_folder(device_id=device_id, relative_path=rel_path, folder_name=folder_name))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed",) else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/file-manager/rename")
+def api_network_storage_file_manager_rename():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    rel_path = str(data.get("path") or "").strip()
+    new_name = str(data.get("new_name") or "").strip()
+    if not device_id or not rel_path:
+        return _error("invalid_payload", "Fields 'device_id' and 'path' are required", status=400)
+    if not new_name:
+        return _error("invalid_payload", "Field 'new_name' is required", status=400)
+    try:
+        return _ok(storage_fm.rename_entry(device_id=device_id, relative_path=rel_path, new_name=new_name))
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed",) else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
