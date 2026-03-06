@@ -19,7 +19,7 @@ fi
 ACTIVE_CONN="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
 DEVICE_STATE="$("${NMCLI}" -t -f GENERAL.STATE device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.STATE://p' | head -n1)"
 RADIO="$("${NMCLI}" -t -f WIFI general 2>/dev/null | head -n1 | tr '[:upper:]' '[:lower:]')"
-SSID="$("${NMCLI}" -g 802-11-wireless.ssid connection show "${PROFILE}" 2>/dev/null | head -n1)"
+SSID="$("${NMCLI}" -g 802-11-wireless.ssid connection show "${PROFILE}" 2>/dev/null | head -n1 || true)"
 AP_IP="$(ip -4 -o addr show dev "${IFACE}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
 
 ACTIVE="false"
