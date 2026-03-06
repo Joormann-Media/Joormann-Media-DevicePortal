@@ -27,6 +27,7 @@
     activeEntryPath: "",
   };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
+  const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
 
   function q(id) {
     return document.getElementById(id);
@@ -278,14 +279,14 @@
   }
 
   async function refreshStatus() {
-    const data = await fetchJson("/api/status");
+    const data = await fetchJson("/api/status", { cache: "no-store" });
     renderStatus(data);
     return data;
   }
 
   async function refreshState() {
-    const data = await fetchJson("/api/status/state");
-    const base = await fetchJson("/api/status");
+    const data = await fetchJson("/api/status/state", { cache: "no-store" });
+    const base = await fetchJson("/api/status", { cache: "no-store" });
     base.state = data.state || base.state;
     renderStatus(base);
     return base;
@@ -855,22 +856,11 @@
       extra.className = "text-secondary mb-2";
       extra.textContent = `Enabled: ${item.is_enabled ? "yes" : "no"} | Auto-Mount: ${item.auto_mount ? "yes" : "no"} | Last seen: ${item.last_seen_at || "-"}${item.last_error ? ` | Fehler: ${item.last_error}` : ""}`;
 
-      const actions = document.createElement("div");
-      actions.className = "d-flex flex-wrap gap-2";
+      const actionsHint = document.createElement("div");
+      actionsHint.className = "small text-secondary";
+      actionsHint.textContent = "Aktionen über Icons in der Laufwerke-Karte.";
 
-      const manageBtn = document.createElement("button");
-      manageBtn.className = "btn btn-outline-primary btn-sm";
-      manageBtn.textContent = "Dateien verwalten";
-      manageBtn.disabled = !item.mounted;
-      manageBtn.addEventListener("click", () => run(() => openStorageFileManager(item.id)));
-
-      const modalBtn = document.createElement("button");
-      modalBtn.className = "btn btn-outline-secondary btn-sm";
-      modalBtn.textContent = "Laufwerk verwalten";
-      modalBtn.addEventListener("click", () => openStorageDeviceModal(String(item.id || "")));
-
-      actions.append(manageBtn, modalBtn);
-      row.append(top, meta, extra, actions);
+      row.append(top, meta, extra, actionsHint);
       host.append(row);
     }
   }
@@ -1018,6 +1008,16 @@
       right.className = "d-flex align-items-center gap-1 flex-shrink-0";
       right.append(typeBadge, badge);
       if (!d.is_internal && knownStorageById.has(String(d.id || ""))) {
+        const manageBtn = document.createElement("button");
+        manageBtn.type = "button";
+        manageBtn.className = "btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center";
+        manageBtn.title = "Dateien verwalten";
+        manageBtn.setAttribute("aria-label", "Dateien verwalten");
+        manageBtn.disabled = !(d.mounted && d.present);
+        manageBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V6a2 2 0 0 1 2-2h5l2 2h5a2 2 0 0 1 2 2v14"/><path d="M2 22h20"/></svg>';
+        manageBtn.addEventListener("click", () => run(() => openStorageFileManager(String(d.id || ""))));
+        right.append(manageBtn);
+
         const editBtn = document.createElement("button");
         editBtn.type = "button";
         editBtn.className = "btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center";
@@ -1733,10 +1733,41 @@
 
   async function fetchPortalUpdateStatus(jobId = "") {
     const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : "";
-    const payload = await fetchJson(`/api/system/portal/update/status${query}`, { timeoutMs: 8000 });
+    const payload = await fetchJson(`/api/system/portal/update/status${query}`, { timeoutMs: 8000, cache: "no-store" });
     const data = payload.data || {};
     renderPortalUpdateStatus(data);
     return data;
+  }
+
+  function persistUpdateResultFlash(message, type) {
+    try {
+      window.sessionStorage.setItem(
+        UPDATE_RESULT_FLASH_KEY,
+        JSON.stringify({
+          message: String(message || ""),
+          type: String(type || "secondary"),
+          ts: Date.now(),
+        }),
+      );
+    } catch (_) {
+      // ignore storage errors
+    }
+  }
+
+  function flushPersistedUpdateResultFlash() {
+    try {
+      const raw = window.sessionStorage.getItem(UPDATE_RESULT_FLASH_KEY);
+      if (!raw) return;
+      window.sessionStorage.removeItem(UPDATE_RESULT_FLASH_KEY);
+      const parsed = JSON.parse(raw);
+      const message = String(parsed?.message || "").trim();
+      const type = String(parsed?.type || "secondary");
+      if (message) {
+        toast(message, type);
+      }
+    } catch (_) {
+      // ignore broken cache
+    }
   }
 
   async function pollPortalUpdateStatus(jobId, announceDone = false) {
@@ -1756,15 +1787,22 @@
             updatePollHandle = null;
           }
           if (announceDone) {
+            const done = status === "done";
             toast(
-              status === "done" ? "Portal-Update abgeschlossen." : "Portal-Update fehlgeschlagen.",
-              status === "done" ? "success" : "danger",
+              done ? "Portal-Update abgeschlossen." : "Portal-Update fehlgeschlagen.",
+              done ? "success" : "danger",
             );
-            if (status === "done") {
-              toast("Seite wird neu geladen…", "secondary");
+            if (done) {
+              // Force status re-check so Hero update badge reflects the new revision.
+              await refreshStatus();
+              await new Promise((resolve) => window.setTimeout(resolve, 1200));
+              await refreshStatus();
+              persistUpdateResultFlash("Portal-Update erfolgreich abgeschlossen. Seite wurde neu geladen.", "success");
               window.setTimeout(() => {
                 window.location.reload();
-              }, 1400);
+              }, 2200);
+            } else {
+              persistUpdateResultFlash("Portal-Update fehlgeschlagen. Details im Update-Tab prüfen.", "danger");
             }
           }
           await run(refreshStatus);
@@ -1772,6 +1810,28 @@
       } catch (err) {
         networkErrors += 1;
         if (networkErrors >= 20) {
+          // Fallback: service might have restarted; check latest status without job id.
+          try {
+            const latest = await fetchPortalUpdateStatus("");
+            const latestStatus = String(latest.status || "").toLowerCase();
+            if (latestStatus === "done" || latestStatus === "failed") {
+              if (updatePollHandle) {
+                clearInterval(updatePollHandle);
+                updatePollHandle = null;
+              }
+              if (announceDone) {
+                const done = latestStatus === "done";
+                toast(done ? "Portal-Update abgeschlossen." : "Portal-Update fehlgeschlagen.", done ? "success" : "danger");
+                if (done) {
+                  persistUpdateResultFlash("Portal-Update erfolgreich abgeschlossen.", "success");
+                  window.setTimeout(() => window.location.reload(), 2200);
+                }
+              }
+              return;
+            }
+          } catch (_) {
+            // continue with original error below
+          }
           if (updatePollHandle) {
             clearInterval(updatePollHandle);
             updatePollHandle = null;
@@ -1952,6 +2012,7 @@
     await run(refreshApStatus);
     await run(refreshApClients);
     await run(loadLastPortalUpdateStatus);
+    flushPersistedUpdateResultFlash();
     startApPolling();
     startStoragePolling();
     setWpsTarget(null);
