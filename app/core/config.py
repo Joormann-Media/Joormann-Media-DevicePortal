@@ -8,7 +8,7 @@ DEFAULT_CONFIG: dict = {
     'admin_base_url': '',
     'poll_seconds': 60,
     'registration_token': '',
-    'panel_register_path': '/api/device/register',
+    'panel_register_path': '/api/device/link/register',
     'panel_ping_path': '/api/device/ping',
     'selected_stream_slug': '',
     'selected_stream_name': '',
@@ -86,6 +86,11 @@ def ensure_config() -> dict:
     clamped = clamp_poll_seconds(cfg.get('poll_seconds', 60))
     if clamped != cfg.get('poll_seconds'):
         cfg['poll_seconds'] = clamped
+        changed = True
+
+    # Auto-migrate legacy admin endpoint to the new link-wizard register route.
+    if (cfg.get('panel_register_path') or '').strip() == '/api/device/register':
+        cfg['panel_register_path'] = '/api/device/link/register'
         changed = True
 
     if 'created_at' not in cfg:
