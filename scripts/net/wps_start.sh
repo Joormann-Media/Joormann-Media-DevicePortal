@@ -226,6 +226,9 @@ if [[ -z "${wps_started_method}" ]]; then
   if [[ -n "${WPA_CLI}" ]]; then
     if [[ -n "${TARGET_BSSID}" ]]; then
       run_attempt "wpa_cli -i ${IFACE} wps_pbc ${TARGET_BSSID}" "${WPA_CLI}" -i "${IFACE}" wps_pbc "${TARGET_BSSID}" || true
+      if [[ -z "${wps_started_method}" ]]; then
+        run_attempt "wpa_cli -i ${IFACE} wps_pbc" "${WPA_CLI}" -i "${IFACE}" wps_pbc || true
+      fi
     else
       run_attempt "wpa_cli -i ${IFACE} wps_pbc" "${WPA_CLI}" -i "${IFACE}" wps_pbc || true
     fi
