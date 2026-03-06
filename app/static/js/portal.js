@@ -15,6 +15,17 @@
   let knownNewStorageIds = new Set();
   let knownStorageById = new Map();
   let selectedStorageDeviceId = "";
+  let storageFmPreviewObjectUrl = "";
+  let storageDeletePendingPaths = [];
+  const storageFmState = {
+    active: false,
+    deviceId: "",
+    deviceName: "",
+    currentPath: "",
+    entries: [],
+    selectedPaths: new Set(),
+    activeEntryPath: "",
+  };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
 
   function q(id) {
@@ -366,6 +377,393 @@
     await refreshStorageStatus();
   }
 
+  function escapeHtml(input) {
+    return String(input || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function setStorageFileManagerActive(active) {
+    const host = q("storage-workspace");
+    if (!host) return;
+    host.classList.toggle("storage-file-manager-active", !!active);
+    storageFmState.active = !!active;
+  }
+
+  function clearStoragePreviewObjectUrl() {
+    if (storageFmPreviewObjectUrl) {
+      try {
+        window.URL.revokeObjectURL(storageFmPreviewObjectUrl);
+      } catch (_) {
+        // ignore URL cleanup failures
+      }
+      storageFmPreviewObjectUrl = "";
+    }
+  }
+
+  async function storageFmFetchTree(deviceId, path = "") {
+    const query = new URLSearchParams({ device_id: String(deviceId || ""), path: String(path || "") });
+    return fetchJson(`/api/network/storage/file-manager/tree?${query.toString()}`);
+  }
+
+  async function storageFmFetchList(deviceId, path = "") {
+    const query = new URLSearchParams({ device_id: String(deviceId || ""), path: String(path || "") });
+    return fetchJson(`/api/network/storage/file-manager/list?${query.toString()}`);
+  }
+
+  async function storageFmFetchPreview(deviceId, path) {
+    const query = new URLSearchParams({ device_id: String(deviceId || ""), path: String(path || "") });
+    return fetchJson(`/api/network/storage/file-manager/preview?${query.toString()}`);
+  }
+
+  function renderStorageFmBreadcrumb(treeData) {
+    const host = q("storage-fm-breadcrumb");
+    clearNode(host);
+    const breadcrumb = Array.isArray(treeData.breadcrumb) ? treeData.breadcrumb : [];
+    if (!breadcrumb.length) {
+      host.textContent = "/";
+      return;
+    }
+    breadcrumb.forEach((item, index) => {
+      const part = document.createElement("span");
+      part.className = "storage-fm-breadcrumb-item";
+      part.textContent = item.name || "/";
+      part.addEventListener("click", () => run(() => storageFileManagerLoadPath(item.path || "")));
+      host.append(part);
+      if (index < breadcrumb.length - 1) {
+        host.append(document.createTextNode(" / "));
+      }
+    });
+  }
+
+  function renderStorageFmTree(treeData) {
+    renderStorageFmBreadcrumb(treeData);
+    const host = q("storage-fm-tree-list");
+    clearNode(host);
+    const directories = Array.isArray(treeData.directories) ? treeData.directories : [];
+    if (!directories.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine Unterordner.";
+      host.append(empty);
+      return;
+    }
+    for (const dir of directories) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "list-group-item list-group-item-action px-0";
+      if (dir.blocked || dir.is_symlink) {
+        btn.classList.add("disabled");
+        btn.innerHTML = `<i class="bi bi-link-45deg me-1 text-danger"></i>${escapeHtml(dir.name || "Symlink")} <span class="text-danger small">(blockiert)</span>`;
+      } else {
+        btn.innerHTML = `<i class="bi bi-folder2 me-1"></i>${escapeHtml(dir.name || "Ordner")}`;
+        btn.addEventListener("click", () => run(() => storageFileManagerLoadPath(dir.path || "")));
+      }
+      host.append(btn);
+    }
+  }
+
+  function storageFmEntryIcon(entry) {
+    if (entry.type === "symlink") return "bi-link-45deg";
+    if (entry.type === "directory") return "bi-folder2";
+    if (entry.type === "file") return "bi-file-earmark";
+    return "bi-file-earmark-binary";
+  }
+
+  function renderStorageFmEntries(entries) {
+    const host = q("storage-fm-list");
+    clearNode(host);
+    storageFmState.entries = Array.isArray(entries) ? entries : [];
+    if (!storageFmState.entries.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Dieses Verzeichnis ist leer.";
+      host.append(empty);
+      return;
+    }
+    for (const entry of storageFmState.entries) {
+      const path = String(entry.path || "");
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0 storage-fm-entry";
+      if (entry.blocked || entry.is_symlink) {
+        row.classList.add("storage-fm-entry-blocked");
+      }
+      if (storageFmState.activeEntryPath === path) {
+        row.classList.add("active");
+      }
+
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const left = document.createElement("div");
+      left.className = "d-flex align-items-center gap-2 flex-grow-1 text-truncate";
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "form-check-input mt-0";
+      check.checked = storageFmState.selectedPaths.has(path);
+      if (entry.blocked || entry.is_symlink) {
+        check.disabled = true;
+      }
+      check.addEventListener("click", (event) => event.stopPropagation());
+      check.addEventListener("change", () => {
+        if (check.checked) storageFmState.selectedPaths.add(path);
+        else storageFmState.selectedPaths.delete(path);
+      });
+      const icon = document.createElement("i");
+      icon.className = `bi ${storageFmEntryIcon(entry)}`;
+      const title = document.createElement("span");
+      title.className = "text-truncate";
+      title.textContent = entry.name || "-";
+      left.append(check, icon, title);
+
+      const right = document.createElement("div");
+      right.className = "small text-secondary";
+      const sizeText = entry.type === "directory" ? "Ordner" : formatBytes(entry.size_bytes || 0);
+      right.textContent = sizeText;
+      top.append(left, right);
+
+      const meta = document.createElement("div");
+      meta.className = "small text-secondary";
+      const blockedText = (entry.blocked || entry.is_symlink) ? " | blockiert" : "";
+      meta.textContent = `${entry.type || "entry"} | geändert: ${entry.modified_at || "-"}${blockedText}`;
+
+      if (!(entry.blocked || entry.is_symlink)) {
+        row.addEventListener("click", () => run(() => storageFileManagerSelectEntry(path)));
+        row.addEventListener("dblclick", () => {
+          if (entry.type === "directory") {
+            run(() => storageFileManagerLoadPath(path));
+          }
+        });
+      } else {
+        row.addEventListener("click", () => {
+          toast("Symlink ist aus Sicherheitsgründen blockiert.", "danger");
+        });
+      }
+
+      if (entry.type === "directory" && !(entry.blocked || entry.is_symlink)) {
+        const openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.className = "btn btn-outline-secondary btn-sm mt-1";
+        openBtn.textContent = "Öffnen";
+        openBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          run(() => storageFileManagerLoadPath(path));
+        });
+        row.append(top, meta, openBtn);
+      } else {
+        row.append(top, meta);
+      }
+      host.append(row);
+    }
+  }
+
+  function renderStorageFmPreview(preview) {
+    const host = q("storage-fm-preview");
+    clearStoragePreviewObjectUrl();
+    clearNode(host);
+
+    const info = preview || {};
+    const meta = document.createElement("dl");
+    meta.className = "portal-kv mb-2";
+    const rows = [
+      ["Name", info.name || "-"],
+      ["Typ", info.type || "-"],
+      ["MIME", info.mime_type || "-"],
+      ["Größe", info.type === "directory" ? "-" : formatBytes(info.size_bytes || 0)],
+      ["Pfad", info.path || "/"],
+      ["Geändert", info.modified_at || "-"],
+    ];
+    for (const [label, value] of rows) {
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      dd.textContent = String(value || "-");
+      meta.append(dt, dd);
+    }
+    host.append(meta);
+
+    const kind = String(info.preview_kind || "info");
+    if (kind === "blocked") {
+      const blocked = document.createElement("div");
+      blocked.className = "alert alert-danger py-2 mb-0";
+      blocked.textContent = info.preview_message || "Dieser Eintrag ist blockiert.";
+      host.append(blocked);
+      return;
+    }
+    if (kind === "too_large") {
+      const warning = document.createElement("div");
+      warning.className = "alert alert-warning py-2 mb-0";
+      warning.textContent = info.preview_message || "Datei zu groß für Vorschau.";
+      host.append(warning);
+      return;
+    }
+    if (kind === "text") {
+      const pre = document.createElement("pre");
+      pre.className = "code-block mb-0";
+      pre.style.maxHeight = "360px";
+      pre.style.overflow = "auto";
+      pre.textContent = String(info.text_excerpt || "");
+      host.append(pre);
+      return;
+    }
+    if (kind === "image" && info.file_url) {
+      const img = document.createElement("img");
+      img.className = "storage-fm-preview-image";
+      img.alt = info.name || "Preview";
+      img.src = `${info.file_url}&t=${Date.now()}`;
+      host.append(img);
+      return;
+    }
+    if (kind === "pdf" && info.file_url) {
+      const link = document.createElement("a");
+      link.href = `${info.file_url}&t=${Date.now()}`;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.className = "btn btn-outline-secondary btn-sm";
+      link.textContent = "PDF öffnen";
+      host.append(link);
+      return;
+    }
+    if (Array.isArray(info.children_preview) && info.children_preview.length) {
+      const list = document.createElement("ul");
+      list.className = "small mb-0";
+      for (const item of info.children_preview) {
+        const li = document.createElement("li");
+        li.textContent = item;
+        list.append(li);
+      }
+      host.append(list);
+      return;
+    }
+    const fallback = document.createElement("div");
+    fallback.className = "text-secondary";
+    fallback.textContent = info.preview_message || "Keine direkte Vorschau verfügbar.";
+    host.append(fallback);
+  }
+
+  async function storageFileManagerSelectEntry(path) {
+    if (!storageFmState.active || !storageFmState.deviceId) return;
+    storageFmState.activeEntryPath = String(path || "");
+    renderStorageFmEntries(storageFmState.entries);
+    const payload = await storageFmFetchPreview(storageFmState.deviceId, storageFmState.activeEntryPath);
+    renderStorageFmPreview(payload.data || {});
+  }
+
+  async function storageFileManagerLoadPath(path) {
+    if (!storageFmState.active || !storageFmState.deviceId) return;
+    storageFmState.currentPath = String(path || "");
+    storageFmState.activeEntryPath = "";
+    storageFmState.selectedPaths = new Set();
+    q("storage-fm-preview").textContent = "Datei oder Ordner auswählen.";
+
+    const [treePayload, listPayload] = await Promise.all([
+      storageFmFetchTree(storageFmState.deviceId, storageFmState.currentPath),
+      storageFmFetchList(storageFmState.deviceId, storageFmState.currentPath),
+    ]);
+    const treeData = treePayload.data || {};
+    const listData = listPayload.data || {};
+    storageFmState.currentPath = String(listData.current_path || treeData.current_path || "");
+    q("storage-fm-path-badge").textContent = `/${storageFmState.currentPath}`.replace(/\/$/, "") || "/";
+    renderStorageFmTree(treeData);
+    renderStorageFmEntries(listData.entries || []);
+  }
+
+  async function openStorageFileManager(deviceId) {
+    const item = knownStorageById.get(String(deviceId || ""));
+    if (!item) {
+      toast("Laufwerkdaten nicht gefunden.", "danger");
+      return;
+    }
+    if (!item.mounted || !item.present) {
+      toast("Laufwerk ist nicht gemountet.", "danger");
+      return;
+    }
+    storageFmState.deviceId = String(item.id || "");
+    storageFmState.deviceName = item.name || item.label || item.uuid || item.id || "Storage";
+    storageFmState.currentPath = "";
+    storageFmState.entries = [];
+    storageFmState.selectedPaths = new Set();
+    storageFmState.activeEntryPath = "";
+    q("storage-fm-device-badge").textContent = storageFmState.deviceName;
+    q("storage-fm-path-badge").textContent = "/";
+    q("storage-fm-preview").textContent = "Lade Verzeichnis...";
+    setStorageFileManagerActive(true);
+    await storageFileManagerLoadPath("");
+  }
+
+  function closeStorageFileManager() {
+    storageFmState.deviceId = "";
+    storageFmState.deviceName = "";
+    storageFmState.currentPath = "";
+    storageFmState.entries = [];
+    storageFmState.selectedPaths = new Set();
+    storageFmState.activeEntryPath = "";
+    clearStoragePreviewObjectUrl();
+    setStorageFileManagerActive(false);
+    q("storage-fm-preview").textContent = "Datei oder Ordner auswählen.";
+  }
+
+  function storageFileManagerSelectAll() {
+    const selected = new Set();
+    for (const entry of storageFmState.entries) {
+      if (entry && entry.path && !(entry.blocked || entry.is_symlink)) selected.add(String(entry.path));
+    }
+    storageFmState.selectedPaths = selected;
+    renderStorageFmEntries(storageFmState.entries);
+  }
+
+  function storageFileManagerUnselectAll() {
+    storageFmState.selectedPaths = new Set();
+    renderStorageFmEntries(storageFmState.entries);
+  }
+
+  async function storageFileManagerDeleteSelected() {
+    const paths = Array.from(storageFmState.selectedPaths);
+    if (!paths.length) {
+      toast("Keine Einträge ausgewählt.", "secondary");
+      return;
+    }
+    storageDeletePendingPaths = paths;
+    q("storage-delete-count").textContent = String(paths.length);
+    q("storage-delete-confirm-word").value = "";
+    const modal = bootstrap.Modal.getOrCreateInstance(q("storageDeleteConfirmModal"));
+    modal.show();
+  }
+
+  async function storageFileManagerDeleteConfirmed() {
+    const paths = Array.isArray(storageDeletePendingPaths) ? storageDeletePendingPaths : [];
+    if (!paths.length) {
+      toast("Keine Einträge ausgewählt.", "secondary");
+      return;
+    }
+    const confirmWord = String(q("storage-delete-confirm-word").value || "").trim().toUpperCase();
+    if (confirmWord !== "DELETE") {
+      toast("Löschen nicht bestätigt. Bitte DELETE eingeben.", "danger");
+      return;
+    }
+    const payload = await fetchJson("/api/network/storage/file-manager/delete", {
+      method: "POST",
+      body: {
+        device_id: storageFmState.deviceId,
+        paths,
+        confirm_word: confirmWord,
+        confirm_count: paths.length,
+      },
+      timeoutMs: 45000,
+    });
+    const modal = bootstrap.Modal.getOrCreateInstance(q("storageDeleteConfirmModal"));
+    modal.hide();
+    storageDeletePendingPaths = [];
+    const data = payload.data || {};
+    toast(`${data.deleted_count || 0} Eintrag/Einträge gelöscht.`, "success");
+    if ((data.failed_count || 0) > 0) {
+      toast(`${data.failed_count} Eintrag/Einträge konnten nicht gelöscht werden.`, "danger");
+    }
+    await storageFileManagerLoadPath(storageFmState.currentPath);
+  }
+
   function renderStorageNew(list) {
     const host = q("storage-new-list");
     clearNode(host);
@@ -457,11 +855,22 @@
       extra.className = "text-secondary mb-2";
       extra.textContent = `Enabled: ${item.is_enabled ? "yes" : "no"} | Auto-Mount: ${item.auto_mount ? "yes" : "no"} | Last seen: ${item.last_seen_at || "-"}${item.last_error ? ` | Fehler: ${item.last_error}` : ""}`;
 
-      const actionsHint = document.createElement("div");
-      actionsHint.className = "small text-secondary";
-      actionsHint.textContent = "Aktionen über das Edit-Icon in der Laufwerke-Karte.";
+      const actions = document.createElement("div");
+      actions.className = "d-flex flex-wrap gap-2";
 
-      row.append(top, meta, extra, actionsHint);
+      const manageBtn = document.createElement("button");
+      manageBtn.className = "btn btn-outline-primary btn-sm";
+      manageBtn.textContent = "Dateien verwalten";
+      manageBtn.disabled = !item.mounted;
+      manageBtn.addEventListener("click", () => run(() => openStorageFileManager(item.id)));
+
+      const modalBtn = document.createElement("button");
+      modalBtn.className = "btn btn-outline-secondary btn-sm";
+      modalBtn.textContent = "Laufwerk verwalten";
+      modalBtn.addEventListener("click", () => openStorageDeviceModal(String(item.id || "")));
+
+      actions.append(manageBtn, modalBtn);
+      row.append(top, meta, extra, actions);
       host.append(row);
     }
   }
@@ -664,6 +1073,13 @@
     renderStorageKnown(knownList);
     renderStorageIgnored(data.ignored || []);
     processStorageDeltas(data);
+    if (storageFmState.active) {
+      const selected = knownStorageById.get(String(storageFmState.deviceId || ""));
+      if (!selected || !selected.present || !selected.mounted) {
+        closeStorageFileManager();
+        toast("Dateimanager geschlossen: Laufwerk ist nicht mehr verfügbar.", "secondary");
+      }
+    }
   }
 
   function openStorageDeviceModal(deviceId) {
@@ -1436,6 +1852,15 @@
     q("btn-wifi-manual-add").addEventListener("click", () => run(wifiProfilesAddManual));
     q("btn-wifi-logs-refresh").addEventListener("click", () => run(refreshWifiLogs));
     q("btn-storage-refresh").addEventListener("click", () => run(refreshStorageStatus));
+    q("btn-storage-fm-back").addEventListener("click", () => closeStorageFileManager());
+    q("btn-storage-fm-select-all").addEventListener("click", () => storageFileManagerSelectAll());
+    q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
+    q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
+    q("btn-storage-delete-confirm").addEventListener("click", () => run(storageFileManagerDeleteConfirmed));
+    q("storageDeleteConfirmModal").addEventListener("hidden.bs.modal", () => {
+      storageDeletePendingPaths = [];
+      q("storage-delete-confirm-word").value = "";
+    });
     q("btn-storage-modal-mount").addEventListener("click", () => run(async () => {
       if (!selectedStorageDeviceId) return;
       await storageMount(selectedStorageDeviceId);

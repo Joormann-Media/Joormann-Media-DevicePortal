@@ -67,6 +67,11 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | network | POST | `/api/network/storage/unmount` | `routes_network.api_network_storage_unmount` |
 | network | POST | `/api/network/storage/toggle-enabled` | `routes_network.api_network_storage_toggle_enabled` |
 | network | POST | `/api/network/storage/toggle-automount` | `routes_network.api_network_storage_toggle_automount` |
+| network | GET | `/api/network/storage/file-manager/tree` | `routes_network.api_network_storage_file_manager_tree` |
+| network | GET | `/api/network/storage/file-manager/list` | `routes_network.api_network_storage_file_manager_list` |
+| network | GET | `/api/network/storage/file-manager/preview` | `routes_network.api_network_storage_file_manager_preview` |
+| network | POST | `/api/network/storage/file-manager/delete` | `routes_network.api_network_storage_file_manager_delete` |
+| network | GET | `/api/network/storage/file-manager/file` | `routes_network.api_network_storage_file_manager_file` |
 | network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
 | network | POST | `/api/system/portal/update` | `routes_network.api_system_portal_update` |
 | network | GET | `/api/system/portal/update/status` | `routes_network.api_system_portal_update_status` |
@@ -282,6 +287,15 @@ Neue lokale Storage-Endpunkte arbeiten mit `var/data/config-storage.json`:
 - `POST /api/network/storage/unmount`: manuelles Unmounten eines registrierten Geräts.
 - `POST /api/network/storage/toggle-enabled`: Gerät aktiv/deaktiviert markieren.
 - `POST /api/network/storage/toggle-automount`: Auto-Mount pro Gerät ein/aus.
+- `GET /api/network/storage/file-manager/tree`: Verzeichnis-Browser inkl. Breadcrumb für einen relativen Pfad.
+- `GET /api/network/storage/file-manager/list`: Dateien/Ordner eines relativen Pfads.
+- `GET /api/network/storage/file-manager/preview`: Metadaten + Vorschauinfos für Datei/Ordner.
+- `POST /api/network/storage/file-manager/delete`: sichere Löschung ausgewählter relativer Pfade (inkl. Confirm-Word).
+- `GET /api/network/storage/file-manager/file`: kontrollierte Dateiausgabe für Preview (z. B. Bilder/PDF).
+
+`POST /api/network/storage/file-manager/delete` erwartet zusätzlich:
+- `confirm_word` (`DELETE`)
+- `confirm_count` (Anzahl der selektierten Pfade)
 
 Wiedererkennung erfolgt primär über `UUID`, fallback `PARTUUID`; `/dev/sdX` wird nur als `last_seen_device_path` behandelt.
 

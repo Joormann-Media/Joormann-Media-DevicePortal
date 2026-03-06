@@ -68,3 +68,65 @@ body.portal-body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.8rem;
 }
+
+.storage-workspace {
+  position: relative;
+  overflow: hidden;
+}
+
+.storage-pane {
+  transition: transform 220ms ease, opacity 220ms ease;
+}
+
+.storage-file-manager-active #storage-overview-pane {
+  transform: translateX(-8%);
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+}
+
+.storage-file-manager-active #storage-file-manager-pane {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+  max-height: none;
+}
+
+#storage-file-manager-pane {
+  opacity: 0;
+  transform: translateX(8%);
+  pointer-events: none;
+  max-height: 0;
+  overflow: hidden;
+}
+
+.storage-fm-col {
+  min-height: 500px;
+  max-height: 72vh;
+  overflow: auto;
+}
+
+.storage-fm-breadcrumb-item {
+  cursor: pointer;
+}
+
+.storage-fm-entry {
+  cursor: pointer;
+}
+
+.storage-fm-entry.active {
+  background: #eef2ff;
+}
+
+.storage-fm-entry-blocked {
+  opacity: 0.75;
+  border-left: 3px solid #dc3545;
+}
+
+.storage-fm-preview-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  border: 1px solid var(--portal-border);
+}

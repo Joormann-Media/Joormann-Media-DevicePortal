@@ -90,8 +90,19 @@ Zusätzliche Panel-Aktionen:
 - Externe Gerätebereiche:
   - `Neu erkannte Geräte` (Hinzufügen/Ignorieren)
   - `Ignorierte Geräte` (Zurückholen)
-  - `Registrierte Speicher` (Mount/Unmount/Toggle/Entfernen)
+  - `Registrierte Speicher` (Mount/Unmount/Toggle/Entfernen + `Dateien verwalten`)
 - Polling mit Delta-Logik (Toast nur bei echten Änderungen: neu erkannt, getrennt, gemountet).
+- Integrierter File-Manager (ohne Reload):
+  - Storage-Übersicht slidet aus, File-Manager slidet ein
+  - 3 Spalten:
+    - Verzeichnisse (inkl. Breadcrumb)
+    - Inhalte (inkl. Select all / Unselect all / Delete selected)
+    - Live-Vorschau/Details
+  - `Zurück` blendet wieder die Storage-Übersicht ein.
+  - Sicherheits-Härtung:
+    - Symlink-Einträge werden als blockiert markiert
+    - Delete selected nutzt ein Bestätigungs-Modal mit Pflicht-Eingabe `DELETE`
+    - große Dateien werden nicht blind in Vorschau geladen
 
 ## System Aktionen
 

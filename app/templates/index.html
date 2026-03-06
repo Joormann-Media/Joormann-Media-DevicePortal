@@ -195,73 +195,124 @@
       </div>
 
       <div class="tab-pane fade" id="storage-pane" role="tabpanel" aria-labelledby="storage-tab">
-        <div class="row g-3">
-          <div class="col-12">
-            <div class="portal-card p-3">
-              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                <h2 class="h5 mb-0"><i class="bi bi-hdd-stack me-1"></i>Storage Übersicht</h2>
-                <div class="d-flex align-items-center gap-2">
-                  <span id="storage-summary" class="badge text-bg-secondary">0 bekannt / 0 neu / 0 ignoriert</span>
-                  <button id="btn-storage-refresh" class="btn btn-outline-dark btn-sm">Refresh Storage</button>
+        <div id="storage-workspace" class="storage-workspace">
+          <div id="storage-overview-pane" class="storage-pane storage-pane-active">
+            <div class="row g-3">
+              <div class="col-12">
+                <div class="portal-card p-3">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <h2 class="h5 mb-0"><i class="bi bi-hdd-stack me-1"></i>Storage Übersicht</h2>
+                    <div class="d-flex align-items-center gap-2">
+                      <span id="storage-summary" class="badge text-bg-secondary">0 bekannt / 0 neu / 0 ignoriert</span>
+                      <button id="btn-storage-refresh" class="btn btn-outline-dark btn-sm">Refresh Storage</button>
+                    </div>
+                  </div>
+                  <small class="text-secondary">
+                    Interner Medienspeicher: <code>/var/lib/deviceportal/media.img</code> (20G, ext4, loop) -> <code>/mnt/deviceportal/media</code>.
+                    Externe Laufwerke werden UUID/PARTUUID-basiert wiedererkannt.
+                  </small>
                 </div>
               </div>
-              <small class="text-secondary">
-                Interner Medienspeicher: <code>/var/lib/deviceportal/media.img</code> (20G, ext4, loop) -> <code>/mnt/deviceportal/media</code>.
-                Externe Laufwerke werden UUID/PARTUUID-basiert wiedererkannt.
-              </small>
+
+              <div class="col-12 col-xl-4">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 id="storage-internal-name" class="h6 mb-0">Interner Medienspeicher</h3>
+                    <span id="storage-internal-status" class="badge text-bg-secondary">missing</span>
+                  </div>
+                  <div class="progress mb-2" role="progressbar" aria-label="Internal storage used">
+                    <div id="storage-internal-progress" class="progress-bar" style="width: 0%">0%</div>
+                  </div>
+                  <dl class="portal-kv mb-0">
+                    <dt>Image</dt><dd id="storage-internal-image">-</dd>
+                    <dt>Loop Device</dt><dd id="storage-internal-source">-</dd>
+                    <dt>Mount</dt><dd id="storage-internal-mount">-</dd>
+                    <dt>Dateisystem</dt><dd id="storage-internal-fs">-</dd>
+                    <dt>Gesamt</dt><dd id="storage-internal-size">-</dd>
+                    <dt>Belegt</dt><dd id="storage-internal-used">-</dd>
+                    <dt>Frei</dt><dd id="storage-internal-free">-</dd>
+                    <dt>Nutzung</dt><dd id="storage-internal-percent">-</dd>
+                  </dl>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-8">
+                <div class="portal-card p-3 h-100">
+                  <h3 class="h6 mb-2">Laufwerke</h3>
+                  <div id="storage-drives-list" class="row g-2">
+                    <div class="col-12 text-secondary">Keine Laufwerke erkannt.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-5">
+                <div class="portal-card p-3 h-100">
+                  <h3 class="h6 mb-2">Neu erkannte Geräte</h3>
+                  <div id="storage-new-list" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine neuen Geräte erkannt.</div>
+                  </div>
+                  <hr>
+                  <h3 class="h6 mb-2">Ignorierte Geräte</h3>
+                  <div id="storage-ignored-list" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine ignorierten Geräte.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-7">
+                <div class="portal-card p-3 h-100">
+                  <h3 class="h6 mb-2">Registrierte Speicher</h3>
+                  <div id="storage-known-list" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine registrierten Speicher.</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="col-12 col-xl-4">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h3 id="storage-internal-name" class="h6 mb-0">Interner Medienspeicher</h3>
-                <span id="storage-internal-status" class="badge text-bg-secondary">missing</span>
+          <div id="storage-file-manager-pane" class="storage-pane">
+            <div class="portal-card p-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <button id="btn-storage-fm-back" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-left me-1"></i>Zurück
+                  </button>
+                  <span id="storage-fm-device-badge" class="badge text-bg-light border text-dark">Laufwerk</span>
+                  <span id="storage-fm-path-badge" class="badge text-bg-secondary">/</span>
+                </div>
+                <div class="small text-secondary">Dateimanager arbeitet nur innerhalb des registrierten Mountpoints.</div>
               </div>
-              <div class="progress mb-2" role="progressbar" aria-label="Internal storage used">
-                <div id="storage-internal-progress" class="progress-bar" style="width: 0%">0%</div>
-              </div>
-              <dl class="portal-kv mb-0">
-                <dt>Image</dt><dd id="storage-internal-image">-</dd>
-                <dt>Loop Device</dt><dd id="storage-internal-source">-</dd>
-                <dt>Mount</dt><dd id="storage-internal-mount">-</dd>
-                <dt>Dateisystem</dt><dd id="storage-internal-fs">-</dd>
-                <dt>Gesamt</dt><dd id="storage-internal-size">-</dd>
-                <dt>Belegt</dt><dd id="storage-internal-used">-</dd>
-                <dt>Frei</dt><dd id="storage-internal-free">-</dd>
-                <dt>Nutzung</dt><dd id="storage-internal-percent">-</dd>
-              </dl>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-8">
-            <div class="portal-card p-3 h-100">
-              <h3 class="h6 mb-2">Laufwerke</h3>
-              <div id="storage-drives-list" class="row g-2">
-                <div class="col-12 text-secondary">Keine Laufwerke erkannt.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-5">
-            <div class="portal-card p-3 h-100">
-              <h3 class="h6 mb-2">Neu erkannte Geräte</h3>
-              <div id="storage-new-list" class="list-group list-group-flush small">
-                <div class="text-secondary">Keine neuen Geräte erkannt.</div>
-              </div>
-              <hr>
-              <h3 class="h6 mb-2">Ignorierte Geräte</h3>
-              <div id="storage-ignored-list" class="list-group list-group-flush small">
-                <div class="text-secondary">Keine ignorierten Geräte.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-7">
-            <div class="portal-card p-3 h-100">
-              <h3 class="h6 mb-2">Registrierte Speicher</h3>
-              <div id="storage-known-list" class="list-group list-group-flush small">
-                <div class="text-secondary">Keine registrierten Speicher.</div>
+              <div class="row g-3">
+                <div class="col-12 col-xl-3">
+                  <div class="border rounded p-2 h-100 storage-fm-col">
+                    <h3 class="h6 mb-2"><i class="bi bi-folder2-open me-1"></i>Verzeichnisse</h3>
+                    <div id="storage-fm-breadcrumb" class="small text-secondary mb-2">-</div>
+                    <div id="storage-fm-tree-list" class="list-group list-group-flush small">
+                      <div class="text-secondary">Kein Laufwerk gewählt.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-5">
+                  <div class="border rounded p-2 h-100 storage-fm-col">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                      <h3 class="h6 mb-0"><i class="bi bi-folder me-1"></i>Inhalt</h3>
+                      <div class="d-flex flex-wrap gap-1">
+                        <button id="btn-storage-fm-select-all" class="btn btn-outline-secondary btn-sm">Select all</button>
+                        <button id="btn-storage-fm-unselect-all" class="btn btn-outline-secondary btn-sm">Unselect all</button>
+                        <button id="btn-storage-fm-delete-selected" class="btn btn-outline-danger btn-sm">Delete selected</button>
+                      </div>
+                    </div>
+                    <div id="storage-fm-list" class="list-group list-group-flush small">
+                      <div class="text-secondary">Kein Laufwerk gewählt.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <div class="border rounded p-2 h-100 storage-fm-col">
+                    <h3 class="h6 mb-2"><i class="bi bi-eye me-1"></i>Vorschau / Details</h3>
+                    <div id="storage-fm-preview" class="small text-secondary">Datei oder Ordner auswählen.</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -503,6 +554,29 @@
             <button id="btn-storage-modal-format" type="button" class="btn btn-outline-danger btn-sm">Formatieren</button>
           </div>
           <button id="btn-storage-modal-remove" type="button" class="btn btn-danger btn-sm">Entfernen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="storageDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger me-1"></i>Löschen bestätigen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">Du bist dabei, <strong id="storage-delete-count">0</strong> Eintrag/Einträge zu löschen.</p>
+          <p class="mb-2 text-danger">Diese Aktion kann nicht rückgängig gemacht werden.</p>
+          <label for="storage-delete-confirm-word" class="form-label small text-secondary mb-1">
+            Gib zur Bestätigung <code>DELETE</code> ein:
+          </label>
+          <input id="storage-delete-confirm-word" type="text" class="form-control" autocomplete="off" spellcheck="false" placeholder="DELETE">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button id="btn-storage-delete-confirm" type="button" class="btn btn-danger">Endgültig löschen</button>
         </div>
       </div>
     </div>

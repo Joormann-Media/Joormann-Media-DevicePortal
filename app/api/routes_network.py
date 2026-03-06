@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from app.core.config import ensure_config
 from app.core.jsonio import write_json
@@ -33,6 +33,7 @@ from app.core.netcontrol import (
     wifi_scan,
 )
 from app.core.paths import CONFIG_PATH
+from app.core.storage_file_manager import StorageDeleteService, StorageFileManagerService
 from app.core.storage_state import (
     format_storage_device,
     get_storage_state,
@@ -48,6 +49,8 @@ from app.core.storage_state import (
 from app.core.timeutil import utc_now
 
 bp_network = Blueprint("network", __name__)
+storage_fm = StorageFileManagerService()
+storage_delete_service = StorageDeleteService(storage_fm)
 
 
 def _ok(data: dict, status: int = 200):
@@ -396,6 +399,85 @@ def api_network_storage_toggle_automount():
         return _ok(set_storage_auto_mount(device_id=device_id, auto_mount=auto_mount))
     except NetControlError as exc:
         status = 500 if exc.code == "storage_config_write_failed" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/storage/file-manager/tree")
+def api_network_storage_file_manager_tree():
+    device_id = str(request.args.get("device_id") or "").strip()
+    rel_path = str(request.args.get("path") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Query field 'device_id' is required", status=400)
+    try:
+        return _ok(storage_fm.list_tree(device_id=device_id, relative_path=rel_path))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed",) else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/storage/file-manager/list")
+def api_network_storage_file_manager_list():
+    device_id = str(request.args.get("device_id") or "").strip()
+    rel_path = str(request.args.get("path") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Query field 'device_id' is required", status=400)
+    try:
+        return _ok(storage_fm.list_directory(device_id=device_id, relative_path=rel_path))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed",) else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/storage/file-manager/preview")
+def api_network_storage_file_manager_preview():
+    device_id = str(request.args.get("device_id") or "").strip()
+    rel_path = str(request.args.get("path") or "").strip()
+    if not device_id or not rel_path:
+        return _error("invalid_payload", "Query fields 'device_id' and 'path' are required", status=400)
+    try:
+        return _ok(storage_fm.preview(device_id=device_id, relative_path=rel_path))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed",) else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/file-manager/delete")
+def api_network_storage_file_manager_delete():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    selected_paths = data.get("paths")
+    confirm_word = str(data.get("confirm_word") or "").strip()
+    try:
+        confirm_count = int(data.get("confirm_count") or 0)
+    except Exception:
+        return _error("invalid_payload", "Field 'confirm_count' must be an integer", status=400)
+    if not device_id or not isinstance(selected_paths, list):
+        return _error("invalid_payload", "Fields 'device_id' and 'paths' are required", status=400)
+    try:
+        return _ok(
+            storage_delete_service.delete_selected(
+                device_id=device_id,
+                selected_paths=selected_paths,
+                confirm_word=confirm_word,
+                confirm_count=confirm_count,
+            )
+        )
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed",) else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/storage/file-manager/file")
+def api_network_storage_file_manager_file():
+    device_id = str(request.args.get("device_id") or "").strip()
+    rel_path = str(request.args.get("path") or "").strip()
+    if not device_id or not rel_path:
+        return _error("invalid_payload", "Query fields 'device_id' and 'path' are required", status=400)
+    try:
+        file_path, mime = storage_fm.resolve_downloadable_file(device_id=device_id, relative_path=rel_path)
+        return send_file(str(file_path), mimetype=mime, as_attachment=False, conditional=True)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed",) else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
