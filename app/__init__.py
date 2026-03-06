@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from flask import Flask, jsonify
+from werkzeug.exceptions import HTTPException
 
 from app.api.routes_network import bp_network
 from app.api.routes_panel import bp_panel
@@ -27,6 +28,11 @@ def create_app() -> Flask:
 
     @app.errorhandler(Exception)
     def handle_exception(exc: Exception):
+        if isinstance(exc, HTTPException):
+            return (
+                jsonify(ok=False, error=exc.name.lower().replace(" ", "_"), detail=exc.description),
+                exc.code or 500,
+            )
         return jsonify(ok=False, error='internal_error', detail=str(exc)), 500
 
     return app
