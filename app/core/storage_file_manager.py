@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
+from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
 
 from app.core.netcontrol import NetControlError
 from app.core.storage_config import ensure_storage_config
@@ -29,6 +31,8 @@ _IMAGE_MAX_PIXELS = 40_000_000
 _IMAGE_MAX_SIDE = 9000
 _PDF_MAX_BYTES = 12 * 1024 * 1024
 _FILE_ROUTE_MAX_BYTES = 16 * 1024 * 1024
+_UPLOAD_MAX_FILES = 100
+_UPLOAD_MAX_FILE_BYTES = 512 * 1024 * 1024
 _DIR_SAMPLE_LIMIT = 8
 _DELETE_CONFIRM_WORD = "DELETE"
 
@@ -335,6 +339,68 @@ class StorageFileManagerService:
             raise NetControlError(code="storage_preview_too_large", message="File too large for preview endpoint")
         return target, (mime or "application/octet-stream")
 
+    def upload_files(self, device_id: str, relative_path: str, files: list[FileStorage]) -> dict[str, Any]:
+        if not files:
+            raise NetControlError(code="storage_upload_no_files", message="No files provided")
+        if len(files) > _UPLOAD_MAX_FILES:
+            raise NetControlError(code="storage_upload_too_many_files", message="Too many files in one upload")
+
+        root = self.resolve_root(device_id)
+        target_dir = self.resolve_relative_path(root, relative_path)
+        if not target_dir.exists():
+            raise NetControlError(code="storage_path_not_found", message="Directory not found")
+        if target_dir.is_symlink():
+            raise NetControlError(code="storage_symlink_blocked", message="Symlink entries are blocked for security")
+        if not target_dir.is_dir():
+            raise NetControlError(code="storage_path_not_directory", message="Upload target is not a directory")
+
+        uploaded: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+
+        for file_item in files:
+            if not isinstance(file_item, FileStorage):
+                continue
+            original_name = str(file_item.filename or "").strip()
+            safe_name = secure_filename(original_name)
+            if not safe_name:
+                skipped.append({"file": original_name or "-", "reason": "invalid filename"})
+                continue
+
+            file_item.stream.seek(0, os.SEEK_END)
+            size = int(file_item.stream.tell() or 0)
+            file_item.stream.seek(0)
+            if size <= 0:
+                skipped.append({"file": original_name or safe_name, "reason": "empty file"})
+                continue
+            if size > _UPLOAD_MAX_FILE_BYTES:
+                skipped.append({"file": original_name or safe_name, "reason": "file too large"})
+                continue
+
+            destination = self._next_available_name(target_dir, safe_name)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            file_item.save(str(destination))
+            rel = self.relative_to_root(root, destination)
+            uploaded.append(
+                {
+                    "name": destination.name,
+                    "original_name": original_name or destination.name,
+                    "path": rel,
+                    "size_bytes": int(destination.stat().st_size),
+                }
+            )
+
+        if not uploaded and skipped:
+            raise NetControlError(code="storage_upload_failed", message="No files uploaded", detail=skipped[0]["reason"])
+
+        return {
+            "device_id": root.device_id,
+            "target_path": self.relative_to_root(root, target_dir),
+            "uploaded": uploaded,
+            "uploaded_count": len(uploaded),
+            "skipped": skipped,
+            "skipped_count": len(skipped),
+        }
+
     def _build_breadcrumb(self, root: StorageRoot, current: Path) -> list[dict[str, str]]:
         breadcrumb: list[dict[str, str]] = [{"name": root.display_name, "path": ""}]
         rel = self.relative_to_root(root, current)
@@ -357,6 +423,20 @@ class StorageFileManagerService:
                 return int(width), int(height)
         except Exception:
             return 0, 0
+
+    @staticmethod
+    def _next_available_name(base_dir: Path, filename: str) -> Path:
+        candidate = base_dir / filename
+        if not candidate.exists():
+            return candidate
+        stem = candidate.stem
+        suffix = candidate.suffix
+        idx = 2
+        while True:
+            next_candidate = base_dir / f"{stem}-{idx}{suffix}"
+            if not next_candidate.exists():
+                return next_candidate
+            idx += 1
 
     @staticmethod
     def _is_mounted(path: Path) -> bool:

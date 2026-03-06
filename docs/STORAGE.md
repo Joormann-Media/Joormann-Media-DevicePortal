@@ -86,13 +86,14 @@ Eigenschaften:
 - `GET /api/network/storage/file-manager/preview`
 - `POST /api/network/storage/file-manager/delete`
 - `GET /api/network/storage/file-manager/file`
+- `POST /api/network/storage/file-manager/upload`
 
 ## Integrierter File-Manager (Storage-Tab)
 - Einstieg pro registriertem Laufwerk über `Dateien verwalten`.
 - 3-Spalten-Ansicht:
   - links: Verzeichnis-Browser inkl. Breadcrumb
   - mitte: Ordner-/Dateiliste inkl. `Select all`, `Unselect all`, `Delete selected`
-  - rechts: Live-Vorschau / Details
+  - rechts: Upload (Drag&Drop/Auswahl, AJAX-Progress) + Live-Vorschau / Details
 - View-Wechsel ohne Reload:
   - Storage-Übersicht slidet aus
   - File-Manager slidet ein

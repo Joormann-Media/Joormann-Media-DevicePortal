@@ -97,12 +97,13 @@ Zusätzliche Panel-Aktionen:
   - 3 Spalten:
     - Verzeichnisse (inkl. Breadcrumb)
     - Inhalte (inkl. Select all / Unselect all / Delete selected)
-    - Live-Vorschau/Details
+    - Upload + Live-Vorschau/Details
   - `Zurück` blendet wieder die Storage-Übersicht ein.
   - Sicherheits-Härtung:
     - Symlink-Einträge werden als blockiert markiert
     - Delete selected nutzt ein Bestätigungs-Modal mit Pflicht-Eingabe `DELETE`
     - große Dateien werden nicht blind in Vorschau geladen
+  - Uploadbox (Drag&Drop + Dateiauswahl) mit AJAX-Fortschritt pro Datei und Live-Refresh der Dateiliste.
 
 ## System Aktionen
 

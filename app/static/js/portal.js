@@ -26,6 +26,8 @@
     entries: [],
     selectedPaths: new Set(),
     activeEntryPath: "",
+    uploadQueue: [],
+    uploadRunning: false,
   };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
@@ -454,17 +456,28 @@
       return;
     }
     for (const dir of directories) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "list-group-item list-group-item-action px-0";
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0 d-flex align-items-center justify-content-between gap-2";
+      const label = document.createElement("span");
+      label.className = "text-truncate";
       if (dir.blocked || dir.is_symlink) {
-        btn.classList.add("disabled");
-        btn.innerHTML = `<i class="bi bi-link-45deg me-1 text-danger"></i>${escapeHtml(dir.name || "Symlink")} <span class="text-danger small">(blockiert)</span>`;
+        label.innerHTML = `<i class="bi bi-link-45deg me-1 text-danger"></i>${escapeHtml(dir.name || "Symlink")} <span class="text-danger small">(blockiert)</span>`;
       } else {
-        btn.innerHTML = `<i class="bi bi-folder2 me-1"></i>${escapeHtml(dir.name || "Ordner")}`;
-        btn.addEventListener("click", () => run(() => storageFileManagerLoadPath(dir.path || "")));
+        label.innerHTML = `<i class="bi bi-folder2 me-1"></i>${escapeHtml(dir.name || "Ordner")}`;
+        const openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.className = "btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center";
+        openBtn.title = "Verzeichnis öffnen";
+        openBtn.setAttribute("aria-label", "Verzeichnis öffnen");
+        // Lucide-style folder-open icon as requested.
+        openBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 2h5a2 2 0 0 1 2 2v2"/><path d="M3 20h13"/><path d="M18 6h1a2 2 0 0 1 2 2v3"/><path d="M14 18h7"/><path d="m18 14 4 4-4 4"/></svg>';
+        openBtn.addEventListener("click", () => run(() => storageFileManagerLoadPath(dir.path || "")));
+        row.append(label, openBtn);
+        host.append(row);
+        continue;
       }
-      host.append(btn);
+      row.append(label);
+      host.append(row);
     }
   }
 
@@ -689,9 +702,13 @@
     storageFmState.entries = [];
     storageFmState.selectedPaths = new Set();
     storageFmState.activeEntryPath = "";
+    storageFmState.uploadQueue = [];
+    storageFmState.uploadRunning = false;
     q("storage-fm-device-badge").textContent = storageFmState.deviceName;
     q("storage-fm-path-badge").textContent = "/";
     q("storage-fm-preview").textContent = "Lade Verzeichnis...";
+    q("storage-fm-upload-progress-wrap").classList.add("d-none");
+    renderStorageFmUploadQueue();
     setStorageFileManagerActive(true);
     await storageFileManagerLoadPath("");
   }
@@ -703,9 +720,12 @@
     storageFmState.entries = [];
     storageFmState.selectedPaths = new Set();
     storageFmState.activeEntryPath = "";
+    storageFmState.uploadQueue = [];
+    storageFmState.uploadRunning = false;
     clearStoragePreviewObjectUrl();
     setStorageFileManagerActive(false);
     q("storage-fm-preview").textContent = "Datei oder Ordner auswählen.";
+    renderStorageFmUploadQueue();
   }
 
   function storageFileManagerSelectAll() {
@@ -765,6 +785,139 @@
       toast(`${data.failed_count} Eintrag/Einträge konnten nicht gelöscht werden.`, "danger");
     }
     await storageFileManagerLoadPath(storageFmState.currentPath);
+  }
+
+  function storageFmHumanSize(bytes) {
+    return formatBytes(bytes || 0);
+  }
+
+  function renderStorageFmUploadQueue() {
+    const queueEl = q("storage-fm-upload-queue");
+    clearNode(queueEl);
+    if (!storageFmState.uploadQueue.length) {
+      const empty = document.createElement("li");
+      empty.className = "list-group-item text-secondary";
+      empty.setAttribute("data-empty", "1");
+      empty.textContent = "Keine Dateien ausgewählt.";
+      queueEl.append(empty);
+      return;
+    }
+    storageFmState.uploadQueue.forEach((item, idx) => {
+      const li = document.createElement("li");
+      li.className = "list-group-item d-flex justify-content-between align-items-center gap-2";
+      li.innerHTML = `
+        <div class="text-truncate" style="max-width:72%;">
+          <div class="text-truncate"><i class="bi bi-file-earmark me-1"></i>${escapeHtml(item.file.name || "Datei")}</div>
+          <div class="small text-secondary">${storageFmHumanSize(item.file.size || 0)}</div>
+        </div>
+      `;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "btn btn-sm btn-outline-danger";
+      del.textContent = "✖";
+      del.disabled = storageFmState.uploadRunning;
+      del.addEventListener("click", () => {
+        storageFmState.uploadQueue.splice(idx, 1);
+        renderStorageFmUploadQueue();
+      });
+      li.append(del);
+      queueEl.append(li);
+    });
+  }
+
+  function storageFmAddFiles(fileList) {
+    Array.from(fileList || []).forEach((file) => {
+      if (!file) return;
+      storageFmState.uploadQueue.push({ file });
+    });
+    renderStorageFmUploadQueue();
+  }
+
+  function storageFmSetUploadProgress(current, total, text = "") {
+    const wrap = q("storage-fm-upload-progress-wrap");
+    const bar = q("storage-fm-upload-progress-bar");
+    const label = q("storage-fm-upload-progress-text");
+    wrap.classList.remove("d-none");
+    const percent = total > 0 ? Math.floor((current / total) * 100) : 0;
+    bar.style.width = `${percent}%`;
+    bar.textContent = `${percent}%`;
+    label.textContent = text || "-";
+  }
+
+  function xhrUploadStorageFile(url, formData, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url, true);
+      xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+      xhr.onload = () => {
+        let payload = {};
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        } catch (_) {
+          payload = {};
+        }
+        if (xhr.status >= 200 && xhr.status < 300 && payload.ok !== false) {
+          resolve(payload);
+        } else {
+          const err = payload?.error?.message || payload?.message || `Upload fehlgeschlagen (${xhr.status})`;
+          reject(new Error(err));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Netzwerkfehler beim Upload"));
+      if (xhr.upload && typeof onProgress === "function") {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(e.loaded, e.total);
+        };
+      }
+      xhr.send(formData);
+    });
+  }
+
+  async function storageFmUploadAll() {
+    if (!storageFmState.active || !storageFmState.deviceId) {
+      toast("Kein Laufwerk ausgewählt.", "danger");
+      return;
+    }
+    if (!storageFmState.uploadQueue.length) {
+      toast("Keine Dateien ausgewählt.", "secondary");
+      return;
+    }
+    if (storageFmState.uploadRunning) return;
+
+    storageFmState.uploadRunning = true;
+    renderStorageFmUploadQueue();
+    const queue = [...storageFmState.uploadQueue];
+    const errors = [];
+    let uploadedCount = 0;
+
+    for (let idx = 0; idx < queue.length; idx += 1) {
+      const item = queue[idx];
+      const fd = new FormData();
+      fd.append("device_id", storageFmState.deviceId);
+      fd.append("path", storageFmState.currentPath || "");
+      fd.append("files", item.file, item.file.name);
+      storageFmSetUploadProgress(0, item.file.size || 1, `Upload ${idx + 1}/${queue.length}: ${item.file.name}`);
+      try {
+        await xhrUploadStorageFile("/api/network/storage/file-manager/upload", fd, (loaded, total) => {
+          storageFmSetUploadProgress(loaded, total, `Upload ${idx + 1}/${queue.length}: ${item.file.name}`);
+        });
+        uploadedCount += 1;
+      } catch (err) {
+        errors.push(`${item.file.name}: ${err.message || "Upload fehlgeschlagen"}`);
+      }
+    }
+
+    storageFmState.uploadRunning = false;
+    storageFmState.uploadQueue = [];
+    renderStorageFmUploadQueue();
+    storageFmSetUploadProgress(1, 1, "Upload abgeschlossen");
+    await storageFileManagerLoadPath(storageFmState.currentPath);
+    if (uploadedCount > 0) {
+      toast(`${uploadedCount} Datei(en) hochgeladen.`, "success");
+    }
+    if (errors.length) {
+      toast(errors.join(" | "), "danger");
+    }
   }
 
   function renderStorageNew(list) {
@@ -1923,6 +2076,25 @@
     q("btn-storage-fm-select-all").addEventListener("click", () => storageFileManagerSelectAll());
     q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
     q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
+    const uploadDropZone = q("storage-fm-upload-dropzone");
+    const uploadPicker = q("storage-fm-upload-picker");
+    uploadDropZone.addEventListener("click", () => uploadPicker.click());
+    uploadDropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      uploadDropZone.classList.add("active");
+    });
+    uploadDropZone.addEventListener("dragleave", () => uploadDropZone.classList.remove("active"));
+    uploadDropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      uploadDropZone.classList.remove("active");
+      storageFmAddFiles(event.dataTransfer?.files || []);
+      run(storageFmUploadAll);
+    });
+    uploadPicker.addEventListener("change", (event) => {
+      storageFmAddFiles(event.target.files || []);
+      uploadPicker.value = "";
+      run(storageFmUploadAll);
+    });
     q("btn-storage-delete-confirm").addEventListener("click", () => run(storageFileManagerDeleteConfirmed));
     q("storageDeleteConfirmModal").addEventListener("hidden.bs.modal", () => {
       storageDeletePendingPaths = [];

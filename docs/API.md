@@ -72,6 +72,7 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | network | GET | `/api/network/storage/file-manager/preview` | `routes_network.api_network_storage_file_manager_preview` |
 | network | POST | `/api/network/storage/file-manager/delete` | `routes_network.api_network_storage_file_manager_delete` |
 | network | GET | `/api/network/storage/file-manager/file` | `routes_network.api_network_storage_file_manager_file` |
+| network | POST | `/api/network/storage/file-manager/upload` | `routes_network.api_network_storage_file_manager_upload` |
 | network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
 | network | POST | `/api/system/portal/update` | `routes_network.api_system_portal_update` |
 | network | GET | `/api/system/portal/update/status` | `routes_network.api_system_portal_update_status` |
@@ -292,6 +293,7 @@ Neue lokale Storage-Endpunkte arbeiten mit `var/data/config-storage.json`:
 - `GET /api/network/storage/file-manager/preview`: Metadaten + Vorschauinfos für Datei/Ordner.
 - `POST /api/network/storage/file-manager/delete`: sichere Löschung ausgewählter relativer Pfade (inkl. Confirm-Word).
 - `GET /api/network/storage/file-manager/file`: kontrollierte Dateiausgabe für Preview (z. B. Bilder/PDF).
+- `POST /api/network/storage/file-manager/upload`: Upload in das aktuell gewählte Verzeichnis (`multipart/form-data`, `files[]`).
 
 `POST /api/network/storage/file-manager/delete` erwartet zusätzlich:
 - `confirm_word` (`DELETE`)
