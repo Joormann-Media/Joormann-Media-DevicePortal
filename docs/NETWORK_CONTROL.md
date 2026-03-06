@@ -10,9 +10,11 @@ Die Netzwerkkontrolle wird über dedizierte Wrapper-Skripte (`scripts/net/*`) um
 - Wrapper-Skripte:
   - `scripts/net/network_info.sh`
   - `scripts/net/wifi_toggle.sh`
+  - `scripts/net/wifi_profile.sh`
   - `scripts/net/bluetooth_toggle.sh`
   - `scripts/net/lan_toggle.sh`
   - `scripts/net/wps_start.sh`
+  - `scripts/net/tailscale_dns_fix.sh`
 
 ## Sicherheitsprinzipien
 
@@ -34,9 +36,11 @@ Bevorzugt wird `sudoers` mit eingeschränkter NOPASSWD-Liste:
 Nur folgende Aktionen werden per sudo freigegeben:
 
 - `wifi_toggle.sh`
+- `wifi_profile.sh`
 - `bluetooth_toggle.sh`
 - `lan_toggle.sh`
 - `wps_start.sh`
+- `tailscale_dns_fix.sh`
 
 `network_info.sh` läuft ohne sudo.
 
@@ -47,6 +51,15 @@ Nur folgende Aktionen werden per sudo freigegeben:
 - `POST /api/network/bluetooth/toggle`
 - `POST /api/network/lan/toggle`
 - `POST /api/network/wps`
+- `GET /api/wifi/scan`
+- `POST /api/wifi/connect`
+- `GET /api/wifi/profiles`
+- `POST /api/wifi/profiles/add`
+- `POST /api/wifi/profiles/delete`
+- `POST /api/wifi/profiles/prefer`
+- `POST /api/wifi/profiles/up`
+- `POST /api/wifi/profiles/apply`
+- `POST /api/system/tailscale/disable-dns`
 
 ## WPS Schnelltest
 

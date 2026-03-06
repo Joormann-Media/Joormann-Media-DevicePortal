@@ -9,7 +9,7 @@ Die Startseite `/` wurde auf eine tab-basierte SaaS-UI umgestellt (Bootstrap 5 +
 - Tab 1: `Status & Link`
 - Tab 2: `Netzwerk & WLAN`
 - Tab 3: `Stream Einstellungen` (Platzhalter)
-- Tab 4: `System Einstellungen` (Platzhalter)
+- Tab 4: `System Einstellungen` (DNS-Fix Aktion)
 
 ## Frontend-Dateien
 
@@ -48,6 +48,18 @@ Zusätzliche Panel-Aktionen:
 - `Wi-Fi Toggle` -> `POST /api/network/wifi/toggle`
 - `Bluetooth Toggle` -> `POST /api/network/bluetooth/toggle`
 - `LAN Toggle` -> `POST /api/network/lan/toggle`
+- `Scan` (WLAN Netze) -> `GET /api/wifi/scan`
+- `Verbinden` (SSID) -> `POST /api/wifi/connect`
+- `Profile Refresh` -> `GET /api/wifi/profiles`
+- `Profile Add` -> `POST /api/wifi/profiles/add`
+- `Profile Prefer` -> `POST /api/wifi/profiles/prefer`
+- `Profile Up` -> `POST /api/wifi/profiles/up`
+- `Profile Delete` -> `POST /api/wifi/profiles/delete`
+- `Profile Apply` -> `POST /api/wifi/profiles/apply`
+
+## System Aktionen
+
+- `Tailscale DNS-Override deaktivieren` -> `POST /api/system/tailscale/disable-dns`
 
 ## Response-Konvention für Netzwerk-Endpunkte
 

@@ -21,6 +21,8 @@ DEPLOY_NET_SCRIPTS = Path(os.getenv("NETCONTROL_BIN_DIR", "/opt/deviceportal/bin
 ALLOWED_LAN_INTERFACES = {"eth0"}
 ALLOWED_WIFI_INTERFACES = {"wlan0"}
 DEFAULT_WIFI_IFACE = "wlan0"
+PREFERRED_WIFI_PRIORITY = 999
+NONPREFERRED_WIFI_PRIORITY = 100
 
 
 def _candidate_script_paths(script_name: str) -> list[Path]:
@@ -108,6 +110,133 @@ def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     if rc != 0:
         raise NetControlError(code="lan_toggle_failed", message="Failed to toggle LAN interface", detail=err or out)
     return {"ifname": iface, "enabled": enabled, "stdout": out}
+
+
+def _parse_wifi_scan_output(raw: str) -> list[dict]:
+    networks: list[dict] = []
+    for line in (raw or "").splitlines():
+        if not line.strip():
+            continue
+        parts = line.split(":")
+        in_use_field = parts[0] if len(parts) > 0 else ""
+        in_use = in_use_field.strip() in ("*", "yes")
+        if len(parts) >= 4:
+            security = parts[-1]
+            signal = parts[-2]
+            ssid = ":".join(parts[1:-2])
+        elif len(parts) == 3:
+            security = parts[-1]
+            signal = parts[-2]
+            ssid = parts[1]
+        else:
+            ssid = parts[1] if len(parts) > 1 else ""
+            signal = ""
+            security = ""
+        ssid = (ssid or "").strip() or "<hidden>"
+        try:
+            signal_num = int((signal or "0").strip())
+        except Exception:
+            signal_num = 0
+        networks.append(
+            {
+                "in_use": bool(in_use),
+                "ssid": ssid,
+                "signal": signal_num,
+                "security": (security or "").strip(),
+            }
+        )
+    networks.sort(key=lambda item: int(item.get("signal") or 0), reverse=True)
+    return networks
+
+
+def _parse_wifi_profiles_output(raw: str) -> list[dict]:
+    profiles: list[dict] = []
+    for line in (raw or "").splitlines():
+        if not line.strip():
+            continue
+        parts = line.split(":")
+        if len(parts) < 5:
+            continue
+        name = ":".join(parts[:-4]).strip()
+        uuid = parts[-4].strip()
+        conn_type = parts[-3].strip()
+        autoconnect = parts[-2].strip().lower() == "yes"
+        prio_raw = parts[-1].strip()
+        if conn_type not in ("wifi", "802-11-wireless"):
+            continue
+        try:
+            priority = int(prio_raw)
+        except Exception:
+            priority = 0
+        profiles.append(
+            {
+                "name": name,
+                "uuid": uuid,
+                "type": conn_type,
+                "autoconnect": autoconnect,
+                "priority": priority,
+            }
+        )
+    return profiles
+
+
+def wifi_scan(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    rc, out, err = _run_script("wifi_profile.sh", ["scan", iface], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_scan_failed", message="Failed to scan Wi-Fi networks", detail=err or out)
+    return {"ifname": iface, "networks": _parse_wifi_scan_output(out)}
+
+
+def wifi_connect(ssid: str, password: str = "", ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+    ssid = (ssid or "").strip()
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    if not ssid:
+        raise NetControlError(code="invalid_payload", message="Missing ssid")
+    args = ["connect", ssid, password or "", iface]
+    rc, out, err = _run_script("wifi_profile.sh", args, timeout=35, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_connect_failed", message="Failed to connect Wi-Fi", detail=err or out)
+    return {"ssid": ssid, "ifname": iface, "stdout": out}
+
+
+def wifi_profiles_list() -> dict:
+    rc, out, err = _run_script("wifi_profile.sh", ["profiles"], timeout=12, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_profiles_failed", message="Failed to list Wi-Fi profiles", detail=err or out)
+    return {"profiles": _parse_wifi_profiles_output(out), "stdout": out}
+
+
+def wifi_profile_set(ssid: str, priority: int, autoconnect: bool) -> dict:
+    ssid = (ssid or "").strip()
+    if not ssid:
+        raise NetControlError(code="invalid_payload", message="Missing ssid")
+    prio = int(priority)
+    auto = "yes" if autoconnect else "no"
+    rc, out, err = _run_script("wifi_profile.sh", ["profile-set", ssid, str(prio), auto], timeout=12, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_profile_set_failed", message="Failed to set Wi-Fi profile", detail=err or out)
+    return {"ssid": ssid, "priority": prio, "autoconnect": autoconnect, "stdout": out}
+
+
+def wifi_profile_delete(ssid: str) -> dict:
+    ssid = (ssid or "").strip()
+    if not ssid:
+        raise NetControlError(code="invalid_payload", message="Missing ssid")
+    rc, out, err = _run_script("wifi_profile.sh", ["profile-delete", ssid], timeout=12, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_profile_delete_failed", message="Failed to delete Wi-Fi profile", detail=err or out)
+    return {"ssid": ssid, "stdout": out}
+
+
+def wifi_profile_up(ssid: str) -> dict:
+    ssid = (ssid or "").strip()
+    if not ssid:
+        raise NetControlError(code="invalid_payload", message="Missing ssid")
+    rc, out, err = _run_script("wifi_profile.sh", ["profile-up", ssid], timeout=25, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_profile_up_failed", message="Failed to activate Wi-Fi profile", detail=err or out)
+    return {"ssid": ssid, "stdout": out}
 
 
 def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:

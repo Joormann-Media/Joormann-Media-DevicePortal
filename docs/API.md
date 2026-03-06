@@ -35,6 +35,15 @@ Nicht vollständig vereinheitlicht. Typische Patterns:
 | network | POST | `/api/network/bluetooth/toggle` | `routes_network.api_network_bluetooth_toggle` |
 | network | POST | `/api/network/lan/toggle` | `routes_network.api_network_lan_toggle` |
 | network | POST | `/api/network/wps` | `routes_network.api_network_wps` |
+| network | GET | `/api/wifi/scan` | `routes_network.api_wifi_scan` |
+| network | POST | `/api/wifi/connect` | `routes_network.api_wifi_connect` |
+| network | GET | `/api/wifi/profiles` | `routes_network.api_wifi_profiles` |
+| network | POST | `/api/wifi/profiles/add` | `routes_network.api_wifi_profiles_add` |
+| network | POST | `/api/wifi/profiles/delete` | `routes_network.api_wifi_profiles_delete` |
+| network | POST | `/api/wifi/profiles/prefer` | `routes_network.api_wifi_profiles_prefer` |
+| network | POST | `/api/wifi/profiles/up` | `routes_network.api_wifi_profiles_up` |
+| network | POST | `/api/wifi/profiles/apply` | `routes_network.api_wifi_profiles_apply` |
+| network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
 
 Quelle der Route-Definitionen:
 - [app/api/routes_status.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/api/routes_status.py)
@@ -247,6 +256,61 @@ curl -sS -X POST http://127.0.0.1:5070/api/plan/pull \
   }
 }
 ```
+
+---
+
+## 15) GET `/api/wifi/scan`
+- scannt verfügbare WLAN-Netze (sortiert nach Signal)
+- Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "ifname": "wlan0",
+    "networks": [
+      {"in_use": false, "ssid": "Office", "signal": 78, "security": "WPA2"},
+      {"in_use": true, "ssid": "Guest", "signal": 62, "security": "WPA2"}
+    ]
+  }
+}
+```
+
+## 16) POST `/api/wifi/connect`
+- Body:
+```json
+{"ssid":"Office","password":"secret","ifname":"wlan0"}
+```
+- verbindet direkt per `nmcli`, speichert Profil in Config (`wifi_profiles`)
+
+## 17) GET `/api/wifi/profiles`
+- merged Sicht aus:
+  - konfigurierten Profilen (`config.json`)
+  - vorhandenen NetworkManager-Profilen
+
+## 18) POST `/api/wifi/profiles/add`
+- Body:
+```json
+{"ssid":"Office","password":"secret","priority":80,"autoconnect":true,"ifname":"wlan0"}
+```
+- erstellt/aktualisiert Profil, setzt NM-Autoconnect-Settings und persistiert in Config
+
+## 19) POST `/api/wifi/profiles/delete`
+- Body: `{"ssid":"Office"}`
+
+## 20) POST `/api/wifi/profiles/prefer`
+- Body: `{"ssid":"Office"}`
+- setzt preferred SSID (`priority=999`, `autoconnect=true`)
+
+## 21) POST `/api/wifi/profiles/up`
+- Body: `{"ssid":"Office"}`
+- aktiviert explizit ein Profil
+
+## 22) POST `/api/wifi/profiles/apply`
+- setzt alle Profile entsprechend Priorität/Autoconnect
+- versucht danach die beste Verbindung hochzuziehen
+
+## 23) POST `/api/system/tailscale/disable-dns`
+- schaltet Tailscale DNS-Override aus (`tailscale set --accept-dns=false`)
 
 **Error example**
 ```json

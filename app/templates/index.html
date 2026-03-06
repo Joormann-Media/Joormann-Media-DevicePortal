@@ -170,6 +170,44 @@
               </dl>
             </div>
           </div>
+
+          <div class="col-12 col-xl-6">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0">WLAN Netze</h3>
+                <button id="btn-wifi-scan" class="btn btn-outline-dark btn-sm">Scan</button>
+              </div>
+              <div id="wifi-scan-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Noch kein Scan ausgeführt.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-6">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0">Gespeicherte WLAN Profile</h3>
+                <div class="d-flex gap-2">
+                  <button id="btn-wifi-profiles-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  <button id="btn-wifi-profiles-apply" class="btn btn-outline-primary btn-sm">Apply</button>
+                </div>
+              </div>
+              <div id="wifi-profiles-list" class="list-group list-group-flush small mb-3">
+                <div class="text-secondary">Keine Profile geladen.</div>
+              </div>
+              <div class="row g-2">
+                <div class="col-md-5">
+                  <input id="wifi-manual-ssid" class="form-control form-control-sm" placeholder="SSID">
+                </div>
+                <div class="col-md-5">
+                  <input id="wifi-manual-password" class="form-control form-control-sm" type="password" placeholder="Passwort (optional)">
+                </div>
+                <div class="col-md-2 d-grid">
+                  <button id="btn-wifi-manual-add" class="btn btn-outline-success btn-sm">Add</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

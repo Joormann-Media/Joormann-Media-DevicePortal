@@ -1,6 +1,7 @@
 (() => {
   const els = {};
   let networkState = null;
+  let wifiProfilesState = null;
 
   function q(id) {
     return document.getElementById(id);
@@ -103,6 +104,12 @@
 
   function yn(v) {
     return v ? "yes" : "no";
+  }
+
+  function clearNode(el) {
+    while (el && el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
   }
 
   function setStatusBadge(linked, online) {
@@ -213,6 +220,189 @@
     return data;
   }
 
+  function renderWifiScan(networks) {
+    const host = q("wifi-scan-list");
+    clearNode(host);
+    if (!Array.isArray(networks) || networks.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine WLAN Netze gefunden.";
+      host.append(empty);
+      return;
+    }
+    for (const item of networks) {
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const title = document.createElement("strong");
+      title.textContent = item.ssid || "<hidden>";
+      const badge = document.createElement("span");
+      badge.className = `badge ${item.in_use ? "text-bg-success" : "text-bg-secondary"}`;
+      badge.textContent = item.in_use ? "connected" : `${item.signal || 0}%`;
+      top.append(title, badge);
+
+      const meta = document.createElement("div");
+      meta.className = "text-secondary mb-2";
+      meta.textContent = `Security: ${item.security || "OPEN"}`;
+
+      const actions = document.createElement("div");
+      actions.className = "d-flex gap-2";
+      const connectBtn = document.createElement("button");
+      connectBtn.className = "btn btn-outline-primary btn-sm";
+      connectBtn.textContent = "Verbinden";
+      connectBtn.addEventListener("click", () => run(() => connectSsid(item.ssid || "")));
+      const wpsBtn = document.createElement("button");
+      wpsBtn.className = "btn btn-outline-secondary btn-sm";
+      wpsBtn.textContent = "WPS";
+      wpsBtn.addEventListener("click", () => run(startWps));
+      actions.append(connectBtn, wpsBtn);
+      row.append(top, meta, actions);
+      host.append(row);
+    }
+  }
+
+  async function refreshWifiScan() {
+    const payload = await fetchJson("/api/wifi/scan");
+    const data = payload.data || {};
+    renderWifiScan(data.networks || []);
+    return data;
+  }
+
+  async function connectSsid(ssid, password = "") {
+    if (!ssid || ssid === "<hidden>") {
+      toast("Hidden SSID bitte manuell hinzufügen.", "secondary");
+      return;
+    }
+    let pw = password;
+    if (!pw) {
+      pw = window.prompt(`Passwort für "${ssid}" (leer lassen für open/WPS):`, "") || "";
+    }
+    const payload = await fetchJson("/api/wifi/connect", {
+      method: "POST",
+      body: { ssid, password: pw, ifname: "wlan0" },
+      timeoutMs: 30000,
+    });
+    await refreshNetwork();
+    await refreshWifiProfiles();
+    toast(`WLAN verbunden/angefragt: ${payload.data?.ssid || ssid}`, "success");
+  }
+
+  function renderWifiProfiles(payload) {
+    const data = payload.data || {};
+    wifiProfilesState = data;
+    const host = q("wifi-profiles-list");
+    clearNode(host);
+    const configured = data.configured || [];
+    const preferred = data.preferred_ssid || "";
+    const last = data.last_wifi_ssid || "";
+    if (!configured.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine WLAN Profile gespeichert.";
+      host.append(empty);
+      return;
+    }
+    for (const item of configured) {
+      const ssid = item.ssid || "";
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const title = document.createElement("strong");
+      title.textContent = ssid;
+      const info = document.createElement("span");
+      info.className = "text-secondary";
+      const flags = [];
+      if (preferred && ssid === preferred) flags.push("preferred");
+      if (last && ssid === last) flags.push("last");
+      info.textContent = `prio=${item.priority} auto=${item.autoconnect ? "yes" : "no"} ${flags.join(" ")}`.trim();
+      top.append(title, info);
+
+      const actions = document.createElement("div");
+      actions.className = "d-flex gap-2 mt-2";
+      const upBtn = document.createElement("button");
+      upBtn.className = "btn btn-outline-primary btn-sm";
+      upBtn.textContent = "Verbinden";
+      upBtn.addEventListener("click", () => run(() => wifiProfileUp(ssid)));
+      const prefBtn = document.createElement("button");
+      prefBtn.className = "btn btn-outline-secondary btn-sm";
+      prefBtn.textContent = "Prefer";
+      prefBtn.addEventListener("click", () => run(() => wifiProfilePrefer(ssid)));
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn btn-outline-danger btn-sm";
+      delBtn.textContent = "Löschen";
+      delBtn.addEventListener("click", () => run(() => wifiProfileDelete(ssid)));
+      actions.append(upBtn, prefBtn, delBtn);
+      row.append(top, actions);
+      host.append(row);
+    }
+  }
+
+  async function refreshWifiProfiles() {
+    const payload = await fetchJson("/api/wifi/profiles");
+    renderWifiProfiles(payload);
+    return payload;
+  }
+
+  async function wifiProfileUp(ssid) {
+    await fetchJson("/api/wifi/profiles/up", { method: "POST", body: { ssid } });
+    await refreshNetwork();
+    await refreshWifiProfiles();
+    toast(`Profil verbunden: ${ssid}`, "success");
+  }
+
+  async function wifiProfilePrefer(ssid) {
+    await fetchJson("/api/wifi/profiles/prefer", { method: "POST", body: { ssid } });
+    await refreshWifiProfiles();
+    toast(`Preferred gesetzt: ${ssid}`, "success");
+  }
+
+  async function wifiProfileDelete(ssid) {
+    if (!window.confirm(`Profil wirklich löschen? (${ssid})`)) return;
+    await fetchJson("/api/wifi/profiles/delete", { method: "POST", body: { ssid } });
+    await refreshWifiProfiles();
+    toast(`Profil gelöscht: ${ssid}`, "success");
+  }
+
+  async function wifiProfilesApply() {
+    const payload = await fetchJson("/api/wifi/profiles/apply", { method: "POST", timeoutMs: 45000 });
+    const connected = payload.data?.connected_ssid || "";
+    await refreshNetwork();
+    await refreshWifiProfiles();
+    if (connected) {
+      toast(`Profile angewendet, verbunden mit: ${connected}`, "success");
+    } else {
+      toast("Profile angewendet, keine aktive Verbindung erkannt.", "secondary");
+    }
+  }
+
+  async function wifiProfilesAddManual() {
+    const ssid = (q("wifi-manual-ssid").value || "").trim();
+    const password = q("wifi-manual-password").value || "";
+    if (!ssid) {
+      toast("SSID fehlt.", "danger");
+      return;
+    }
+    const body = {
+      ssid,
+      password,
+      priority: 80,
+      autoconnect: true,
+      ifname: "wlan0",
+    };
+    const payload = await fetchJson("/api/wifi/profiles/add", { method: "POST", body, timeoutMs: 30000 });
+    q("wifi-manual-password").value = "";
+    await refreshNetwork();
+    await refreshWifiProfiles();
+    const warning = payload.data?.warning;
+    if (warning) {
+      toast(warning, "secondary");
+    } else {
+      toast(`Profil gespeichert: ${ssid}`, "success");
+    }
+  }
+
   async function panelCheckLink() {
     const data = await fetchJson("/api/panel/link-status");
     q("status-linked").textContent = yn(!!data.linked);
@@ -315,10 +505,19 @@
         toast(`${message}${connectedInfo} ${hint}`, "success");
       } catch (err) {
         triggerError = err instanceof Error ? err : new Error(String(err));
-        toast(
-          `WPS-Trigger meldet Fehler, Verbindung wird trotzdem weiter geprüft: ${triggerError.message || "Unbekannter Fehler"}`,
-          "secondary",
-        );
+        const msg = triggerError.message || "Unbekannter Fehler";
+        const probablyStarted = /wps(_| )?pbc|WPS wurde gestartet/i.test(msg);
+        if (probablyStarted) {
+          toast(
+            "WPS wurde ausgelöst. Verbindung wird weiter geprüft (30-120 Sekunden möglich).",
+            "secondary",
+          );
+        } else {
+          toast(
+            `WPS-Trigger meldet Fehler, Verbindung wird trotzdem weiter geprüft: ${msg}`,
+            "secondary",
+          );
+        }
       }
 
       await refreshNetwork();
@@ -382,6 +581,10 @@
     els.btnLanToggle.addEventListener("click", () => run(toggleLan));
     q("btn-wps").addEventListener("click", () => run(startWps));
     q("btn-refresh-network").addEventListener("click", () => run(refreshNetwork));
+    q("btn-wifi-scan").addEventListener("click", () => run(refreshWifiScan));
+    q("btn-wifi-profiles-refresh").addEventListener("click", () => run(refreshWifiProfiles));
+    q("btn-wifi-profiles-apply").addEventListener("click", () => run(wifiProfilesApply));
+    q("btn-wifi-manual-add").addEventListener("click", () => run(wifiProfilesAddManual));
     q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
     q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
 
@@ -417,6 +620,8 @@
     bindButtons();
     await run(refreshStatus);
     await run(refreshNetwork);
+    await run(refreshWifiScan);
+    await run(refreshWifiProfiles);
   }
 
   window.addEventListener("DOMContentLoaded", boot);
