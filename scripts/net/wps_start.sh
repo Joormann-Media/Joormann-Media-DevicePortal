@@ -176,6 +176,8 @@ if [[ "${WIFI_RADIO_STATE}" == "disabled" || "${WIFI_RADIO_STATE}" == "off" ]]; 
     exit 5
   }
 fi
+"${NMCLI}" device set "${IFACE}" managed yes >/dev/null 2>&1 || true
+ip link set "${IFACE}" up >/dev/null 2>&1 || true
 
 attempt_details=()
 wps_started_method=""
@@ -235,6 +237,25 @@ fi
 if [[ -n "${wps_started_method}" ]]; then
   if ! [[ "${WAIT_SECONDS}" =~ ^[0-9]+$ ]]; then
     WAIT_SECONDS="120"
+  fi
+  if [[ "${WAIT_SECONDS}" -eq 0 ]]; then
+    # Non-blocking mode for HTTP endpoints: finalize in background.
+    (
+      max_wait=130
+      elapsed_bg=0
+      while [[ ${elapsed_bg} -le ${max_wait} ]]; do
+        if is_connected; then
+          ensure_ipv4
+          exit 0
+        fi
+        sleep 3
+        elapsed_bg=$((elapsed_bg + 3))
+      done
+      exit 0
+    ) >/dev/null 2>&1 &
+    emit_result "true" "wps_started" "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken." "${wps_started_method}" "Noch keine Verbindung erkannt. Je nach Router kann es 30-120 Sekunden dauern." "${IFACE}"
+    collect_wifi_info
+    exit 0
   fi
   elapsed=0
   while [[ ${elapsed} -le ${WAIT_SECONDS} ]]; do

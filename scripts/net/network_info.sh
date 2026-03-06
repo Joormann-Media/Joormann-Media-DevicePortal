@@ -66,6 +66,7 @@ WIFI_SECURITY=""
 WIFI_FREQ=""
 WIFI_RATE=""
 WIFI_CONN_NAME=""
+WPA_CLI_PRESENT="$(cmd_present wpa_cli)"
 
 if [[ "$NMCLI_PRESENT" == "1" ]]; then
   WIFI_RADIO="$(safe_cmd nmcli -t -f WIFI general | head -n1)"
@@ -87,6 +88,27 @@ if [[ "$NMCLI_PRESENT" == "1" ]]; then
   fi
 
   WIFI_CONN_NAME="$(safe_cmd nmcli -t -f NAME,TYPE,DEVICE connection show --active | awk -F: -v dev="$WIFI_IF" '$2=="802-11-wireless" && $3==dev {print $1; exit}')"
+fi
+
+if [[ "$WIFI_CONNECTED" != "1" && "$WPA_CLI_PRESENT" == "1" ]]; then
+  WPA_STATUS="$(safe_cmd wpa_cli -i "$WIFI_IF" status)"
+  WPA_STATE="$(echo "$WPA_STATUS" | awk -F= '/^wpa_state=/{print $2; exit}')"
+  WPA_SSID="$(echo "$WPA_STATUS" | awk -F= '/^ssid=/{print $2; exit}')"
+  WPA_BSSID="$(echo "$WPA_STATUS" | awk -F= '/^bssid=/{print $2; exit}')"
+  WPA_FREQ="$(echo "$WPA_STATUS" | awk -F= '/^freq=/{print $2; exit}')"
+  if [[ "$WPA_STATE" == "COMPLETED" && -n "$WPA_SSID" ]]; then
+    WIFI_CONNECTED="1"
+    WIFI_SSID="$WPA_SSID"
+    if [[ -z "$WIFI_CONN_NAME" ]]; then
+      WIFI_CONN_NAME="$WPA_SSID"
+    fi
+    if [[ -z "$WIFI_BSSID" ]]; then
+      WIFI_BSSID="$WPA_BSSID"
+    fi
+    if [[ -z "$WIFI_FREQ" ]]; then
+      WIFI_FREQ="$WPA_FREQ"
+    fi
+  fi
 fi
 
 BT_ENABLED="0"
