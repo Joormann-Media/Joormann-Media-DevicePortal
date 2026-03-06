@@ -13,6 +13,7 @@
   let storageInitialized = false;
   let knownStorageStates = new Map();
   let knownNewStorageIds = new Set();
+  const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
 
   function q(id) {
     return document.getElementById(id);
@@ -1234,6 +1235,11 @@
     ];
     logEl.textContent = lines.join("\n");
     logEl.scrollTop = logEl.scrollHeight;
+    try {
+      window.localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ data, cached_at: new Date().toISOString() }));
+    } catch (_) {
+      // ignore cache errors
+    }
   }
 
   async function fetchPortalUpdateStatus(jobId = "") {
@@ -1287,6 +1293,18 @@
 
   async function loadLastPortalUpdateStatus() {
     try {
+      const raw = window.localStorage.getItem(UPDATE_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.data && typeof parsed.data === "object") {
+          renderPortalUpdateStatus(parsed.data);
+        }
+      }
+    } catch (_) {
+      // ignore cache read errors
+    }
+
+    try {
       const data = await fetchPortalUpdateStatus("");
       const status = String(data.status || "").toLowerCase();
       const hasJob = !!String(data.job_id || "").trim();
@@ -1296,6 +1314,25 @@
       }
     } catch (_) {
       // Keep UI usable even if status endpoint is temporarily unavailable.
+    }
+  }
+
+  function openUpdateTab() {
+    const systemTab = q("system-tab");
+    const systemSubUpdateTab = q("system-sub-update-tab");
+    const updatePane = q("system-sub-update");
+    if (systemTab && window.bootstrap && window.bootstrap.Tab) {
+      window.bootstrap.Tab.getOrCreateInstance(systemTab).show();
+    } else if (systemTab) {
+      systemTab.click();
+    }
+    if (systemSubUpdateTab && window.bootstrap && window.bootstrap.Tab) {
+      window.bootstrap.Tab.getOrCreateInstance(systemSubUpdateTab).show();
+    } else if (systemSubUpdateTab) {
+      systemSubUpdateTab.click();
+    }
+    if (updatePane && typeof updatePane.scrollIntoView === "function") {
+      updatePane.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
@@ -1327,6 +1364,10 @@
       await refreshApClients();
     }));
     q("btn-system-update-portal").addEventListener("click", () => run(updatePortal));
+    const heroUpdateBtn = q("hero-update-btn");
+    if (heroUpdateBtn) {
+      heroUpdateBtn.addEventListener("click", () => openUpdateTab());
+    }
     q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
     q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
 
