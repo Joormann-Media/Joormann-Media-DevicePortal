@@ -55,6 +55,9 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | network | POST | `/api/network/wifi/wps/start` | `routes_network.api_network_wifi_wps_start` |
 | network | GET | `/api/network/wifi/wps/status` | `routes_network.api_network_wifi_wps_status` |
 | network | GET | `/api/network/wifi/logs` | `routes_network.api_network_wifi_logs` |
+| network | GET | `/api/network/ap/status` | `routes_network.api_network_ap_status` |
+| network | POST | `/api/network/ap/toggle` | `routes_network.api_network_ap_toggle` |
+| network | GET | `/api/network/ap/clients` | `routes_network.api_network_ap_clients` |
 | network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
 
 Quelle der Route-Definitionen:

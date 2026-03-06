@@ -12,8 +12,11 @@ from app.core.netcontrol import (
     PREFERRED_WIFI_PRIORITY,
     NetControlError,
     disable_tailscale_dns_override,
+    get_ap_clients,
+    get_ap_status,
     get_wifi_status,
     get_network_info,
+    set_ap_enabled,
     set_bluetooth_enabled,
     set_lan_enabled,
     set_wifi_enabled,
@@ -205,6 +208,43 @@ def api_network_lan_toggle():
         return _ok(result)
     except NetControlError as exc:
         status = 500 if exc.code == "script_missing" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/ap/status")
+def api_network_ap_status():
+    ifname = (request.args.get("ifname") or "wlan0").strip()
+    profile = (request.args.get("profile") or "jm-hotspot").strip()
+    try:
+        return _ok(get_ap_status(ifname=ifname, profile=profile))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/ap/toggle")
+def api_network_ap_toggle():
+    data = request.get_json(force=True, silent=True) or {}
+    if "enabled" not in data or not isinstance(data.get("enabled"), bool):
+        return _error("invalid_payload", "Field 'enabled' (bool) is required", status=400)
+    ifname = (data.get("ifname") or "wlan0").strip()
+    profile = (data.get("profile") or "jm-hotspot").strip()
+    try:
+        result = set_ap_enabled(bool(data["enabled"]), ifname=ifname, profile=profile)
+        log_event("ap", "AP hotspot toggled", data={"enabled": result.get("enabled", False), "ifname": ifname, "profile": profile})
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/ap/clients")
+def api_network_ap_clients():
+    ifname = (request.args.get("ifname") or "wlan0").strip()
+    try:
+        return _ok(get_ap_clients(ifname=ifname))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 

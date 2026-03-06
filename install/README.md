@@ -28,6 +28,7 @@ sudo ./install/setup_netcontrol.sh "$(pwd)" djanebmb
 - deployed `scripts/net/*` nach `/opt/deviceportal/bin`
 - legt `/etc/sudoers.d/deviceportal-net` an (NOPASSWD nur für erlaubte Skripte)
 - enthält WLAN-Operationen für `scan/connect/profiles` (`wifi_profile.sh`)
+- enthält AP-Operationen für Hotspot (`ap_enable.sh`, `ap_disable.sh`, `ap_status.sh`, `ap_clients.sh`)
 - ergänzt (falls vorhanden) den Service-User um Gruppe `netdev`
 - sudo-Aufrufe erfolgen non-interaktiv (`sudo -n`) über strikt definierte Wrapper-Skripte
 

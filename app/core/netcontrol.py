@@ -21,6 +21,7 @@ DEPLOY_NET_SCRIPTS = Path(os.getenv("NETCONTROL_BIN_DIR", "/opt/deviceportal/bin
 ALLOWED_LAN_INTERFACES = {"eth0"}
 ALLOWED_WIFI_INTERFACES = {"wlan0"}
 DEFAULT_WIFI_IFACE = "wlan0"
+DEFAULT_AP_PROFILE = os.getenv("AP_PROFILE_NAME", "jm-hotspot")
 PREFERRED_WIFI_PRIORITY = 999
 NONPREFERRED_WIFI_PRIORITY = 100
 
@@ -324,6 +325,69 @@ def get_wifi_status(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
         "security": parsed.get("security", ""),
         "ip": parsed.get("ip", ""),
     }
+
+
+def set_ap_enabled(enabled: bool, ifname: str = DEFAULT_WIFI_IFACE, profile: str = DEFAULT_AP_PROFILE) -> dict:
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    ap_profile = (profile or DEFAULT_AP_PROFILE).strip() or DEFAULT_AP_PROFILE
+    if iface not in ALLOWED_WIFI_INTERFACES:
+        raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
+    script_name = "ap_enable.sh" if enabled else "ap_disable.sh"
+    rc, out, err = _run_script(script_name, [iface, ap_profile], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="ap_toggle_failed", message="Failed to toggle AP hotspot", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {
+        "ifname": parsed.get("ifname", iface),
+        "profile": parsed.get("profile", ap_profile),
+        "enabled": parsed.get("enabled", "false").lower() == "true",
+        "stdout": out,
+    }
+
+
+def get_ap_status(ifname: str = DEFAULT_WIFI_IFACE, profile: str = DEFAULT_AP_PROFILE) -> dict:
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    ap_profile = (profile or DEFAULT_AP_PROFILE).strip() or DEFAULT_AP_PROFILE
+    if iface not in ALLOWED_WIFI_INTERFACES:
+        raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
+    rc, out, err = _run_script("ap_status.sh", [iface, ap_profile], timeout=8, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="ap_status_failed", message="Failed to read AP status", detail=err or out)
+    parsed = _parse_kv_output(out)
+    try:
+        clients_count = int(parsed.get("clients_count", "0"))
+    except Exception:
+        clients_count = 0
+    return {
+        "ifname": parsed.get("ifname", iface),
+        "profile": parsed.get("profile", ap_profile),
+        "active": parsed.get("active", "false").lower() == "true",
+        "ssid": parsed.get("ssid", ""),
+        "ip": parsed.get("ip", ""),
+        "clients_count": clients_count,
+        "radio": parsed.get("radio", ""),
+        "device_state": parsed.get("device_state", ""),
+        "active_connection": parsed.get("active_connection", ""),
+    }
+
+
+def get_ap_clients(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    if iface not in ALLOWED_WIFI_INTERFACES:
+        raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
+    rc, out, err = _run_script("ap_clients.sh", [iface], timeout=12, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="ap_clients_failed", message="Failed to read AP clients", detail=err or out)
+    try:
+        payload = json.loads(out) if out else {}
+    except Exception as exc:
+        raise NetControlError(code="ap_clients_invalid_json", message="AP clients script returned invalid JSON", detail=str(exc))
+    if not isinstance(payload, dict):
+        payload = {}
+    clients = payload.get("clients")
+    if not isinstance(clients, list):
+        clients = []
+    return {"ifname": iface, "clients": clients}
 
 
 def start_wps(ifname: str = DEFAULT_WIFI_IFACE, target_bssid: str = "", target_ssid: str = "") -> dict:

@@ -4,6 +4,9 @@
   let wifiProfilesState = null;
   let selectedWpsTarget = null;
   let wpsPollHandle = null;
+  let apPollHandle = null;
+  let apClientsInitialized = false;
+  let apKnownConnectedMacs = new Set();
 
   function q(id) {
     return document.getElementById(id);
@@ -240,6 +243,105 @@
     const data = await fetchJson("/api/network/info");
     renderNetwork(data);
     return data;
+  }
+
+  function renderApStatus(payload) {
+    const data = payload.data || payload || {};
+    const active = !!data.active;
+    q("ap-ssid").textContent = data.ssid || "-";
+    q("ap-ip").textContent = data.ip || "-";
+    q("ap-profile").textContent = data.profile || "jm-hotspot";
+    q("ap-clients-count").textContent = String(data.clients_count || 0);
+    const badge = q("ap-active-badge");
+    badge.classList.remove("text-bg-success", "text-bg-secondary");
+    badge.classList.add(active ? "text-bg-success" : "text-bg-secondary");
+    badge.textContent = active ? "aktiv" : "inaktiv";
+  }
+
+  function renderApClients(clients) {
+    const host = q("ap-clients-list");
+    clearNode(host);
+    if (!Array.isArray(clients) || clients.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine verbundenen AP-Clients.";
+      host.append(empty);
+      return;
+    }
+    for (const c of clients) {
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const mac = document.createElement("strong");
+      mac.textContent = c.mac || "-";
+      const status = document.createElement("span");
+      status.className = `badge ${c.status === "connected" ? "text-bg-success" : "text-bg-secondary"}`;
+      status.textContent = c.status || "unknown";
+      top.append(mac, status);
+
+      const meta = document.createElement("div");
+      meta.className = "text-secondary";
+      const ip = c.ip || "-";
+      const hostname = c.hostname || "-";
+      const lastSeen = c.last_seen || "-";
+      meta.textContent = `IP: ${ip} | Host: ${hostname} | Last seen: ${lastSeen}`;
+      row.append(top, meta);
+      host.append(row);
+    }
+  }
+
+  async function refreshApStatus() {
+    const payload = await fetchJson("/api/network/ap/status");
+    renderApStatus(payload);
+    return payload;
+  }
+
+  async function refreshApClients() {
+    const payload = await fetchJson("/api/network/ap/clients");
+    const data = payload.data || {};
+    const clients = Array.isArray(data.clients) ? data.clients : [];
+    renderApClients(clients);
+
+    const currentConnected = new Set(
+      clients
+        .filter((c) => (c.status || "") === "connected" && c.mac)
+        .map((c) => String(c.mac).toLowerCase()),
+    );
+
+    if (apClientsInitialized) {
+      for (const mac of currentConnected) {
+        if (!apKnownConnectedMacs.has(mac)) {
+          const client = clients.find((c) => String(c.mac || "").toLowerCase() === mac) || {};
+          const suffix = client.ip ? ` (${client.ip})` : "";
+          toast(`Neuer AP-Client verbunden: ${mac}${suffix}`, "success");
+        }
+      }
+    }
+    apKnownConnectedMacs = currentConnected;
+    apClientsInitialized = true;
+    return payload;
+  }
+
+  async function toggleAp(enabled) {
+    await fetchJson("/api/network/ap/toggle", { method: "POST", body: { enabled, ifname: "wlan0", profile: "jm-hotspot" } });
+    await refreshApStatus();
+    await refreshApClients();
+    toast(enabled ? "AP wurde eingeschaltet." : "AP wurde ausgeschaltet.", "success");
+  }
+
+  function startApPolling() {
+    if (apPollHandle) {
+      window.clearInterval(apPollHandle);
+    }
+    apPollHandle = window.setInterval(async () => {
+      try {
+        await refreshApStatus();
+        await refreshApClients();
+      } catch (_) {
+        // ignore transient polling failures
+      }
+    }, 5000);
   }
 
   function renderWifiScan(networks) {
@@ -704,6 +806,12 @@
     q("btn-wifi-profiles-apply").addEventListener("click", () => run(wifiProfilesApply));
     q("btn-wifi-manual-add").addEventListener("click", () => run(wifiProfilesAddManual));
     q("btn-wifi-logs-refresh").addEventListener("click", () => run(refreshWifiLogs));
+    q("btn-ap-enable").addEventListener("click", () => run(() => toggleAp(true)));
+    q("btn-ap-disable").addEventListener("click", () => run(() => toggleAp(false)));
+    q("btn-ap-refresh").addEventListener("click", () => run(async () => {
+      await refreshApStatus();
+      await refreshApClients();
+    }));
     q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
     q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
 
@@ -743,6 +851,9 @@
     await run(refreshWifiProfiles);
     await run(refreshWpsStatus);
     await run(refreshWifiLogs);
+    await run(refreshApStatus);
+    await run(refreshApClients);
+    startApPolling();
     setWpsTarget(null);
   }
 

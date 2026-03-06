@@ -14,6 +14,10 @@ Die Netzwerkkontrolle wird über dedizierte Wrapper-Skripte (`scripts/net/*`) um
   - `scripts/net/wifi_status.sh`
   - `scripts/net/wifi_disconnect.sh`
   - `scripts/net/wifi_dhcp.sh`
+  - `scripts/net/ap_enable.sh`
+  - `scripts/net/ap_disable.sh`
+  - `scripts/net/ap_status.sh`
+  - `scripts/net/ap_clients.sh`
   - `scripts/net/bluetooth_toggle.sh`
   - `scripts/net/lan_toggle.sh`
   - `scripts/net/wps_start.sh`
@@ -43,6 +47,10 @@ Nur folgende Aktionen werden per sudo freigegeben:
 - `wifi_status.sh`
 - `wifi_disconnect.sh`
 - `wifi_dhcp.sh`
+- `ap_enable.sh`
+- `ap_disable.sh`
+- `ap_status.sh`
+- `ap_clients.sh`
 - `bluetooth_toggle.sh`
 - `lan_toggle.sh`
 - `wps_start.sh`
@@ -62,6 +70,9 @@ Nur folgende Aktionen werden per sudo freigegeben:
 - `POST /api/network/wps`
 - `POST /api/network/wifi/wps/start`
 - `GET /api/network/wifi/wps/status`
+- `GET /api/network/ap/status`
+- `POST /api/network/ap/toggle`
+- `GET /api/network/ap/clients`
 - `GET /api/network/wifi/logs`
 - `GET /api/wifi/scan`
 - `POST /api/wifi/connect`

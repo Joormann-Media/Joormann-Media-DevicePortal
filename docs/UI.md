@@ -59,6 +59,9 @@ Zusätzliche Panel-Aktionen:
 - `WPS Live Status` -> `GET /api/network/wifi/wps/status`
 - `WLAN Runtime Status` -> `GET /api/network/wifi/status`
 - `WLAN Logs` -> `GET /api/network/wifi/logs`
+- `AP Status` -> `GET /api/network/ap/status`
+- `AP Toggle` -> `POST /api/network/ap/toggle`
+- `AP Clients` -> `GET /api/network/ap/clients`
 
 ## Netzwerk-Tab Inhalte
 
@@ -71,6 +74,7 @@ Zusätzliche Panel-Aktionen:
 - Gespeicherte WLANs inkl. `Verbinden/Prefer/Löschen`.
 - Manuelle WLAN-Konfiguration inkl. Hidden-SSID-Option.
 - Live-Ereignisbereich (`WPS / Ereignisse`) mit laufendem Polling.
+- AP-Bereich mit Status, AP-Buttons und AP-Clientliste (Live-Polling mit Delta-Flash für neue Clients).
 
 ## System Aktionen
 
