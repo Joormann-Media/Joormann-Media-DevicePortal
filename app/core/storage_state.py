@@ -76,7 +76,7 @@ def _mounted_source(target: str) -> str:
     if not target:
         return ""
     try:
-        out = subprocess.check_output(["findmnt", "-rn", "-o", "SOURCE", "--target", target], text=True, stderr=subprocess.DEVNULL)
+        out = subprocess.check_output(["findmnt", "-rn", "-M", target, "-o", "SOURCE"], text=True, stderr=subprocess.DEVNULL)
         return out.strip()
     except Exception:
         return ""
@@ -86,7 +86,7 @@ def _mounted_fstype(target: str) -> str:
     if not target:
         return ""
     try:
-        out = subprocess.check_output(["findmnt", "-rn", "-o", "FSTYPE", "--target", target], text=True, stderr=subprocess.DEVNULL)
+        out = subprocess.check_output(["findmnt", "-rn", "-M", target, "-o", "FSTYPE"], text=True, stderr=subprocess.DEVNULL)
         return out.strip()
     except Exception:
         return ""
