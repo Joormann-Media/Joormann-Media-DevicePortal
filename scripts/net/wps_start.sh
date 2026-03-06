@@ -3,6 +3,8 @@ set -euo pipefail
 
 REQUESTED_IFACE="${1:-}"
 WAIT_SECONDS="${2:-120}"
+TARGET_BSSID="${3:-}"
+TARGET_SSID="${4:-}"
 DEFAULT_IFACE="wlan0"
 NMCLI="$(command -v nmcli || true)"
 IW="$(command -v iw || true)"
@@ -197,12 +199,22 @@ run_attempt() {
 
 NMCLI_HELP="$("${NMCLI}" device wifi connect --help 2>&1 || true)"
 if echo "${NMCLI_HELP}" | grep -q -- "--wps-pbc"; then
-  run_attempt "nmcli device wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect -- --wps-pbc ifname "${IFACE}" || true
-  if [[ -z "${wps_started_method}" ]]; then
-    run_attempt "nmcli device wifi connect --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect --wps-pbc ifname "${IFACE}" || true
-  fi
-  if [[ -z "${wps_started_method}" ]]; then
-    run_attempt "nmcli dev wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect -- --wps-pbc ifname "${IFACE}" || true
+  if [[ -n "${TARGET_SSID}" ]]; then
+    run_attempt "nmcli dev wifi connect ${TARGET_SSID} -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect "${TARGET_SSID}" -- --wps-pbc ifname "${IFACE}" || true
+    if [[ -z "${wps_started_method}" ]]; then
+      run_attempt "nmcli dev wifi connect ${TARGET_SSID} --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect "${TARGET_SSID}" --wps-pbc ifname "${IFACE}" || true
+    fi
+    if [[ -z "${wps_started_method}" ]]; then
+      run_attempt "nmcli dev wifi connect ${TARGET_SSID} -- --wps-pbc" "${NMCLI}" dev wifi connect "${TARGET_SSID}" -- --wps-pbc || true
+    fi
+  else
+    run_attempt "nmcli device wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect -- --wps-pbc ifname "${IFACE}" || true
+    if [[ -z "${wps_started_method}" ]]; then
+      run_attempt "nmcli device wifi connect --wps-pbc ifname ${IFACE}" "${NMCLI}" device wifi connect --wps-pbc ifname "${IFACE}" || true
+    fi
+    if [[ -z "${wps_started_method}" ]]; then
+      run_attempt "nmcli dev wifi connect -- --wps-pbc ifname ${IFACE}" "${NMCLI}" dev wifi connect -- --wps-pbc ifname "${IFACE}" || true
+    fi
   fi
 else
   attempt_details+=("nmcli reports no --wps-pbc support on this version")
@@ -210,7 +222,11 @@ fi
 
 if [[ -z "${wps_started_method}" ]]; then
   if [[ -n "${WPA_CLI}" ]]; then
-    run_attempt "wpa_cli -i ${IFACE} wps_pbc" "${WPA_CLI}" -i "${IFACE}" wps_pbc || true
+    if [[ -n "${TARGET_BSSID}" ]]; then
+      run_attempt "wpa_cli -i ${IFACE} wps_pbc ${TARGET_BSSID}" "${WPA_CLI}" -i "${IFACE}" wps_pbc "${TARGET_BSSID}" || true
+    else
+      run_attempt "wpa_cli -i ${IFACE} wps_pbc" "${WPA_CLI}" -i "${IFACE}" wps_pbc || true
+    fi
   else
     attempt_details+=("wpa_cli command not available")
   fi

@@ -39,7 +39,7 @@ run_nmcli() {
 case "${CMD}" in
   scan)
     IFACE="${1:-$(detect_iface)}"
-    run_nmcli -t --escape no -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list --rescan yes ifname "${IFACE}"
+    run_nmcli -t --escape no -f IN-USE,SSID,BSSID,SIGNAL,SECURITY dev wifi list --rescan yes ifname "${IFACE}"
     ;;
   connect)
     SSID="${1:-}"

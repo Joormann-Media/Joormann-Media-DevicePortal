@@ -120,18 +120,26 @@ def _parse_wifi_scan_output(raw: str) -> list[dict]:
         parts = line.split(":")
         in_use_field = parts[0] if len(parts) > 0 else ""
         in_use = in_use_field.strip() in ("*", "yes")
-        if len(parts) >= 4:
+        if len(parts) >= 5:
             security = parts[-1]
             signal = parts[-2]
-            ssid = ":".join(parts[1:-2])
+            bssid = parts[-3]
+            ssid = ":".join(parts[1:-3])
+        elif len(parts) == 4:
+            security = parts[-1]
+            signal = parts[-2]
+            bssid = ""
+            ssid = parts[1]
         elif len(parts) == 3:
             security = parts[-1]
             signal = parts[-2]
+            bssid = ""
             ssid = parts[1]
         else:
             ssid = parts[1] if len(parts) > 1 else ""
             signal = ""
             security = ""
+            bssid = ""
         ssid = (ssid or "").strip() or "<hidden>"
         try:
             signal_num = int((signal or "0").strip())
@@ -141,6 +149,7 @@ def _parse_wifi_scan_output(raw: str) -> list[dict]:
             {
                 "in_use": bool(in_use),
                 "ssid": ssid,
+                "bssid": (bssid or "").strip(),
                 "signal": signal_num,
                 "security": (security or "").strip(),
             }
@@ -239,14 +248,16 @@ def wifi_profile_up(ssid: str) -> dict:
     return {"ssid": ssid, "stdout": out}
 
 
-def start_wps(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+def start_wps(ifname: str = DEFAULT_WIFI_IFACE, target_bssid: str = "", target_ssid: str = "") -> dict:
     iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
     if iface not in ALLOWED_WIFI_INTERFACES:
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
+    bssid = (target_bssid or "").strip()
+    ssid = (target_ssid or "").strip()
     # Avoid blocking HTTP for the full WPS window (typically 120s),
     # because reverse proxies often time out earlier (e.g. 60s -> 504).
     # The UI already polls network state after triggering WPS.
-    rc, out, err = _run_script("wps_start.sh", [iface, "0"], timeout=25, use_sudo=True)
+    rc, out, err = _run_script("wps_start.sh", [iface, "0", bssid, ssid], timeout=25, use_sudo=True)
     parsed = _parse_kv_output(out)
     detail = parsed.get("details") or err or out
     if rc != 0:

@@ -2,6 +2,7 @@
   const els = {};
   let networkState = null;
   let wifiProfilesState = null;
+  let selectedWpsTarget = null;
 
   function q(id) {
     return document.getElementById(id);
@@ -110,6 +111,25 @@
     while (el && el.firstChild) {
       el.removeChild(el.firstChild);
     }
+  }
+
+  function setWpsTarget(target) {
+    if (target && target.ssid) {
+      selectedWpsTarget = {
+        ssid: String(target.ssid || "").trim(),
+        bssid: String(target.bssid || "").trim(),
+      };
+    } else {
+      selectedWpsTarget = null;
+    }
+    const label = q("wifi-wps-target");
+    if (!label) return;
+    if (!selectedWpsTarget) {
+      label.textContent = "WPS Ziel: automatisch (kein Netz ausgewählt)";
+      return;
+    }
+    const bssidText = selectedWpsTarget.bssid ? ` / ${selectedWpsTarget.bssid}` : "";
+    label.textContent = `WPS Ziel: ${selectedWpsTarget.ssid}${bssidText}`;
   }
 
   function setStatusBadge(linked, online) {
@@ -248,6 +268,13 @@
 
       const actions = document.createElement("div");
       actions.className = "d-flex gap-2";
+      const selectBtn = document.createElement("button");
+      selectBtn.className = "btn btn-outline-dark btn-sm";
+      selectBtn.textContent = "WPS Ziel";
+      selectBtn.addEventListener("click", () => {
+        setWpsTarget({ ssid: item.ssid || "", bssid: item.bssid || "" });
+        toast(`WPS Ziel gesetzt: ${item.ssid || "unbekannt"}`, "secondary");
+      });
       const connectBtn = document.createElement("button");
       connectBtn.className = "btn btn-outline-primary btn-sm";
       connectBtn.textContent = "Verbinden";
@@ -255,8 +282,8 @@
       const wpsBtn = document.createElement("button");
       wpsBtn.className = "btn btn-outline-secondary btn-sm";
       wpsBtn.textContent = "WPS";
-      wpsBtn.addEventListener("click", () => run(startWps));
-      actions.append(connectBtn, wpsBtn);
+      wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: item.ssid || "", bssid: item.bssid || "" })));
+      actions.append(selectBtn, connectBtn, wpsBtn);
       row.append(top, meta, actions);
       host.append(row);
     }
@@ -488,16 +515,28 @@
     toast("LAN updated", "success");
   }
 
-  async function startWps() {
+  async function startWps(target = null) {
     const btn = q("btn-wps");
     const original = btn.innerHTML;
+    if (target && target.ssid) {
+      setWpsTarget(target);
+    }
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>WPS startet...';
     toast("WPS wird gestartet...", "secondary");
     try {
       let triggerError = null;
+      const payloadBody = {
+        ifname: "wlan0",
+      };
+      if (selectedWpsTarget && selectedWpsTarget.ssid) {
+        payloadBody.target_ssid = selectedWpsTarget.ssid;
+      }
+      if (selectedWpsTarget && selectedWpsTarget.bssid) {
+        payloadBody.target_bssid = selectedWpsTarget.bssid;
+      }
       try {
-        const payload = await fetchJson("/api/network/wps", { method: "POST", timeoutMs: 20000 });
+        const payload = await fetchJson("/api/network/wps", { method: "POST", body: payloadBody, timeoutMs: 20000 });
         const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
         const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
         const net = ((payload.data || {}).network || {});
@@ -622,6 +661,7 @@
     await run(refreshNetwork);
     await run(refreshWifiScan);
     await run(refreshWifiProfiles);
+    setWpsTarget(null);
   }
 
   window.addEventListener("DOMContentLoaded", boot);

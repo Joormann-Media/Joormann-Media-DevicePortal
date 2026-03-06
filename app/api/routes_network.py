@@ -127,8 +127,10 @@ def api_network_lan_toggle():
 def api_network_wps():
     data = request.get_json(force=True, silent=True) or {}
     ifname = (data.get("ifname") or "wlan0").strip()
+    target_bssid = (data.get("target_bssid") or "").strip()
+    target_ssid = (data.get("target_ssid") or "").strip()
     try:
-        result = start_wps(ifname=ifname)
+        result = start_wps(ifname=ifname, target_bssid=target_bssid, target_ssid=target_ssid)
         return (
             jsonify(
                 ok=True,
