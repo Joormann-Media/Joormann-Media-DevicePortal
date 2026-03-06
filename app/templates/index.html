@@ -144,6 +144,7 @@
                 <div class="status-kv-row"><span class="status-kv-key">Auth Key</span><code id="status-auth-key">{{ dev.auth_key or '—' }}</code></div>
                 <div class="status-kv-row"><span class="status-kv-key">Pi Serial</span><code id="status-pi-serial">{{ dev.pi_serial or '—' }}</code></div>
                 <div class="status-kv-row"><span class="status-kv-key">Machine ID</span><code id="status-machine-id">{{ dev.machine_id or '—' }}</code></div>
+                <div class="status-kv-row"><span class="status-kv-key">CPU Model</span><span id="status-cpu-model">{{ fp.cpu_model or '—' }}</span></div>
                 <div class="status-kv-row"><span class="status-kv-key">Kernel</span><code id="status-kernel">{{ fp.kernel or '—' }}</code></div>
                 <div class="status-kv-row"><span class="status-kv-key">OS</span><span id="status-os">{{ fp.os.pretty_name or '—' }}</span></div>
               </div>

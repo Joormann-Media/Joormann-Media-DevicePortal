@@ -4,6 +4,7 @@ import os
 import shutil
 import socket
 import subprocess
+import math
 from typing import Any
 
 
@@ -107,6 +108,28 @@ def parse_mem_stats_kb() -> dict[str, int | None]:
                     stats["mem_free_kb"] = value
                 elif key == 'MemAvailable':
                     stats["mem_available_kb"] = value
+    except Exception:
+        return stats
+    return stats
+
+
+def parse_load_stats() -> dict[str, float | int | None]:
+    stats: dict[str, float | int | None] = {
+        "load_1m": None,
+        "load_5m": None,
+        "load_15m": None,
+        "cpu_cores": None,
+        "cpu_percent_estimate": None,
+    }
+    try:
+        load1, load5, load15 = os.getloadavg()
+        cores = os.cpu_count() or 1
+        percent = max(0.0, min(100.0, (load1 / float(cores)) * 100.0))
+        stats["load_1m"] = float(load1)
+        stats["load_5m"] = float(load5)
+        stats["load_15m"] = float(load15)
+        stats["cpu_cores"] = int(cores)
+        stats["cpu_percent_estimate"] = float(math.floor(percent * 10.0) / 10.0)
     except Exception:
         return stats
     return stats

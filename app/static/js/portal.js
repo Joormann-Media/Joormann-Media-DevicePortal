@@ -226,6 +226,7 @@
     q("status-auth-key").textContent = dev.auth_key || "-";
     q("status-pi-serial").textContent = dev.pi_serial || "-";
     q("status-machine-id").textContent = dev.machine_id || "-";
+    q("status-cpu-model").textContent = fp.cpu_model || "-";
     q("status-kernel").textContent = fp.kernel || "-";
     q("status-os").textContent = (fp.os || {}).pretty_name || "-";
   }
@@ -234,11 +235,24 @@
     const status = statusDashboardState.status || {};
     const network = statusDashboardState.network || {};
     const storage = statusDashboardState.storage || {};
-
     const fp = status.fingerprint || {};
-    const cpuModel = String(fp.cpu_model || "").trim();
-    q("status-health-cpu").textContent = cpuModel || "unavailable";
-    const mem = ((status.system || {}).memory || {});
+
+    const system = status.system || {};
+    const load = system.load || {};
+    const load1 = Number(load.load_1m || 0);
+    const load5 = Number(load.load_5m || 0);
+    const cores = Number(load.cpu_cores || 0);
+    const cpuPct = Number(load.cpu_percent_estimate || 0);
+    let cpuText = "unavailable";
+    if (Number.isFinite(load1) && load1 > 0 && Number.isFinite(cores) && cores > 0) {
+      const p = Number.isFinite(cpuPct) ? `${Math.round(cpuPct)}%` : "-";
+      const l5 = Number.isFinite(load5) ? load5.toFixed(2) : "-";
+      cpuText = `${p} (Load: ${load1.toFixed(2)} / ${l5}, ${cores} cores)`;
+    } else if (Number.isFinite(cores) && cores > 0) {
+      cpuText = `Load: 0.00 (0% / ${cores} cores)`;
+    }
+    q("status-health-cpu").textContent = cpuText;
+    const mem = (system.memory || {});
     const fpMemTotalKb = Number(((fp.memory || {}).mem_total_kb) || 0);
     const totalKb = Number(mem.mem_total_kb || 0) || fpMemTotalKb;
     const availableKb = Number(mem.mem_available_kb || 0);
