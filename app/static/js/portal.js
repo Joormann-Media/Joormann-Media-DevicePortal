@@ -531,15 +531,19 @@
     const info = internal || {};
     const statusEl = q("storage-internal-status");
     const progress = q("storage-internal-progress");
-    const percent = Math.max(0, Math.min(100, Number(info.used_percent || 0)));
-    q("storage-internal-name").textContent = info.drive_name || "Interner Medienspeicher";
+    const rootPercent = (info.root_used_percent ?? info.used_percent ?? 0);
+    const rootTotal = (info.root_total_bytes ?? info.total_bytes ?? 0);
+    const rootUsed = (info.root_used_bytes ?? info.used_bytes ?? 0);
+    const rootFree = (info.root_free_bytes ?? info.free_bytes ?? 0);
+    const percent = Math.max(0, Math.min(100, Number(rootPercent)));
+    q("storage-internal-name").textContent = "Internes Dateisystem";
     q("storage-internal-image").textContent = info.image_path || "-";
     q("storage-internal-source").textContent = info.mounted_source || "-";
-    q("storage-internal-mount").textContent = info.mount_path || "-";
+    q("storage-internal-mount").textContent = "/";
     q("storage-internal-fs").textContent = info.filesystem || info.expected_filesystem || "-";
-    q("storage-internal-size").textContent = formatBytes(info.total_bytes || info.image_size_bytes || 0);
-    q("storage-internal-used").textContent = formatBytes(info.used_bytes || 0);
-    q("storage-internal-free").textContent = formatBytes(info.free_bytes || 0);
+    q("storage-internal-size").textContent = formatBytes(rootTotal);
+    q("storage-internal-used").textContent = formatBytes(rootUsed);
+    q("storage-internal-free").textContent = formatBytes(rootFree);
     q("storage-internal-percent").textContent = `${percent}%`;
     progress.style.width = `${percent}%`;
     progress.textContent = `${percent}%`;
@@ -553,8 +557,8 @@
       statusEl.classList.add("text-bg-success");
       statusEl.textContent = "gemountet";
     } else if (info.present) {
-      statusEl.classList.add("text-bg-warning");
-      statusEl.textContent = "vorhanden";
+      statusEl.classList.add("text-bg-danger");
+      statusEl.textContent = "locked";
     } else {
       statusEl.classList.add("text-bg-secondary");
       statusEl.textContent = "missing";

@@ -125,8 +125,9 @@ def _disk_usage(path: str) -> tuple[int, int, int, int]:
 
 def _cfg_device_summary(cfg_item: dict[str, Any], present: bool, mounted: bool, discovered_item: dict[str, Any] | None) -> dict[str, Any]:
     current_mount_path = str((discovered_item or {}).get("mount_path") or "").strip()
-    usage_path = current_mount_path if mounted and current_mount_path else (cfg_item.get("mount_path") or "")
-    total_b, used_b, free_b, used_pct = _disk_usage(str(usage_path)) if mounted else (int((discovered_item or {}).get("size_bytes") or cfg_item.get("size_bytes") or 0), 0, 0, 0)
+    current_device_path = str((discovered_item or {}).get("device_path") or "").strip()
+    usage_path = current_mount_path if mounted and current_mount_path else ""
+    total_b, used_b, free_b, used_pct = _disk_usage(str(usage_path)) if usage_path else (int((discovered_item or {}).get("size_bytes") or cfg_item.get("size_bytes") or 0), 0, 0, 0)
     drive_name = cfg_item.get("name") or (discovered_item or {}).get("label") or cfg_item.get("label") or cfg_item.get("uuid") or cfg_item.get("part_uuid") or cfg_item.get("id")
     return {
         "id": cfg_item.get("id", ""),
@@ -162,6 +163,7 @@ def _cfg_device_summary(cfg_item: dict[str, Any], present: bool, mounted: bool, 
         "present": present,
         "mounted": mounted,
         "current_mount_path": current_mount_path,
+        "current_device_path": current_device_path,
         "state": "mounted" if mounted else ("present" if present else "missing"),
     }
 
@@ -181,17 +183,14 @@ def _internal_summary(cfg: dict[str, Any]) -> dict[str, Any]:
     file_fstype = _file_fstype(image_path) if image_exists else ""
     filesystem = mounted_fstype or file_fstype or expected_fs
 
+    root_total_b, root_used_b, root_free_b, root_used_pct = _disk_usage("/")
     if mounted:
-        total_b, used_b, free_b, used_pct = _disk_usage(mount_path)
+        loop_total_b, loop_used_b, loop_free_b, loop_used_pct = _disk_usage(mount_path)
     else:
-        # Fallback visibility: if loop mount is not active yet, show root filesystem
-        # utilization so operators still see live disk pressure.
-        total_b, used_b, free_b, used_pct = _disk_usage("/")
-        if total_b <= 0:
-            total_b = image_size_bytes or size_gb * 1024 * 1024 * 1024
-            used_b = 0
-            free_b = 0
-            used_pct = 0
+        loop_total_b = image_size_bytes or size_gb * 1024 * 1024 * 1024
+        loop_used_b = 0
+        loop_free_b = 0
+        loop_used_pct = 0
     present = image_exists
     state = "mounted" if mounted else ("present" if present else "missing")
 
@@ -215,10 +214,18 @@ def _internal_summary(cfg: dict[str, Any]) -> dict[str, Any]:
         "mounted": mounted,
         "mounted_source": mounted_source,
         "state": state,
-        "total_bytes": int(total_b),
-        "used_bytes": int(used_b),
-        "free_bytes": int(free_b),
-        "used_percent": int(used_pct),
+        "total_bytes": int(root_total_b),
+        "used_bytes": int(root_used_b),
+        "free_bytes": int(root_free_b),
+        "used_percent": int(root_used_pct),
+        "root_total_bytes": int(root_total_b),
+        "root_used_bytes": int(root_used_b),
+        "root_free_bytes": int(root_free_b),
+        "root_used_percent": int(root_used_pct),
+        "loop_total_bytes": int(loop_total_b),
+        "loop_used_bytes": int(loop_used_b),
+        "loop_free_bytes": int(loop_free_b),
+        "loop_used_percent": int(loop_used_pct),
         "last_error": str(internal.get("last_error") or ""),
     }
 
@@ -264,7 +271,9 @@ def get_storage_state() -> dict[str, Any]:
             changed = True
         disc = find_best_match(cfg_item, discovered)
         present = disc is not None
-        mounted = bool((disc or {}).get("mounted", False))
+        current_mount_path = str((disc or {}).get("mount_path") or "").strip()
+        configured_mount_path = str(cfg_item.get("mount_path") or "").strip()
+        mounted = bool((disc or {}).get("mounted", False) and current_mount_path and configured_mount_path and current_mount_path == configured_mount_path)
         now_ts = utc_now()
         if present:
             matched_ids.add(str((disc or {}).get("id") or ""))
@@ -368,13 +377,13 @@ def get_storage_state() -> dict[str, Any]:
     drives: list[dict[str, Any]] = [
         {
             "id": internal["id"],
-            "drive_name": internal["drive_name"],
+            "drive_name": f'{internal["drive_name"]} (Loop)',
             "drive_type": internal["drive_type"],
             "filesystem": internal.get("filesystem", ""),
-            "total_bytes": internal.get("total_bytes", 0),
-            "used_bytes": internal.get("used_bytes", 0),
-            "free_bytes": internal.get("free_bytes", 0),
-            "used_percent": internal.get("used_percent", 0),
+            "total_bytes": internal.get("loop_total_bytes", 0),
+            "used_bytes": internal.get("loop_used_bytes", 0),
+            "free_bytes": internal.get("loop_free_bytes", 0),
+            "used_percent": internal.get("loop_used_percent", 0),
             "mount_path": internal.get("mount_path", ""),
             "state": internal.get("state", "missing"),
             "present": internal.get("present", False),
@@ -402,7 +411,7 @@ def get_storage_state() -> dict[str, Any]:
                 "mounted": item.get("mounted", False),
                 "uuid": item.get("uuid", ""),
                 "part_uuid": item.get("part_uuid", ""),
-                "source_device": item.get("current_mount_path", "") or item.get("last_seen_device_path", ""),
+                "source_device": item.get("current_device_path", "") or item.get("last_seen_device_path", ""),
                 "is_internal": False,
             }
         )
