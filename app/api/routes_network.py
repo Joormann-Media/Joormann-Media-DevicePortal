@@ -120,6 +120,44 @@ def _save_wifi_profiles(cfg: dict, profiles: list[dict], preferred: str = "", la
     return write_json(CONFIG_PATH, cfg, mode=0o600)
 
 
+def _merged_profiles(profiles_cfg: list[dict], nm_profiles: list[dict], preferred: str, last_ssid: str) -> list[dict]:
+    merged: dict[str, dict] = {}
+
+    for item in nm_profiles:
+        ssid = (item.get("name") or "").strip()
+        if not ssid:
+            continue
+        merged[ssid] = {
+            "ssid": ssid,
+            "priority": int(item.get("priority") or 0),
+            "autoconnect": bool(item.get("autoconnect", True)),
+            "exists": True,
+            "source": "nm",
+            "preferred": bool(preferred and ssid == preferred),
+            "last": bool(last_ssid and ssid == last_ssid),
+            "nm": item,
+        }
+
+    for item in profiles_cfg:
+        ssid = item["ssid"]
+        current = merged.get(ssid)
+        nm_item = current.get("nm") if current else None
+        merged[ssid] = {
+            "ssid": ssid,
+            "priority": int(item.get("priority") or (nm_item or {}).get("priority") or 0),
+            "autoconnect": bool(item.get("autoconnect", (nm_item or {}).get("autoconnect", True))),
+            "exists": bool(current),
+            "source": "config+nm" if current else "config",
+            "preferred": bool(preferred and ssid == preferred),
+            "last": bool(last_ssid and ssid == last_ssid),
+            "nm": nm_item,
+        }
+
+    result = list(merged.values())
+    result.sort(key=lambda p: (int(p.get("priority") or 0), p.get("ssid") or ""), reverse=True)
+    return result
+
+
 @bp_network.get("/api/network/info")
 def api_network_info():
     try:
@@ -365,6 +403,8 @@ def api_wifi_profiles():
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
+    preferred_ssid = (cfg.get("preferred_wifi") or "")
+    last_wifi_ssid = (cfg.get("last_wifi_ssid") or "")
     nm_by_name = {item.get("name"): item for item in nm_profiles if item.get("name")}
     configured: list[dict] = []
     for item in profiles_cfg:
@@ -377,16 +417,19 @@ def api_wifi_profiles():
                 "autoconnect": item["autoconnect"],
                 "exists": bool(nm_item),
                 "nm": nm_item,
+                "source": "config+nm" if nm_item else "config",
             }
         )
     known = {item["ssid"] for item in profiles_cfg}
     unmanaged = [item for item in nm_profiles if item.get("name") not in known]
+    profiles = _merged_profiles(profiles_cfg, nm_profiles, preferred_ssid, last_wifi_ssid)
     return _ok(
         {
             "configured": configured,
             "unmanaged": unmanaged,
-            "preferred_ssid": (cfg.get("preferred_wifi") or ""),
-            "last_wifi_ssid": (cfg.get("last_wifi_ssid") or ""),
+            "profiles": profiles,
+            "preferred_ssid": preferred_ssid,
+            "last_wifi_ssid": last_wifi_ssid,
         }
     )
 

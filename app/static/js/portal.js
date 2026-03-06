@@ -322,17 +322,17 @@
     wifiProfilesState = data;
     const host = q("wifi-profiles-list");
     clearNode(host);
-    const configured = data.configured || [];
+    const profiles = data.profiles || data.configured || [];
     const preferred = data.preferred_ssid || "";
     const last = data.last_wifi_ssid || "";
-    if (!configured.length) {
+    if (!profiles.length) {
       const empty = document.createElement("div");
       empty.className = "text-secondary";
       empty.textContent = "Keine WLAN Profile gespeichert.";
       host.append(empty);
       return;
     }
-    for (const item of configured) {
+    for (const item of profiles) {
       const ssid = item.ssid || "";
       const row = document.createElement("div");
       row.className = "list-group-item px-0";
@@ -345,7 +345,8 @@
       const flags = [];
       if (preferred && ssid === preferred) flags.push("preferred");
       if (last && ssid === last) flags.push("last");
-      info.textContent = `prio=${item.priority} auto=${item.autoconnect ? "yes" : "no"} ${flags.join(" ")}`.trim();
+      if (item.source && item.source !== "config+nm") flags.push(item.source);
+      info.textContent = `prio=${item.priority ?? 0} auto=${item.autoconnect ? "yes" : "no"} ${flags.join(" ")}`.trim();
       top.append(title, info);
 
       const actions = document.createElement("div");
