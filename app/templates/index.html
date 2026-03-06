@@ -203,6 +203,11 @@
               WLAN Verwaltung
             </button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="system-sub-update-tab" data-bs-toggle="tab" data-bs-target="#system-sub-update" type="button" role="tab">
+              Update
+            </button>
+          </li>
         </ul>
 
         <div class="tab-content">
@@ -236,42 +241,42 @@
                     <dt>Connection</dt><dd id="sys-dnsfix-connection">-</dd>
                     <dt>DNS Server</dt><dd id="sys-dnsfix-dns">-</dd>
                     <dt>Search</dt><dd id="sys-dnsfix-search">-</dd>
-              </dl>
-            </div>
-          </div>
+                  </dl>
+                </div>
+              </div>
 
-          <div class="col-12 col-xl-4">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h3 class="h6 mb-0">AP / Hotspot</h3>
-                <span id="ap-active-badge" class="badge text-bg-secondary">inaktiv</span>
+              <div class="col-12 col-xl-4">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">AP / Hotspot</h3>
+                    <span id="ap-active-badge" class="badge text-bg-secondary">inaktiv</span>
+                  </div>
+                  <dl class="portal-kv mb-2">
+                    <dt>SSID</dt><dd id="ap-ssid">-</dd>
+                    <dt>AP-IP</dt><dd id="ap-ip">-</dd>
+                    <dt>Clients</dt><dd id="ap-clients-count">0</dd>
+                    <dt>Profil</dt><dd id="ap-profile">jm-hotspot</dd>
+                  </dl>
+                  <div class="d-flex gap-2">
+                    <button id="btn-ap-enable" class="btn btn-outline-success btn-sm">AP einschalten</button>
+                    <button id="btn-ap-disable" class="btn btn-outline-danger btn-sm">AP ausschalten</button>
+                  </div>
+                </div>
               </div>
-              <dl class="portal-kv mb-2">
-                <dt>SSID</dt><dd id="ap-ssid">-</dd>
-                <dt>AP-IP</dt><dd id="ap-ip">-</dd>
-                <dt>Clients</dt><dd id="ap-clients-count">0</dd>
-                <dt>Profil</dt><dd id="ap-profile">jm-hotspot</dd>
-              </dl>
-              <div class="d-flex gap-2">
-                <button id="btn-ap-enable" class="btn btn-outline-success btn-sm">AP einschalten</button>
-                <button id="btn-ap-disable" class="btn btn-outline-danger btn-sm">AP ausschalten</button>
-              </div>
-            </div>
-          </div>
 
-          <div class="col-12 col-xl-8">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h3 class="h6 mb-0">AP Clients</h3>
-                <button id="btn-ap-refresh" class="btn btn-outline-secondary btn-sm">Refresh AP</button>
-              </div>
-              <div id="ap-clients-list" class="list-group list-group-flush small">
-                <div class="text-secondary">Keine verbundenen AP-Clients.</div>
+              <div class="col-12 col-xl-8">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">AP Clients</h3>
+                    <button id="btn-ap-refresh" class="btn btn-outline-secondary btn-sm">Refresh AP</button>
+                  </div>
+                  <div id="ap-clients-list" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine verbundenen AP-Clients.</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
           <div class="tab-pane fade" id="system-sub-wifi" role="tabpanel" aria-labelledby="system-sub-wifi-tab">
             <div class="row g-3">
@@ -331,6 +336,24 @@
                     <strong>Status:</strong> <span id="wifi-wps-phase">idle</span>
                   </div>
                   <pre id="wifi-event-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-pane fade" id="system-sub-update" role="tabpanel" aria-labelledby="system-sub-update-tab">
+            <div class="row g-3">
+              <div class="col-12 col-xl-7">
+                <div class="portal-card p-4">
+                  <h3 class="h6">Portal Update</h3>
+                  <p class="text-secondary mb-3">Führt `git pull --ff-only`, `install/setup_netcontrol.sh` und einen Service-Neustart aus.</p>
+                  <button id="btn-system-update-portal" class="btn btn-outline-primary btn-sm">Update starten</button>
+                </div>
+              </div>
+              <div class="col-12 col-xl-5">
+                <div class="portal-card p-4 h-100">
+                  <h3 class="h6">Letztes Update</h3>
+                  <pre id="system-update-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
                 </div>
               </div>
             </div>

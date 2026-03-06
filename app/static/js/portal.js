@@ -786,6 +786,32 @@
     }
   }
 
+  async function updatePortal() {
+    const btn = q("btn-system-update-portal");
+    const logEl = q("system-update-log");
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Update läuft...';
+    try {
+      const payload = await fetchJson("/api/system/portal/update", { method: "POST", timeoutMs: 220000 });
+      const data = payload.data || {};
+      const lines = [
+        `message: ${data.message || "-"}`,
+        `repo: ${data.repo_dir || "-"}`,
+        `user: ${data.service_user || "-"}`,
+        `service: ${data.service_name || "-"}`,
+        `git_status: ${data.git_status || "-"}`,
+        `restart_scheduled: ${String(!!data.restart_scheduled)}`,
+        data.details ? `details: ${data.details}` : "",
+      ].filter(Boolean);
+      logEl.textContent = lines.join("\n");
+      toast(data.message || "Update ausgelöst. Service wird neu gestartet.", "success");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+
   function bindButtons() {
     q("btn-refresh-status").addEventListener("click", () => run(refreshState));
     q("btn-refresh-fingerprint").addEventListener("click", () => run(refreshFingerprint));
@@ -812,6 +838,7 @@
       await refreshApStatus();
       await refreshApClients();
     }));
+    q("btn-system-update-portal").addEventListener("click", () => run(updatePortal));
     q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
     q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
 

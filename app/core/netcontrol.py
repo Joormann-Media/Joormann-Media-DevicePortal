@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import getpass
 from pathlib import Path
 
 
@@ -447,4 +448,29 @@ def disable_tailscale_dns_override() -> dict:
         "connection": parsed.get("connection", ""),
         "dns": parsed.get("dns", ""),
         "search": parsed.get("search", ""),
+    }
+
+
+def portal_update(service_name: str = "device-portal.service") -> dict:
+    repo_dir = str(REPO_ROOT.resolve())
+    service_user = getpass.getuser()
+    service_name = (service_name or "device-portal.service").strip() or "device-portal.service"
+    rc, out, err = _run_script("portal_update.sh", [repo_dir, service_user, service_name], timeout=220, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "portal_update_failed"),
+            message=parsed.get("message", "Portal update failed"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "repo_dir": parsed.get("repo_dir", repo_dir),
+        "service_user": parsed.get("service_user", service_user),
+        "service_name": parsed.get("service_name", service_name),
+        "git_status": parsed.get("git_status", "unknown"),
+        "restart_scheduled": parsed.get("restart_scheduled", "false").lower() == "true",
+        "message": parsed.get("message", "Portal update prepared."),
+        "details": detail,
     }

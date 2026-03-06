@@ -59,6 +59,7 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | network | POST | `/api/network/ap/toggle` | `routes_network.api_network_ap_toggle` |
 | network | GET | `/api/network/ap/clients` | `routes_network.api_network_ap_clients` |
 | network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
+| network | POST | `/api/system/portal/update` | `routes_network.api_system_portal_update` |
 
 Quelle der Route-Definitionen:
 - [app/api/routes_status.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/api/routes_status.py)

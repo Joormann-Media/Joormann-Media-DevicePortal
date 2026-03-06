@@ -16,6 +16,7 @@ from app.core.netcontrol import (
     get_ap_status,
     get_wifi_status,
     get_network_info,
+    portal_update,
     set_ap_enabled,
     set_bluetooth_enabled,
     set_lan_enabled,
@@ -725,4 +726,15 @@ def api_system_tailscale_disable_dns():
         return _ok(result)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/system/portal/update")
+def api_system_portal_update():
+    try:
+        result = portal_update(service_name="device-portal.service")
+        log_event("system", "Portal update triggered", data={"git_status": result.get("git_status", "unknown")})
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "portal_update_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
