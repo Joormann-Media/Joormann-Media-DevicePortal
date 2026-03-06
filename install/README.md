@@ -20,6 +20,8 @@ sudo ./install/setup_netcontrol.sh /opt/jm-deviceportal www-data
 - deployed `scripts/net/*` nach `/opt/deviceportal/bin`
 - legt `/etc/sudoers.d/deviceportal-net` an (NOPASSWD nur für erlaubte Skripte)
 - enthält WLAN-Operationen für `scan/connect/profiles` (`wifi_profile.sh`)
+- ergänzt (falls vorhanden) den Service-User um Gruppe `netdev`
+- sudo-Aufrufe erfolgen non-interaktiv (`sudo -n`) über strikt definierte Wrapper-Skripte
 
 ## Hinweise
 

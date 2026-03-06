@@ -67,6 +67,7 @@ WIFI_FREQ=""
 WIFI_RATE=""
 WIFI_CONN_NAME=""
 WPA_CLI_PRESENT="$(cmd_present wpa_cli)"
+WIFI_WPA_STATE=""
 
 if [[ "$NMCLI_PRESENT" == "1" ]]; then
   WIFI_RADIO="$(safe_cmd nmcli -t -f WIFI general | head -n1)"
@@ -93,6 +94,7 @@ fi
 if [[ "$WIFI_CONNECTED" != "1" && "$WPA_CLI_PRESENT" == "1" ]]; then
   WPA_STATUS="$(safe_cmd wpa_cli -i "$WIFI_IF" status)"
   WPA_STATE="$(echo "$WPA_STATUS" | awk -F= '/^wpa_state=/{print $2; exit}')"
+  WIFI_WPA_STATE="$WPA_STATE"
   WPA_SSID="$(echo "$WPA_STATUS" | awk -F= '/^ssid=/{print $2; exit}')"
   WPA_BSSID="$(echo "$WPA_STATUS" | awk -F= '/^bssid=/{print $2; exit}')"
   WPA_FREQ="$(echo "$WPA_STATUS" | awk -F= '/^freq=/{print $2; exit}')"
@@ -133,6 +135,7 @@ fi
 export HOSTNAME_VAL LAN_IF WIFI_IF
 export LAN_ENABLED LAN_CARRIER LAN_IP LAN_MAC LAN_EXISTS
 export WIFI_ENABLED WIFI_CONNECTED WIFI_SSID WIFI_BSSID WIFI_SIGNAL WIFI_FREQ WIFI_RATE WIFI_SECURITY WIFI_CONN_NAME WIFI_IP WIFI_MAC WIFI_EXISTS WIFI_RADIO
+export WIFI_WPA_STATE
 export BT_ENABLED
 export GATEWAY DNS_RAW
 export NMCLI_PRESENT RFKILL_PRESENT TAILSCALE_PRESENT TAILSCALE_IP
@@ -185,6 +188,7 @@ payload = {
             "frequency_mhz": maybe_int(s("WIFI_FREQ")),
             "rate": s("WIFI_RATE"),
             "security": s("WIFI_SECURITY"),
+            "wpa_state": s("WIFI_WPA_STATE"),
             "ip": s("WIFI_IP"),
             "mac": s("WIFI_MAC"),
             "radio": s("WIFI_RADIO"),

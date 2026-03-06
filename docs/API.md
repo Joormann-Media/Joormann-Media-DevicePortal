@@ -6,10 +6,11 @@ Vollständige Endpoint-Inventarisierung auf Basis der aktuellen Flask-Blueprints
 ## Auth-Modell (Ist)
 Aktuell ist **keine** Endpoint-Authentisierung implementiert.
 
-## Error-Format (Ist)
-Nicht vollständig vereinheitlicht. Typische Patterns:
-- `{ "ok": false, "error": "..." }`
-- Erweiterte Fehlerobjekte mit Kontext (`panel_link_state`, `panel_response`, `resolved_url`)
+## Error-Format
+Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
+- Success: `{ "ok": true, "success": true, "message": "...", "data": {...}, "error_code": "" }`
+- Error: `{ "ok": false, "success": false, "message": "...", "data": {}, "error_code": "..." }`
+- Zusätzlich bleibt `error: { code, message, detail }` für Kompatibilität erhalten.
 
 ## Endpoint-Übersicht
 
@@ -43,6 +44,17 @@ Nicht vollständig vereinheitlicht. Typische Patterns:
 | network | POST | `/api/wifi/profiles/prefer` | `routes_network.api_wifi_profiles_prefer` |
 | network | POST | `/api/wifi/profiles/up` | `routes_network.api_wifi_profiles_up` |
 | network | POST | `/api/wifi/profiles/apply` | `routes_network.api_wifi_profiles_apply` |
+| network | GET | `/api/network/wifi/status` | `routes_network.api_network_wifi_status` |
+| network | GET | `/api/network/wifi/saved` | `routes_network.api_network_wifi_saved` |
+| network | GET | `/api/network/wifi/scan` | `routes_network.api_network_wifi_scan` |
+| network | POST | `/api/network/wifi/connect` | `routes_network.api_network_wifi_connect` |
+| network | POST | `/api/network/wifi/select` | `routes_network.api_network_wifi_select` |
+| network | POST | `/api/network/wifi/remove` | `routes_network.api_network_wifi_remove` |
+| network | POST | `/api/network/wifi/disconnect` | `routes_network.api_network_wifi_disconnect` |
+| network | POST | `/api/network/wifi/toggle` | `routes_network.api_network_wifi_toggle_alias` |
+| network | POST | `/api/network/wifi/wps/start` | `routes_network.api_network_wifi_wps_start` |
+| network | GET | `/api/network/wifi/wps/status` | `routes_network.api_network_wifi_wps_status` |
+| network | GET | `/api/network/wifi/logs` | `routes_network.api_network_wifi_logs` |
 | network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
 
 Quelle der Route-Definitionen:
@@ -311,6 +323,31 @@ curl -sS -X POST http://127.0.0.1:5070/api/plan/pull \
 
 ## 23) POST `/api/system/tailscale/disable-dns`
 - schaltet Tailscale DNS-Override aus (`tailscale set --accept-dns=false`)
+
+---
+
+## WLAN/WPS Live-Endpunkte
+
+### GET `/api/network/wifi/status`
+- Liefert `wlan0` Laufzeitstatus (`radio`, `device_state`, `wpa_state`, `ssid`, `ip`, `signal`).
+
+### POST `/api/network/wifi/wps/start`
+- Startet WPS (optional mit `target_ssid`/`target_bssid`).
+- Setzt internen WPS-Laufzeitstatus.
+
+### GET `/api/network/wifi/wps/status`
+- Liefert laufende WPS-Phase:
+  - `idle`
+  - `started`
+  - `router_search`
+  - `auth`
+  - `dhcp_request`
+  - `connected`
+  - `timeout`
+- Enthält zusätzlich aktuellen WLAN-Status.
+
+### GET `/api/network/wifi/logs`
+- Gibt letzte Netzwerk-/WPS-Ereignisse zurück (`events`), erzeugt durch API-Aktionen und WPS-Flow.
 
 **Error example**
 ```json

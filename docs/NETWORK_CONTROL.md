@@ -11,6 +11,9 @@ Die Netzwerkkontrolle wird über dedizierte Wrapper-Skripte (`scripts/net/*`) um
   - `scripts/net/network_info.sh`
   - `scripts/net/wifi_toggle.sh`
   - `scripts/net/wifi_profile.sh`
+  - `scripts/net/wifi_status.sh`
+  - `scripts/net/wifi_disconnect.sh`
+  - `scripts/net/wifi_dhcp.sh`
   - `scripts/net/bluetooth_toggle.sh`
   - `scripts/net/lan_toggle.sh`
   - `scripts/net/wps_start.sh`
@@ -37,9 +40,13 @@ Nur folgende Aktionen werden per sudo freigegeben:
 
 - `wifi_toggle.sh`
 - `wifi_profile.sh`
+- `wifi_status.sh`
+- `wifi_disconnect.sh`
+- `wifi_dhcp.sh`
 - `bluetooth_toggle.sh`
 - `lan_toggle.sh`
 - `wps_start.sh`
+- `tailscale_dns_fix.sh`
 - `tailscale_dns_fix.sh`
 
 `network_info.sh` läuft ohne sudo.
@@ -47,10 +54,15 @@ Nur folgende Aktionen werden per sudo freigegeben:
 ## API-Endpunkte
 
 - `GET /api/network/info`
+- `GET /api/network/wifi/status`
 - `POST /api/network/wifi/toggle`
+- `POST /api/network/wifi/disconnect`
 - `POST /api/network/bluetooth/toggle`
 - `POST /api/network/lan/toggle`
 - `POST /api/network/wps`
+- `POST /api/network/wifi/wps/start`
+- `GET /api/network/wifi/wps/status`
+- `GET /api/network/wifi/logs`
 - `GET /api/wifi/scan`
 - `POST /api/wifi/connect`
 - `GET /api/wifi/profiles`

@@ -21,20 +21,27 @@ if [[ ! -d "$SRC_DIR" ]]; then
 fi
 
 apt-get update
-apt-get install -y network-manager rfkill bluez iproute2
+apt-get install -y network-manager rfkill bluez iproute2 isc-dhcp-client
 
 install -d -m 0755 "$DST_DIR"
 install -m 0750 "$SRC_DIR/wifi_toggle.sh" "$DST_DIR/wifi_toggle.sh"
 install -m 0750 "$SRC_DIR/wifi_profile.sh" "$DST_DIR/wifi_profile.sh"
+install -m 0750 "$SRC_DIR/wifi_status.sh" "$DST_DIR/wifi_status.sh"
+install -m 0750 "$SRC_DIR/wifi_disconnect.sh" "$DST_DIR/wifi_disconnect.sh"
+install -m 0750 "$SRC_DIR/wifi_dhcp.sh" "$DST_DIR/wifi_dhcp.sh"
 install -m 0750 "$SRC_DIR/bluetooth_toggle.sh" "$DST_DIR/bluetooth_toggle.sh"
 install -m 0750 "$SRC_DIR/lan_toggle.sh" "$DST_DIR/lan_toggle.sh"
 install -m 0750 "$SRC_DIR/wps_start.sh" "$DST_DIR/wps_start.sh"
 install -m 0750 "$SRC_DIR/tailscale_dns_fix.sh" "$DST_DIR/tailscale_dns_fix.sh"
 install -m 0755 "$SRC_DIR/network_info.sh" "$DST_DIR/network_info.sh"
 
+if getent group netdev >/dev/null 2>&1; then
+  usermod -aG netdev "$SERVICE_USER" || true
+fi
+
 cat > "$SUDOERS_FILE" <<SUDO
 Defaults:${SERVICE_USER} !requiretty
-${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/tailscale_dns_fix.sh *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/tailscale_dns_fix.sh *
 SUDO
 
 chmod 0440 "$SUDOERS_FILE"

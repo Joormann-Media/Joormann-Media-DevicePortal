@@ -45,11 +45,14 @@ case "${CMD}" in
     SSID="${1:-}"
     ARG2="${2:-}"
     ARG3="${3:-}"
+    ARG4="${4:-}"
     PASSWORD=""
     IFACE="$(detect_iface)"
+    HIDDEN="no"
     if [[ -n "${ARG3}" ]]; then
       PASSWORD="${ARG2}"
       IFACE="${ARG3}"
+      HIDDEN="${ARG4:-no}"
     elif [[ -n "${ARG2}" ]]; then
       IFACE="${ARG2}"
     fi
@@ -58,10 +61,21 @@ case "${CMD}" in
       exit 2
     fi
     if [[ -n "${PASSWORD}" ]]; then
-      run_nmcli dev wifi connect "${SSID}" password "${PASSWORD}" ifname "${IFACE}" || run_nmcli dev wifi connect "${SSID}" password "${PASSWORD}"
+      run_nmcli dev wifi connect "${SSID}" password "${PASSWORD}" ifname "${IFACE}" || run_nmcli dev wifi connect "${SSID}" password "${PASSWORD}" || true
+      if [[ "${HIDDEN}" == "yes" ]]; then
+        run_nmcli connection add type wifi con-name "${SSID}" ifname "${IFACE}" ssid "${SSID}" || true
+        run_nmcli connection modify "${SSID}" 802-11-wireless.hidden yes 802-11-wireless-security.key-mgmt wpa-psk 802-11-wireless-security.psk "${PASSWORD}" || true
+        run_nmcli connection up "${SSID}" || true
+      fi
     else
-      run_nmcli dev wifi connect "${SSID}" ifname "${IFACE}" || run_nmcli dev wifi connect "${SSID}"
+      run_nmcli dev wifi connect "${SSID}" ifname "${IFACE}" || run_nmcli dev wifi connect "${SSID}" || true
+      if [[ "${HIDDEN}" == "yes" ]]; then
+        run_nmcli connection add type wifi con-name "${SSID}" ifname "${IFACE}" ssid "${SSID}" || true
+        run_nmcli connection modify "${SSID}" 802-11-wireless.hidden yes || true
+        run_nmcli connection up "${SSID}" || true
+      fi
     fi
+    run_nmcli -t -f GENERAL.STATE device show "${IFACE}" >/dev/null
     ;;
   profiles)
     run_nmcli -t -f NAME,UUID,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY connection show

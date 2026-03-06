@@ -129,6 +129,12 @@
             </div>
           </div>
 
+          <div class="col-12">
+            <div class="alert alert-info py-2 mb-0">
+              Für WPS zuerst die WPS-Taste am Router drücken und danach innerhalb von 2 Minuten hier im Portal WPS starten.
+            </div>
+          </div>
+
           <div class="col-12 col-lg-4">
             <div class="portal-card p-3 h-100">
               <h3 class="h6">LAN</h3>
@@ -155,6 +161,7 @@
                 <dt>Signal</dt><dd id="wifi-signal">-</dd>
                 <dt>Frequenz</dt><dd id="wifi-frequency">-</dd>
                 <dt>Sicherheit</dt><dd id="wifi-security">-</dd>
+                <dt>WPA State</dt><dd id="wifi-wpa-state">-</dd>
                 <dt>IP</dt><dd id="wifi-ip">-</dd>
                 <dt>MAC</dt><dd id="wifi-mac">-</dd>
               </dl>
@@ -208,7 +215,28 @@
                 <div class="col-md-2 d-grid">
                   <button id="btn-wifi-manual-add" class="btn btn-outline-success btn-sm">Add</button>
                 </div>
+                <div class="col-12">
+                  <div class="form-check form-check-sm">
+                    <input class="form-check-input" type="checkbox" id="wifi-manual-hidden">
+                    <label class="form-check-label small text-secondary" for="wifi-manual-hidden">
+                      Hidden SSID / verstecktes Netzwerk
+                    </label>
+                  </div>
+                </div>
               </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-6">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0">WPS / Ereignisse</h3>
+                <button id="btn-wifi-logs-refresh" class="btn btn-outline-secondary btn-sm">Refresh Logs</button>
+              </div>
+              <div class="small mb-2">
+                <strong>Status:</strong> <span id="wifi-wps-phase">idle</span>
+              </div>
+              <pre id="wifi-event-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
             </div>
           </div>
         </div>

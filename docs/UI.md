@@ -56,6 +56,21 @@ Zusätzliche Panel-Aktionen:
 - `Profile Up` -> `POST /api/wifi/profiles/up`
 - `Profile Delete` -> `POST /api/wifi/profiles/delete`
 - `Profile Apply` -> `POST /api/wifi/profiles/apply`
+- `WPS Live Status` -> `GET /api/network/wifi/wps/status`
+- `WLAN Runtime Status` -> `GET /api/network/wifi/status`
+- `WLAN Logs` -> `GET /api/network/wifi/logs`
+
+## Netzwerk-Tab Inhalte
+
+- Hinweisbox für WPS-Bedienreihenfolge (Router-Taste zuerst, dann Portal innerhalb 2 Minuten).
+- WLAN Statuskarte inkl. `wpa_state`.
+- WLAN Scanliste mit:
+  - `WPS Ziel`
+  - `Verbinden`
+  - `WPS`
+- Gespeicherte WLANs inkl. `Verbinden/Prefer/Löschen`.
+- Manuelle WLAN-Konfiguration inkl. Hidden-SSID-Option.
+- Live-Ereignisbereich (`WPS / Ereignisse`) mit laufendem Polling.
 
 ## System Aktionen
 

@@ -3,6 +3,7 @@
   let networkState = null;
   let wifiProfilesState = null;
   let selectedWpsTarget = null;
+  let wpsPollHandle = null;
 
   function q(id) {
     return document.getElementById(id);
@@ -210,6 +211,7 @@
     q("wifi-signal").textContent = Number.isInteger(wifi.signal) ? String(wifi.signal) : "-";
     q("wifi-frequency").textContent = Number.isInteger(wifi.frequency_mhz) ? `${wifi.frequency_mhz} MHz` : "-";
     q("wifi-security").textContent = wifi.security || "-";
+    q("wifi-wpa-state").textContent = wifi.wpa_state || "-";
     q("wifi-ip").textContent = wifi.ip || "-";
     q("wifi-mac").textContent = wifi.mac || "-";
 
@@ -307,7 +309,7 @@
     }
     const payload = await fetchJson("/api/wifi/connect", {
       method: "POST",
-      body: { ssid, password: pw, ifname: "wlan0" },
+      body: { ssid, password: pw, ifname: "wlan0", hidden: false },
       timeoutMs: 30000,
     });
     await refreshNetwork();
@@ -407,6 +409,7 @@
   async function wifiProfilesAddManual() {
     const ssid = (q("wifi-manual-ssid").value || "").trim();
     const password = q("wifi-manual-password").value || "";
+    const hidden = !!q("wifi-manual-hidden").checked;
     if (!ssid) {
       toast("SSID fehlt.", "danger");
       return;
@@ -417,9 +420,11 @@
       priority: 80,
       autoconnect: true,
       ifname: "wlan0",
+      hidden,
     };
     const payload = await fetchJson("/api/wifi/profiles/add", { method: "POST", body, timeoutMs: 30000 });
     q("wifi-manual-password").value = "";
+    q("wifi-manual-hidden").checked = false;
     await refreshNetwork();
     await refreshWifiProfiles();
     const warning = payload.data?.warning;
@@ -428,6 +433,62 @@
     } else {
       toast(`Profil gespeichert: ${ssid}`, "success");
     }
+  }
+
+  function renderWifiLogs(events) {
+    const logEl = q("wifi-event-log");
+    if (!Array.isArray(events) || !events.length) {
+      logEl.textContent = "-";
+      return;
+    }
+    const lines = events.map((e) => {
+      const ts = e.ts || "";
+      const lvl = (e.level || "info").toUpperCase();
+      const msg = e.message || "";
+      return `[${ts}] ${lvl} ${msg}`;
+    });
+    logEl.textContent = lines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function refreshWifiLogs() {
+    const payload = await fetchJson("/api/network/wifi/logs?limit=120");
+    const data = payload.data || {};
+    renderWifiLogs(data.events || []);
+    return data;
+  }
+
+  async function refreshWpsStatus() {
+    const payload = await fetchJson("/api/network/wifi/wps/status");
+    const data = payload.data || {};
+    const wps = data.wps || {};
+    q("wifi-wps-phase").textContent = `${wps.phase || "idle"} - ${wps.phase_message || ""}`.trim();
+    return data;
+  }
+
+  function startWpsPolling() {
+    if (wpsPollHandle) {
+      window.clearInterval(wpsPollHandle);
+    }
+    let loops = 0;
+    wpsPollHandle = window.setInterval(async () => {
+      loops += 1;
+      try {
+        const data = await refreshWpsStatus();
+        await refreshNetwork();
+        await refreshWifiLogs();
+        const phase = ((data || {}).wps || {}).phase || "";
+        if (phase === "connected" || phase === "timeout" || loops > 60) {
+          window.clearInterval(wpsPollHandle);
+          wpsPollHandle = null;
+        }
+      } catch (_) {
+        if (loops > 10) {
+          window.clearInterval(wpsPollHandle);
+          wpsPollHandle = null;
+        }
+      }
+    }, 3000);
   }
 
   async function panelCheckLink() {
@@ -536,7 +597,7 @@
         payloadBody.target_bssid = selectedWpsTarget.bssid;
       }
       try {
-        const payload = await fetchJson("/api/network/wps", { method: "POST", body: payloadBody, timeoutMs: 20000 });
+        const payload = await fetchJson("/api/network/wifi/wps/start", { method: "POST", body: payloadBody, timeoutMs: 20000 });
         const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
         const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
         const net = ((payload.data || {}).network || {});
@@ -560,6 +621,9 @@
       }
 
       await refreshNetwork();
+      await refreshWpsStatus();
+      await refreshWifiLogs();
+      startWpsPolling();
       let connected = false;
       for (let i = 0; i < 10; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 6000));
@@ -624,6 +688,7 @@
     q("btn-wifi-profiles-refresh").addEventListener("click", () => run(refreshWifiProfiles));
     q("btn-wifi-profiles-apply").addEventListener("click", () => run(wifiProfilesApply));
     q("btn-wifi-manual-add").addEventListener("click", () => run(wifiProfilesAddManual));
+    q("btn-wifi-logs-refresh").addEventListener("click", () => run(refreshWifiLogs));
     q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
     q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
 
@@ -661,6 +726,8 @@
     await run(refreshNetwork);
     await run(refreshWifiScan);
     await run(refreshWifiProfiles);
+    await run(refreshWpsStatus);
+    await run(refreshWifiLogs);
     setWpsTarget(null);
   }
 

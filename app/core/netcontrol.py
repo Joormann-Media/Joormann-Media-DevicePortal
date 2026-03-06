@@ -210,16 +210,16 @@ def wifi_scan(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
     return {"ifname": iface, "networks": _parse_wifi_scan_output(out)}
 
 
-def wifi_connect(ssid: str, password: str = "", ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+def wifi_connect(ssid: str, password: str = "", ifname: str = DEFAULT_WIFI_IFACE, hidden: bool = False) -> dict:
     ssid = (ssid or "").strip()
     iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
     if not ssid:
         raise NetControlError(code="invalid_payload", message="Missing ssid")
-    args = ["connect", ssid, password or "", iface]
+    args = ["connect", ssid, password or "", iface, "yes" if hidden else "no"]
     rc, out, err = _run_script("wifi_profile.sh", args, timeout=35, use_sudo=True)
     if rc != 0:
         raise NetControlError(code="wifi_connect_failed", message="Failed to connect Wi-Fi", detail=err or out)
-    return {"ssid": ssid, "ifname": iface, "stdout": out}
+    return {"ssid": ssid, "ifname": iface, "hidden": bool(hidden), "stdout": out}
 
 
 def wifi_profiles_list() -> dict:
@@ -259,6 +259,46 @@ def wifi_profile_up(ssid: str) -> dict:
     if rc != 0:
         raise NetControlError(code="wifi_profile_up_failed", message="Failed to activate Wi-Fi profile", detail=err or out)
     return {"ssid": ssid, "stdout": out}
+
+
+def wifi_disconnect(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    rc, out, err = _run_script("wifi_disconnect.sh", [iface], timeout=12, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    if rc != 0 and rc != 10:
+        raise NetControlError(code="wifi_disconnect_failed", message="Failed to disconnect Wi-Fi", detail=err or out)
+    return {"ifname": iface, "stdout": out, "rc": parsed.get("rc", str(rc))}
+
+
+def wifi_request_dhcp(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    rc, out, err = _run_script("wifi_dhcp.sh", [iface], timeout=35, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_dhcp_failed", message="Failed to request DHCP lease", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {"ifname": iface, "ip": parsed.get("ip", ""), "stdout": out}
+
+
+def get_wifi_status(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
+    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    rc, out, err = _run_script("wifi_status.sh", [iface], timeout=8, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="wifi_status_failed", message="Failed to read Wi-Fi status", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {
+        "ifname": parsed.get("iface", iface),
+        "radio": parsed.get("radio", "unknown"),
+        "device_state": parsed.get("device_state", ""),
+        "connection": parsed.get("connection", ""),
+        "connected": parsed.get("connected", "false").lower() == "true",
+        "wpa_state": parsed.get("wpa_state", ""),
+        "ssid": parsed.get("ssid", ""),
+        "bssid": parsed.get("bssid", ""),
+        "signal": parsed.get("signal", ""),
+        "frequency_mhz": parsed.get("frequency_mhz", ""),
+        "security": parsed.get("security", ""),
+        "ip": parsed.get("ip", ""),
+    }
 
 
 def start_wps(ifname: str = DEFAULT_WIFI_IFACE, target_bssid: str = "", target_ssid: str = "") -> dict:

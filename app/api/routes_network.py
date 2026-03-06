@@ -6,21 +6,25 @@ from flask import Blueprint, jsonify, request
 
 from app.core.config import ensure_config
 from app.core.jsonio import write_json
+from app.core.network_events import get_wps_state, log_event, read_events, set_wps_state
 from app.core.netcontrol import (
     NONPREFERRED_WIFI_PRIORITY,
     PREFERRED_WIFI_PRIORITY,
     NetControlError,
     disable_tailscale_dns_override,
+    get_wifi_status,
     get_network_info,
     set_bluetooth_enabled,
     set_lan_enabled,
     set_wifi_enabled,
     start_wps,
     wifi_connect,
+    wifi_disconnect,
     wifi_profile_delete,
     wifi_profile_set,
     wifi_profile_up,
     wifi_profiles_list,
+    wifi_request_dhcp,
     wifi_scan,
 )
 from app.core.paths import CONFIG_PATH
@@ -30,14 +34,57 @@ bp_network = Blueprint("network", __name__)
 
 
 def _ok(data: dict, status: int = 200):
-    return jsonify(ok=True, data=data), status
+    message = data.get("message") if isinstance(data, dict) else ""
+    return jsonify(ok=True, success=True, message=message or "ok", data=data, error_code=""), status
 
 
 def _error(code: str, message: str, status: int = 400, detail: str = ""):
     payload = {"code": code, "message": message}
     if detail:
         payload["detail"] = detail
-    return jsonify(ok=False, error=payload), status
+    return jsonify(ok=False, success=False, message=message, data={}, error_code=code, error=payload), status
+
+
+def _wps_phase_from_status(status: dict, wps_state: dict) -> dict:
+    now = time.time()
+    started_at = float(wps_state.get("started_at_ts") or 0)
+    active = bool(wps_state.get("active"))
+    elapsed = int(max(0, now - started_at)) if started_at else 0
+    wpa_state = (status.get("wpa_state") or "").upper()
+    connected = bool(status.get("connected"))
+    ip = (status.get("ip") or "").strip()
+
+    if not active:
+        phase = "idle"
+        message = "WPS inaktiv."
+    elif elapsed > 125 and not connected:
+        phase = "timeout"
+        message = "WPS Zeitüberschreitung."
+    elif connected and ip:
+        phase = "connected"
+        message = "WLAN verbunden und IP vorhanden."
+    elif connected and not ip:
+        phase = "dhcp_request"
+        message = "WLAN verbunden, DHCP wird angefordert."
+    elif wpa_state in ("SCANNING",):
+        phase = "router_search"
+        message = "Router wird gesucht."
+    elif wpa_state in ("ASSOCIATING", "ASSOCIATED", "4WAY_HANDSHAKE", "AUTHENTICATING"):
+        phase = "auth"
+        message = "Authentifizierung läuft."
+    elif wpa_state in ("DISCONNECTED", "INACTIVE", "INTERFACE_DISABLED"):
+        phase = "started"
+        message = "WPS gestartet. Warte auf Router."
+    else:
+        phase = "in_progress"
+        message = f"WPS-Status: {wpa_state or 'unbekannt'}"
+    return {
+        "phase": phase,
+        "phase_message": message,
+        "wpa_state": wpa_state,
+        "elapsed_sec": elapsed,
+        "active": active,
+    }
 
 
 def _norm_profiles(cfg: dict) -> list[dict]:
@@ -129,8 +176,19 @@ def api_network_wps():
     ifname = (data.get("ifname") or "wlan0").strip()
     target_bssid = (data.get("target_bssid") or "").strip()
     target_ssid = (data.get("target_ssid") or "").strip()
+    log_event("wps", "WPS start requested", data={"ifname": ifname, "target_ssid": target_ssid, "target_bssid": target_bssid})
+    set_wps_state(
+        {
+            "active": True,
+            "started_at_ts": time.time(),
+            "ifname": ifname,
+            "target_ssid": target_ssid,
+            "target_bssid": target_bssid,
+        }
+    )
     try:
         result = start_wps(ifname=ifname, target_bssid=target_bssid, target_ssid=target_ssid)
+        log_event("wps", result.get("message", "WPS started"), data={"iface": ifname, "code": result.get("code", "ok")})
         return (
             jsonify(
                 ok=True,
@@ -156,6 +214,8 @@ def api_network_wps():
                 net_info = get_network_info()
                 wifi = ((net_info or {}).get("interfaces") or {}).get("wifi") or {}
                 if wifi.get("connected"):
+                    log_event("wps", "WPS connected after trigger error", level="warning", data={"iface": ifname, "detail": exc.detail})
+                    set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": "connected"})
                     return (
                         jsonify(
                             ok=True,
@@ -183,6 +243,8 @@ def api_network_wps():
                 pass
             time.sleep(1)
         status = 400 if exc.code in ("invalid_interface", "wifi_interface_missing", "wps_timeout") else 500
+        log_event("wps", exc.message, level="error", data={"iface": ifname, "code": exc.code, "detail": exc.detail})
+        set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": exc.code})
         return (
             jsonify(
                 ok=False,
@@ -197,6 +259,52 @@ def api_network_wps():
         )
 
 
+@bp_network.post("/api/network/wifi/wps/start")
+def api_network_wifi_wps_start():
+    return api_network_wps()
+
+
+@bp_network.get("/api/network/wifi/wps/status")
+def api_network_wifi_wps_status():
+    ifname = (request.args.get("ifname") or "wlan0").strip()
+    try:
+        status = get_wifi_status(ifname=ifname)
+    except NetControlError as exc:
+        return _error(exc.code, exc.message, status=400, detail=exc.detail)
+    wps_state = get_wps_state()
+    phase = _wps_phase_from_status(status, wps_state)
+    if phase["phase"] == "dhcp_request" and bool(wps_state.get("active")):
+        try:
+            dhcp = wifi_request_dhcp(ifname=ifname)
+            status["ip"] = dhcp.get("ip", status.get("ip", ""))
+            if status["ip"]:
+                phase["phase"] = "connected"
+                phase["phase_message"] = "WLAN verbunden und IP vorhanden."
+                set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": "connected"})
+                log_event("wps", "DHCP lease acquired after WPS", data={"ifname": ifname, "ip": status["ip"]})
+        except NetControlError as exc:
+            log_event("wps", "DHCP request after WPS failed", level="warning", data={"ifname": ifname, "detail": exc.detail or exc.message})
+    if phase["phase"] in ("connected", "timeout"):
+        set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": phase["phase"]})
+    return _ok(
+        {
+            "ifname": ifname,
+            "wps": {**phase, "target_ssid": wps_state.get("target_ssid", ""), "target_bssid": wps_state.get("target_bssid", "")},
+            "wifi": status,
+        }
+    )
+
+
+@bp_network.get("/api/network/wifi/status")
+def api_network_wifi_status():
+    ifname = (request.args.get("ifname") or "wlan0").strip()
+    try:
+        status = get_wifi_status(ifname=ifname)
+        return _ok(status)
+    except NetControlError as exc:
+        return _error(exc.code, exc.message, status=400, detail=exc.detail)
+
+
 @bp_network.get("/api/wifi/scan")
 def api_wifi_scan():
     ifname = (request.args.get("ifname") or "wlan0").strip()
@@ -207,16 +315,22 @@ def api_wifi_scan():
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
+@bp_network.get("/api/network/wifi/scan")
+def api_network_wifi_scan():
+    return api_wifi_scan()
+
+
 @bp_network.post("/api/wifi/connect")
 def api_wifi_connect():
     data = request.get_json(force=True, silent=True) or {}
     ssid = (data.get("ssid") or "").strip()
     password = data.get("password") or ""
+    hidden = bool(data.get("hidden", False))
     ifname = (data.get("ifname") or "wlan0").strip()
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
     try:
-        result = wifi_connect(ssid=ssid, password=password, ifname=ifname)
+        result = wifi_connect(ssid=ssid, password=password, ifname=ifname, hidden=hidden)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
@@ -233,7 +347,13 @@ def api_wifi_connect():
     ok, err = _save_wifi_profiles(cfg, profiles, last_ssid=ssid)
     if not ok:
         return _error("config_write_failed", "Connected Wi-Fi but failed to persist profile", status=500, detail=err)
+    log_event("wifi", "Connected to Wi-Fi network", data={"ssid": ssid, "ifname": ifname})
     return _ok({**result, "persisted": True})
+
+
+@bp_network.post("/api/network/wifi/connect")
+def api_network_wifi_connect():
+    return api_wifi_connect()
 
 
 @bp_network.get("/api/wifi/profiles")
@@ -271,11 +391,17 @@ def api_wifi_profiles():
     )
 
 
+@bp_network.get("/api/network/wifi/saved")
+def api_network_wifi_saved():
+    return api_wifi_profiles()
+
+
 @bp_network.post("/api/wifi/profiles/add")
 def api_wifi_profiles_add():
     data = request.get_json(force=True, silent=True) or {}
     ssid = (data.get("ssid") or "").strip()
     password = data.get("password") or ""
+    hidden = bool(data.get("hidden", False))
     ifname = (data.get("ifname") or "wlan0").strip()
     try:
         priority = int(data.get("priority") or NONPREFERRED_WIFI_PRIORITY)
@@ -287,7 +413,7 @@ def api_wifi_profiles_add():
 
     connect_error = ""
     try:
-        wifi_connect(ssid=ssid, password=password, ifname=ifname)
+        wifi_connect(ssid=ssid, password=password, ifname=ifname, hidden=hidden)
     except NetControlError as exc:
         connect_error = exc.detail or exc.message
 
@@ -336,7 +462,13 @@ def api_wifi_profiles_delete():
     ok, err = _save_wifi_profiles(cfg, profiles, preferred=preferred)
     if not ok:
         return _error("config_write_failed", "Profile deleted but config write failed", status=500, detail=err)
+    log_event("wifi", "Removed Wi-Fi profile", data={"ssid": ssid})
     return _ok({"ssid": ssid})
+
+
+@bp_network.post("/api/network/wifi/remove")
+def api_network_wifi_remove():
+    return api_wifi_profiles_delete()
 
 
 @bp_network.post("/api/wifi/profiles/prefer")
@@ -386,7 +518,13 @@ def api_wifi_profiles_up():
     ok, err = _save_wifi_profiles(cfg, _norm_profiles(cfg), last_ssid=ssid)
     if not ok:
         return _error("config_write_failed", "Profile activated but state persistence failed", status=500, detail=err)
+    log_event("wifi", "Activated Wi-Fi profile", data={"ssid": ssid})
     return _ok(result)
+
+
+@bp_network.post("/api/network/wifi/select")
+def api_network_wifi_select():
+    return api_wifi_profiles_up()
 
 
 @bp_network.post("/api/wifi/profiles/apply")
@@ -422,7 +560,37 @@ def api_wifi_profiles_apply():
     ok, err = _save_wifi_profiles(cfg, profiles, preferred=preferred, last_ssid=connected_ssid)
     if not ok:
         return _error("config_write_failed", "Profiles applied but state persistence failed", status=500, detail=err)
+    log_event("wifi", "Applied Wi-Fi profiles", data={"connected_ssid": connected_ssid, "profiles": len(profiles)})
     return _ok({"connected_ssid": connected_ssid, "logs": logs, "profiles": profiles})
+
+
+@bp_network.post("/api/network/wifi/toggle")
+def api_network_wifi_toggle_alias():
+    return api_network_wifi_toggle()
+
+
+@bp_network.post("/api/network/wifi/disconnect")
+def api_network_wifi_disconnect():
+    data = request.get_json(force=True, silent=True) or {}
+    ifname = (data.get("ifname") or "wlan0").strip()
+    try:
+        result = wifi_disconnect(ifname=ifname)
+        log_event("wifi", "Disconnected Wi-Fi interface", data={"ifname": ifname})
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/wifi/logs")
+def api_network_wifi_logs():
+    try:
+        limit = int(request.args.get("limit", "120"))
+    except Exception:
+        limit = 120
+    limit = max(1, min(limit, 500))
+    events = read_events(limit=limit)
+    return _ok({"events": events, "count": len(events)})
 
 
 @bp_network.post("/api/system/tailscale/disable-dns")
