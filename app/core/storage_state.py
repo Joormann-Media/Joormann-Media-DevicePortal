@@ -17,7 +17,14 @@ MOUNT_BASE_PATH = Path("/mnt/deviceportal/storage")
 
 
 def _ensure_mount_base() -> None:
-    MOUNT_BASE_PATH.mkdir(parents=True, exist_ok=True)
+    # The portal process may run unprivileged; mount path creation is handled
+    # by privileged mount wrapper scripts during actual mount operations.
+    try:
+        MOUNT_BASE_PATH.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        return
+    except OSError:
+        return
 
 
 def _read_probe_devices() -> list[dict[str, Any]]:

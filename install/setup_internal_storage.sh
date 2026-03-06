@@ -28,6 +28,7 @@ RESERVE_BYTES=$(( RESERVE_GB * 1024 * 1024 * 1024 ))
 
 install -d -m 0755 /var/lib/deviceportal
 install -d -m 0775 "${MEDIA_MOUNT}"
+install -d -m 0775 /mnt/deviceportal/storage
 
 if [[ ! -e "${MEDIA_IMG}" ]]; then
   AVAILABLE_BYTES="$(df -PB1 /var/lib | awk 'NR==2 {print $4}')"
@@ -73,5 +74,7 @@ fi
 
 chown "${SERVICE_USER}:${SERVICE_GROUP}" "${MEDIA_MOUNT}" || true
 chmod 0775 "${MEDIA_MOUNT}" || true
+chown "${SERVICE_USER}:${SERVICE_GROUP}" /mnt/deviceportal/storage || true
+chmod 0775 /mnt/deviceportal/storage || true
 
 echo "Internal media loop ready: ${MEDIA_IMG} -> ${MEDIA_MOUNT}"
