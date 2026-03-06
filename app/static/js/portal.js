@@ -5,6 +5,8 @@
   let selectedWpsTarget = null;
   let wpsPollHandle = null;
   let apPollHandle = null;
+  let updatePollHandle = null;
+  let currentUpdateJobId = "";
   let apClientsInitialized = false;
   let apKnownConnectedMacs = new Set();
 
@@ -811,22 +813,105 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Update läuft...';
     try {
-      const payload = await fetchJson("/api/system/portal/update", { method: "POST", timeoutMs: 220000 });
+      const payload = await fetchJson("/api/system/portal/update", { method: "POST", timeoutMs: 30000 });
       const data = payload.data || {};
-      const lines = [
-        `message: ${data.message || "-"}`,
-        `repo: ${data.repo_dir || "-"}`,
-        `user: ${data.service_user || "-"}`,
-        `service: ${data.service_name || "-"}`,
-        `git_status: ${data.git_status || "-"}`,
-        `restart_scheduled: ${String(!!data.restart_scheduled)}`,
-        data.details ? `details: ${data.details}` : "",
-      ].filter(Boolean);
-      logEl.textContent = lines.join("\n");
+      currentUpdateJobId = String(data.job_id || "").trim();
+      if (currentUpdateJobId) {
+        await pollPortalUpdateStatus(currentUpdateJobId, true);
+      } else {
+        logEl.textContent = "Update wurde gestartet, aber keine Job-ID wurde zurückgegeben.";
+      }
       toast(data.message || "Update ausgelöst. Service wird neu gestartet.", "success");
     } finally {
       btn.disabled = false;
       btn.innerHTML = original;
+    }
+  }
+
+  function renderPortalUpdateStatus(data) {
+    const logEl = q("system-update-log");
+    const status = String(data.status || "unknown");
+    const success = !!data.success;
+    const lines = [
+      `status: ${status}`,
+      `success: ${String(success)}`,
+      `message: ${data.message || "-"}`,
+      `job_id: ${data.job_id || "-"}`,
+      `repo: ${data.repo_dir || "-"}`,
+      `user: ${data.service_user || "-"}`,
+      `service: ${data.service_name || "-"}`,
+      `git_status: ${data.git_status || "-"}`,
+      `commit: ${(data.before_commit || "-")} -> ${(data.after_commit || "-")}`,
+      `started_at: ${data.started_at || "-"}`,
+      `finished_at: ${data.finished_at || "-"}`,
+      "",
+      "log:",
+      data.log || "-",
+    ];
+    logEl.textContent = lines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function fetchPortalUpdateStatus(jobId = "") {
+    const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : "";
+    const payload = await fetchJson(`/api/system/portal/update/status${query}`, { timeoutMs: 8000 });
+    const data = payload.data || {};
+    renderPortalUpdateStatus(data);
+    return data;
+  }
+
+  async function pollPortalUpdateStatus(jobId, announceDone = false) {
+    if (updatePollHandle) {
+      clearInterval(updatePollHandle);
+      updatePollHandle = null;
+    }
+    let networkErrors = 0;
+    const tick = async () => {
+      try {
+        const data = await fetchPortalUpdateStatus(jobId);
+        networkErrors = 0;
+        const status = String(data.status || "").toLowerCase();
+        if (status === "done" || status === "failed") {
+          if (updatePollHandle) {
+            clearInterval(updatePollHandle);
+            updatePollHandle = null;
+          }
+          if (announceDone) {
+            toast(
+              status === "done" ? "Portal-Update abgeschlossen." : "Portal-Update fehlgeschlagen.",
+              status === "done" ? "success" : "danger",
+            );
+          }
+          await run(refreshStatus);
+        }
+      } catch (err) {
+        networkErrors += 1;
+        if (networkErrors >= 20) {
+          if (updatePollHandle) {
+            clearInterval(updatePollHandle);
+            updatePollHandle = null;
+          }
+          throw err;
+        }
+      }
+    };
+    await tick();
+    updatePollHandle = setInterval(() => {
+      run(tick);
+    }, 2000);
+  }
+
+  async function loadLastPortalUpdateStatus() {
+    try {
+      const data = await fetchPortalUpdateStatus("");
+      const status = String(data.status || "").toLowerCase();
+      const hasJob = !!String(data.job_id || "").trim();
+      if (hasJob && (status === "running" || status === "restarting")) {
+        currentUpdateJobId = String(data.job_id || "").trim();
+        await pollPortalUpdateStatus(currentUpdateJobId, false);
+      }
+    } catch (_) {
+      // Keep UI usable even if status endpoint is temporarily unavailable.
     }
   }
 
@@ -898,6 +983,7 @@
     await run(refreshWifiLogs);
     await run(refreshApStatus);
     await run(refreshApClients);
+    await run(loadLastPortalUpdateStatus);
     startApPolling();
     setWpsTarget(null);
   }

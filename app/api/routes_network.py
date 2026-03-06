@@ -17,6 +17,7 @@ from app.core.netcontrol import (
     get_wifi_status,
     get_network_info,
     portal_update,
+    portal_update_status,
     set_ap_enabled,
     set_bluetooth_enabled,
     set_lan_enabled,
@@ -737,4 +738,15 @@ def api_system_portal_update():
         return _ok(result)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "portal_update_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/system/portal/update/status")
+def api_system_portal_update_status():
+    job_id = (request.args.get("job_id") or "").strip()
+    try:
+        payload = portal_update_status(job_id=job_id)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "update_state_read_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)

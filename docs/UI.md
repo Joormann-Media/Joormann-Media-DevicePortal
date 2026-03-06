@@ -80,6 +80,8 @@ Zusätzliche Panel-Aktionen:
 ## System Aktionen
 
 - `Tailscale DNS-Override deaktivieren` -> `POST /api/system/tailscale/disable-dns`
+- `Portal Update starten` -> `POST /api/system/portal/update`
+- `Portal Update Status/Log (live + letztes Update)` -> `GET /api/system/portal/update/status`
 
 ## Response-Konvention für Netzwerk-Endpunkte
 

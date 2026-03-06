@@ -81,6 +81,7 @@ AP-Erreichbarkeit:
 - `POST /api/network/ap/toggle`
 - `GET /api/network/ap/clients`
 - `POST /api/system/portal/update`
+- `GET /api/system/portal/update/status`
 - `GET /api/network/wifi/logs`
 - `GET /api/wifi/scan`
 - `POST /api/wifi/connect`

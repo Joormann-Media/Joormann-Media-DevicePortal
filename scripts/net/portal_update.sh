@@ -10,6 +10,10 @@ emit() {
   printf '%s=%s\n' "$key" "$val"
 }
 
+utc_now() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
 if [[ "${MODE}" != "start" ]]; then
   echo "usage: $0 start <repo_dir> <service_user> [service_name] [update_dir]" >&2
   exit 2
@@ -47,6 +51,7 @@ LOG_FILE="${UPDATE_DIR}/${JOB_ID}.log"
 STATE_FILE="${UPDATE_DIR}/${JOB_ID}.state"
 touch "${LOG_FILE}" "${STATE_FILE}"
 chmod 0644 "${LOG_FILE}" "${STATE_FILE}" || true
+STARTED_AT="$(utc_now)"
 
 cat > "${STATE_FILE}" <<EOF
 status=running
@@ -56,14 +61,24 @@ repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=${STARTED_AT}
+finished_at=
+before_commit=
+after_commit=
 EOF
 
 (
   set +e
   echo "[update] start job=${JOB_ID} repo=${REPO_DIR} user=${SERVICE_USER}"
+  BEFORE_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
+  if [[ -n "${BEFORE_COMMIT}" ]]; then
+    echo "[git] before=${BEFORE_COMMIT}"
+  fi
 
   GIT_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git pull --ff-only" 2>&1)"
   GIT_RC=$?
+  AFTER_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
   if [[ ${GIT_RC} -eq 0 ]]; then
     GIT_STATUS="ok"
     echo "[git] ok"
@@ -82,6 +97,11 @@ repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
 EOF
     exit 0
   fi
@@ -99,6 +119,11 @@ repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
 EOF
     exit 0
   fi
@@ -111,6 +136,11 @@ repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
 EOF
 
   echo "[service] restarting ${SERVICE_NAME}"
@@ -125,6 +155,11 @@ repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
 EOF
     echo "[service] restart ok"
   else
@@ -136,6 +171,11 @@ repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
 EOF
     echo "[service] restart failed rc=${SRV_RC}"
   fi
@@ -147,5 +187,6 @@ emit "repo_dir" "${REPO_DIR}"
 emit "service_user" "${SERVICE_USER}"
 emit "service_name" "${SERVICE_NAME}"
 emit "restart_scheduled" "true"
+emit "started_at" "${STARTED_AT}"
 emit "message" "Portal update started. Live log available."
 emit "log_file" "${LOG_FILE}"

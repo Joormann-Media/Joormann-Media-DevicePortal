@@ -4,8 +4,10 @@ import json
 import os
 import subprocess
 import getpass
+import re
 from pathlib import Path
 
+from app.core.paths import ASSET_DIR
 
 class NetControlError(Exception):
     def __init__(self, code: str, message: str, detail: str = ""):
@@ -25,6 +27,30 @@ DEFAULT_WIFI_IFACE = "wlan0"
 DEFAULT_AP_PROFILE = os.getenv("AP_PROFILE_NAME", "jm-hotspot")
 PREFERRED_WIFI_PRIORITY = 999
 NONPREFERRED_WIFI_PRIORITY = 100
+MAX_UPDATE_LOG_BYTES = 64 * 1024
+
+
+def _update_dir() -> Path:
+    path = Path(ASSET_DIR) / "updates"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _is_valid_job_id(job_id: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]{1,96}", job_id or ""))
+
+
+def _tail_file(path: Path, max_bytes: int = MAX_UPDATE_LOG_BYTES) -> str:
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            start = max(0, size - max_bytes)
+            fh.seek(start)
+            raw = fh.read().decode("utf-8", errors="replace")
+        return raw.strip()
+    except Exception:
+        return ""
 
 
 def _candidate_script_paths(script_name: str) -> list[Path]:
@@ -456,7 +482,13 @@ def portal_update(service_name: str = "device-portal.service") -> dict:
     repo_dir = str(REPO_ROOT.resolve())
     service_user = getpass.getuser()
     service_name = (service_name or "device-portal.service").strip() or "device-portal.service"
-    rc, out, err = _run_script("portal_update.sh", [repo_dir, service_user, service_name], timeout=220, use_sudo=True)
+    update_dir = str(_update_dir())
+    rc, out, err = _run_script(
+        "portal_update.sh",
+        ["start", repo_dir, service_user, service_name, update_dir],
+        timeout=25,
+        use_sudo=True,
+    )
     parsed = _parse_kv_output(out)
     detail = parsed.get("details") or err or out
     if rc != 0:
@@ -472,6 +504,69 @@ def portal_update(service_name: str = "device-portal.service") -> dict:
         "service_name": parsed.get("service_name", service_name),
         "git_status": parsed.get("git_status", "unknown"),
         "restart_scheduled": parsed.get("restart_scheduled", "false").lower() == "true",
-        "message": parsed.get("message", "Portal update prepared."),
+        "job_id": parsed.get("job_id", ""),
+        "status": "running",
+        "started_at": parsed.get("started_at", ""),
+        "message": parsed.get("message", "Portal update started."),
         "details": detail,
+    }
+
+
+def portal_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_BYTES) -> dict:
+    updates_dir = _update_dir()
+    selected_job_id = (job_id or "").strip()
+    if selected_job_id:
+        if not _is_valid_job_id(selected_job_id):
+            raise NetControlError(code="invalid_job_id", message="Invalid update job id")
+    else:
+        state_files = sorted(updates_dir.glob("*.state"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not state_files:
+            return {
+                "job_id": "",
+                "status": "idle",
+                "success": False,
+                "message": "No update run found yet.",
+                "log": "",
+            }
+        selected_job_id = state_files[0].stem
+
+    state_file = updates_dir / f"{selected_job_id}.state"
+    log_file = updates_dir / f"{selected_job_id}.log"
+    if not state_file.exists():
+        raise NetControlError(code="job_not_found", message="Update job not found")
+
+    try:
+        raw_state = state_file.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        raise NetControlError(code="update_state_read_failed", message="Failed to read update state", detail=str(exc))
+    parsed = _parse_kv_output(raw_state)
+    status = (parsed.get("status") or "unknown").strip().lower()
+    success = (parsed.get("success") or "false").strip().lower() == "true"
+    if status == "done":
+        message = "Portal update completed."
+    elif status == "failed":
+        message = "Portal update failed."
+    elif status == "restarting":
+        message = "Service restart in progress."
+    elif status == "running":
+        message = "Portal update running."
+    else:
+        message = f"Portal update status: {status or 'unknown'}"
+
+    return {
+        "job_id": selected_job_id,
+        "status": status,
+        "success": success,
+        "repo_dir": parsed.get("repo_dir", ""),
+        "service_user": parsed.get("service_user", ""),
+        "service_name": parsed.get("service_name", ""),
+        "git_status": parsed.get("git_status", "unknown"),
+        "before_commit": parsed.get("before_commit", ""),
+        "after_commit": parsed.get("after_commit", ""),
+        "started_at": parsed.get("started_at", ""),
+        "updated_at": parsed.get("updated_at", ""),
+        "finished_at": parsed.get("finished_at", ""),
+        "message": message,
+        "log": _tail_file(log_file, max_log_bytes=max_log_bytes) if log_file.exists() else "",
+        "log_file": str(log_file),
     }
