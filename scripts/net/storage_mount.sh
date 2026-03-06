@@ -39,8 +39,8 @@ fi
 
 mkdir -p "${MOUNT_PATH}"
 
-if findmnt -rn --target "${MOUNT_PATH}" >/dev/null 2>&1; then
-  SRC="$(findmnt -rn -o SOURCE --target "${MOUNT_PATH}" 2>/dev/null || true)"
+if findmnt -rn -M "${MOUNT_PATH}" >/dev/null 2>&1; then
+  SRC="$(findmnt -rn -M "${MOUNT_PATH}" -o SOURCE 2>/dev/null || true)"
   echo "success=true"
   echo "mounted=true"
   echo "device=${SRC}"
@@ -49,7 +49,7 @@ if findmnt -rn --target "${MOUNT_PATH}" >/dev/null 2>&1; then
 fi
 
 if mount -o "${MOUNT_OPTIONS}" "${DEV}" "${MOUNT_PATH}"; then
-  SRC="$(findmnt -rn -o SOURCE --target "${MOUNT_PATH}" 2>/dev/null || true)"
+  SRC="$(findmnt -rn -M "${MOUNT_PATH}" -o SOURCE 2>/dev/null || true)"
   echo "success=true"
   echo "mounted=true"
   echo "device=${SRC}"

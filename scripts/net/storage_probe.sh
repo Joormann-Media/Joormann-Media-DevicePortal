@@ -7,7 +7,7 @@ if [[ -z "${LSBLK}" ]]; then
   exit 0
 fi
 
-JSON_OUT="$(${LSBLK} -J -b -o NAME,KNAME,PATH,TYPE,PKNAME,HOTPLUG,RM,SIZE,FSTYPE,LABEL,UUID,PARTUUID,MOUNTPOINT,MODEL,VENDOR,SERIAL,TRAN 2>/dev/null || true)"
+JSON_OUT="$(${LSBLK} -J -b -o NAME,KNAME,PATH,TYPE,PKNAME,HOTPLUG,RM,SIZE,FSTYPE,LABEL,UUID,PARTUUID,MOUNTPOINT,MODEL,VENDOR,SERIAL,TRAN,FSAVAIL,FSUSED,FSUSE% 2>/dev/null || true)"
 if [[ -z "${JSON_OUT}" ]]; then
   echo '{"devices":[]}'
   exit 0
@@ -120,6 +120,9 @@ for item in nodes:
             "transport": tran,
             "mount_path": mountpoint,
             "mounted": bool(mountpoint),
+            "fs_avail_bytes": as_int(item.get("fsavail", 0)),
+            "fs_used_bytes": as_int(item.get("fsused", 0)),
+            "fs_use_percent": as_int(str(item.get("fsuse%", "0")).replace("%", ""), 0),
             "hotplug": hotplug == 1,
             "removable": removable == 1,
         }

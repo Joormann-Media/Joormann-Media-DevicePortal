@@ -13,7 +13,7 @@ if [[ ! "${MOUNT_PATH}" =~ ^/mnt/deviceportal/storage/[A-Za-z0-9._-]+$ ]]; then
   exit 3
 fi
 
-if ! findmnt -rn --target "${MOUNT_PATH}" >/dev/null 2>&1; then
+if ! findmnt -rn -M "${MOUNT_PATH}" >/dev/null 2>&1; then
   echo "success=true"
   echo "mounted=false"
   echo "mount_path=${MOUNT_PATH}"

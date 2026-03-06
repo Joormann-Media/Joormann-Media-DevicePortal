@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from app.core.netcontrol import NetControlError, storage_internal_mount, storage_mount, storage_probe, storage_unmount
+from app.core.netcontrol import NetControlError, storage_format, storage_internal_mount, storage_mount, storage_probe, storage_unmount
 from app.core.network_events import log_event
 from app.core.storage_config import ensure_storage_config, save_storage_config
 from app.core.storage_identity import find_best_match, safe_mount_slug, storage_device_id
@@ -53,6 +53,9 @@ def _read_probe_devices() -> list[dict[str, Any]]:
             "device_path": str(item.get("device_path") or "").strip(),
             "mount_path": str(item.get("mount_path") or "").strip(),
             "mounted": bool(item.get("mounted", False)),
+            "fs_avail_bytes": int(item.get("fs_avail_bytes") or 0),
+            "fs_used_bytes": int(item.get("fs_used_bytes") or 0),
+            "fs_use_percent": int(item.get("fs_use_percent") or 0),
             "hotplug": bool(item.get("hotplug", False)),
             "removable": bool(item.get("removable", False)),
         }
@@ -127,7 +130,19 @@ def _cfg_device_summary(cfg_item: dict[str, Any], present: bool, mounted: bool, 
     current_mount_path = str((discovered_item or {}).get("mount_path") or "").strip()
     current_device_path = str((discovered_item or {}).get("device_path") or "").strip()
     usage_path = current_mount_path if mounted and current_mount_path else ""
-    total_b, used_b, free_b, used_pct = _disk_usage(str(usage_path)) if usage_path else (int((discovered_item or {}).get("size_bytes") or cfg_item.get("size_bytes") or 0), 0, 0, 0)
+    if usage_path:
+        total_b, used_b, free_b, used_pct = _disk_usage(str(usage_path))
+        if total_b <= 0:
+            fs_used = int((discovered_item or {}).get("fs_used_bytes") or 0)
+            fs_free = int((discovered_item or {}).get("fs_avail_bytes") or 0)
+            fs_pct = int((discovered_item or {}).get("fs_use_percent") or 0)
+            if fs_used > 0 or fs_free > 0:
+                total_b = fs_used + fs_free
+                used_b = fs_used
+                free_b = fs_free
+                used_pct = fs_pct if fs_pct > 0 else (int(round((used_b / total_b) * 100)) if total_b > 0 else 0)
+    else:
+        total_b, used_b, free_b, used_pct = (int((discovered_item or {}).get("size_bytes") or cfg_item.get("size_bytes") or 0), 0, 0, 0)
     drive_name = cfg_item.get("name") or (discovered_item or {}).get("label") or cfg_item.get("label") or cfg_item.get("uuid") or cfg_item.get("part_uuid") or cfg_item.get("id")
     return {
         "id": cfg_item.get("id", ""),
@@ -612,3 +627,58 @@ def unmount_storage_device(device_id: str) -> dict[str, Any]:
 def dump_storage_config() -> str:
     cfg = ensure_storage_config()
     return json.dumps(cfg, ensure_ascii=False, indent=2)
+
+
+def format_storage_device(device_id: str, filesystem: str = "vfat", label: str = "") -> dict[str, Any]:
+    cfg = ensure_storage_config()
+    devices = cfg.get("devices") if isinstance(cfg.get("devices"), list) else []
+    target = next((item for item in devices if str(item.get("id") or "") == device_id), None)
+    if not target:
+        raise NetControlError(code="storage_device_not_found", message="Storage device not found")
+
+    selector_type = "uuid" if str(target.get("uuid") or "").strip() else "partuuid"
+    selector_value = str(target.get("uuid") if selector_type == "uuid" else target.get("part_uuid") or "").strip()
+    if not selector_value:
+        raise NetControlError(code="storage_identity_missing", message="Storage device has no UUID/PARTUUID")
+
+    mount_path = str(target.get("mount_path") or "").strip()
+    if mount_path:
+        try:
+            storage_unmount(mount_path=mount_path)
+        except NetControlError:
+            # format wrapper will unmount by source if still mounted
+            pass
+
+    result = storage_format(selector_type=selector_type, selector_value=selector_value, filesystem=filesystem, label=label)
+    target["filesystem"] = result.get("filesystem", filesystem)
+    if result.get("label"):
+        target["label"] = result.get("label", "")
+        target["name"] = target.get("name") or result.get("label", "")
+    target["last_error"] = ""
+    target["last_seen_at"] = utc_now()
+    target["last_known_present"] = True
+
+    remounted = False
+    if bool(target.get("is_enabled", True)) and bool(target.get("auto_mount", True)) and mount_path:
+        try:
+            storage_mount(
+                selector_type=selector_type,
+                selector_value=selector_value,
+                mount_path=mount_path,
+                mount_options=str(target.get("mount_options") or "defaults,noatime,nofail"),
+            )
+            remounted = True
+        except NetControlError as exc:
+            target["last_error"] = exc.detail or exc.message
+
+    ok, err = save_storage_config(cfg)
+    if not ok:
+        raise NetControlError(code="storage_config_write_failed", message="Could not persist storage format state", detail=err)
+    log_event("storage", "Storage device formatted", data={"id": device_id, "filesystem": result.get("filesystem", filesystem), "remounted": remounted})
+    return {
+        "device_id": device_id,
+        "formatted": bool(result.get("formatted", True)),
+        "filesystem": result.get("filesystem", filesystem),
+        "label": result.get("label", ""),
+        "remounted": remounted,
+    }

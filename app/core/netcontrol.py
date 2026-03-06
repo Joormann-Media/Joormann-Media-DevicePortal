@@ -470,6 +470,29 @@ def storage_internal_mount() -> dict:
     }
 
 
+def storage_format(selector_type: str, selector_value: str, filesystem: str = "vfat", label: str = "") -> dict:
+    sel_type = (selector_type or "").strip().lower()
+    sel_val = (selector_value or "").strip()
+    fs_type = (filesystem or "vfat").strip().lower()
+    fs_label = (label or "").strip()
+    if sel_type not in ("uuid", "partuuid"):
+        raise NetControlError(code="invalid_selector_type", message="Storage format selector must be uuid or partuuid")
+    if not sel_val:
+        raise NetControlError(code="invalid_selector_value", message="Storage format selector is required")
+    if fs_type not in ("ext4", "vfat", "exfat"):
+        raise NetControlError(code="invalid_filesystem", message="Unsupported filesystem")
+    rc, out, err = _run_script("storage_format.sh", [sel_type, sel_val, fs_type, fs_label], timeout=120, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="storage_format_failed", message="Failed to format storage device", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {
+        "formatted": parsed.get("formatted", "false").lower() == "true",
+        "device": parsed.get("device", ""),
+        "filesystem": parsed.get("filesystem", fs_type),
+        "label": parsed.get("label", fs_label),
+    }
+
+
 def storage_unmount(mount_path: str) -> dict:
     mnt_path = (mount_path or "").strip()
     if not mnt_path:

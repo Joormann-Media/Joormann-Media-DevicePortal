@@ -126,7 +126,8 @@
 
   function formatBytes(bytes) {
     const value = Number(bytes || 0);
-    if (!Number.isFinite(value) || value <= 0) return "-";
+    if (!Number.isFinite(value) || value < 0) return "-";
+    if (value === 0) return "0 B";
     const units = ["B", "KB", "MB", "GB", "TB"];
     let idx = 0;
     let current = value;
@@ -332,6 +333,25 @@
     await refreshStorageStatus();
   }
 
+  async function storageFormat(deviceId, currentLabel = "") {
+    const filesystemInput = (window.prompt("Dateisystem für Formatierung (ext4, vfat, exfat):", "vfat") || "").trim().toLowerCase();
+    if (!filesystemInput) return;
+    if (!["ext4", "vfat", "exfat"].includes(filesystemInput)) {
+      toast("Ungültiges Dateisystem. Erlaubt: ext4, vfat, exfat", "danger");
+      return;
+    }
+    const label = (window.prompt("Neues Label (optional):", currentLabel || "") || "").trim();
+    const ok = window.confirm(`Gerät wirklich formatieren?\nDateisystem: ${filesystemInput}\nLabel: ${label || "-"}`);
+    if (!ok) return;
+    await fetchJson("/api/network/storage/format", {
+      method: "POST",
+      body: { device_id: deviceId, filesystem: filesystemInput, label },
+      timeoutMs: 120000,
+    });
+    toast("Speicher wurde formatiert.", "success");
+    await refreshStorageStatus();
+  }
+
   function renderStorageNew(list) {
     const host = q("storage-new-list");
     clearNode(host);
@@ -446,7 +466,12 @@
       removeBtn.className = "btn btn-outline-danger btn-sm";
       removeBtn.textContent = "Entfernen";
       removeBtn.addEventListener("click", () => run(() => storageRemove(item.id)));
-      actions.append(mountBtn, umountBtn, enabledBtn, autoBtn, removeBtn);
+      const formatBtn = document.createElement("button");
+      formatBtn.className = "btn btn-outline-danger btn-sm";
+      formatBtn.textContent = "Formatieren";
+      formatBtn.disabled = !item.present;
+      formatBtn.addEventListener("click", () => run(() => storageFormat(item.id, item.label || item.name || "")));
+      actions.append(mountBtn, umountBtn, enabledBtn, autoBtn, formatBtn, removeBtn);
 
       row.append(top, meta, extra, actions);
       host.append(row);

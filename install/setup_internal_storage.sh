@@ -61,12 +61,22 @@ if [[ "${FS_TYPE}" != "${MEDIA_FS}" ]]; then
 fi
 
 FSTAB_LINE="${MEDIA_IMG} ${MEDIA_MOUNT} ${MEDIA_FS} loop,nofail 0 0"
+FSTAB_CHANGED=0
 if ! awk -v src="${MEDIA_IMG}" -v mnt="${MEDIA_MOUNT}" '($1==src && $2==mnt){found=1} END{exit !found}' /etc/fstab; then
   printf '%s\n' "${FSTAB_LINE}" >> /etc/fstab
+  FSTAB_CHANGED=1
   echo "Added fstab entry for internal media loop"
 fi
 
-if ! findmnt -rn --target "${MEDIA_MOUNT}" >/dev/null 2>&1; then
+if [[ "${FSTAB_CHANGED}" -eq 1 ]]; then
+  systemctl daemon-reload || echo "WARN: systemctl daemon-reload failed" >&2
+fi
+
+if ! mount -a >/dev/null 2>&1; then
+  echo "WARN: mount -a reported errors; continuing with targeted loop mount." >&2
+fi
+
+if ! findmnt -rn -M "${MEDIA_MOUNT}" >/dev/null 2>&1; then
   if ! mount "${MEDIA_MOUNT}"; then
     mount -t ext4 -o loop,nofail "${MEDIA_IMG}" "${MEDIA_MOUNT}"
   fi

@@ -39,6 +39,7 @@ install -m 0750 "$SRC_DIR/ap_clients.sh" "$DST_DIR/ap_clients.sh"
 install -m 0755 "$SRC_DIR/storage_probe.sh" "$DST_DIR/storage_probe.sh"
 install -m 0750 "$SRC_DIR/storage_mount.sh" "$DST_DIR/storage_mount.sh"
 install -m 0750 "$SRC_DIR/storage_internal_mount.sh" "$DST_DIR/storage_internal_mount.sh"
+install -m 0750 "$SRC_DIR/storage_format.sh" "$DST_DIR/storage_format.sh"
 install -m 0750 "$SRC_DIR/storage_unmount.sh" "$DST_DIR/storage_unmount.sh"
 install -m 0750 "$SRC_DIR/portal_update.sh" "$DST_DIR/portal_update.sh"
 install -m 0750 "$SRC_DIR/tailscale_dns_fix.sh" "$DST_DIR/tailscale_dns_fix.sh"
@@ -50,7 +51,7 @@ fi
 
 cat > "$SUDOERS_FILE" <<SUDO
 Defaults:${SERVICE_USER} !requiretty
-${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/tailscale_dns_fix.sh *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_format.sh *, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/tailscale_dns_fix.sh *
 SUDO
 
 chmod 0440 "$SUDOERS_FILE"

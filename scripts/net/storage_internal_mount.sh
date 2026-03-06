@@ -15,9 +15,9 @@ if [[ ! -d "${MEDIA_MOUNT}" ]]; then
   mkdir -p "${MEDIA_MOUNT}"
 fi
 
-if findmnt -rn --target "${MEDIA_MOUNT}" >/dev/null 2>&1; then
-  SRC="$(findmnt -rn -o SOURCE --target "${MEDIA_MOUNT}" 2>/dev/null || true)"
-  FSTYPE="$(findmnt -rn -o FSTYPE --target "${MEDIA_MOUNT}" 2>/dev/null || true)"
+if findmnt -rn -M "${MEDIA_MOUNT}" >/dev/null 2>&1; then
+  SRC="$(findmnt -rn -M "${MEDIA_MOUNT}" -o SOURCE 2>/dev/null || true)"
+  FSTYPE="$(findmnt -rn -M "${MEDIA_MOUNT}" -o FSTYPE 2>/dev/null || true)"
   echo "success=true"
   echo "mounted=true"
   echo "mount_path=${MEDIA_MOUNT}"
@@ -31,8 +31,8 @@ if ! mount -t "${MEDIA_FS}" -o "${MOUNT_OPTIONS}" "${MEDIA_IMG}" "${MEDIA_MOUNT}
   exit 5
 fi
 
-SRC="$(findmnt -rn -o SOURCE --target "${MEDIA_MOUNT}" 2>/dev/null || true)"
-FSTYPE="$(findmnt -rn -o FSTYPE --target "${MEDIA_MOUNT}" 2>/dev/null || true)"
+SRC="$(findmnt -rn -M "${MEDIA_MOUNT}" -o SOURCE 2>/dev/null || true)"
+FSTYPE="$(findmnt -rn -M "${MEDIA_MOUNT}" -o FSTYPE 2>/dev/null || true)"
 echo "success=true"
 echo "mounted=true"
 echo "mount_path=${MEDIA_MOUNT}"

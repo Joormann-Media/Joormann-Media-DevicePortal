@@ -34,6 +34,7 @@ from app.core.netcontrol import (
 )
 from app.core.paths import CONFIG_PATH
 from app.core.storage_state import (
+    format_storage_device,
     get_storage_state,
     ignore_storage_device,
     mount_storage_device,
@@ -348,6 +349,21 @@ def api_network_storage_unmount():
         return _ok(unmount_storage_device(device_id=device_id))
     except NetControlError as exc:
         status = 500 if exc.code in ("storage_unmount_failed", "execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/format")
+def api_network_storage_format():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    filesystem = str(data.get("filesystem") or "vfat").strip().lower()
+    label = str(data.get("label") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        return _ok(format_storage_device(device_id=device_id, filesystem=filesystem, label=label))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("storage_format_failed", "execution_failed", "script_missing", "storage_config_write_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
