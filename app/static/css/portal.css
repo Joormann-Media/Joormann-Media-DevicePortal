@@ -264,3 +264,71 @@ body.portal-body {
   font-size: 0.78rem;
   color: var(--portal-muted);
 }
+
+.status-setup-trigger {
+  cursor: pointer;
+}
+
+.status-setup-trigger:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.setup-wizard-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.setup-step-dot {
+  border: 1px solid var(--portal-border);
+  border-radius: 0.6rem;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.setup-step-dot span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.setup-step-dot.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.setup-step-dot.active span {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.setup-step-dot.done {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.setup-step-dot.done span {
+  background: #bbf7d0;
+  color: #166534;
+}
+
+.setup-search-results {
+  max-height: 220px;
+  overflow: auto;
+}

@@ -38,6 +38,17 @@
     network: null,
     storage: null,
   };
+  const setupWizardState = {
+    step: 1,
+    panelUrl: "",
+    token: "",
+    verifiedUrl: false,
+    registered: false,
+    linkType: "skip",
+    selectedLinkItem: null,
+    searchTimer: null,
+    searchSeq: 0,
+  };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
   const STORAGE_FM_UPLOAD_MAX_FILE_BYTES = 512 * 1024 * 1024;
@@ -202,8 +213,7 @@
     linkedBadge.classList.add(linked ? "text-bg-success" : "text-bg-warning");
     linkedBadge.textContent = linked ? "LINKED" : "UNLINKED";
 
-    const modeBadge = q("status-mode-badge");
-    modeBadge.textContent = String(state.mode || "setup").toUpperCase();
+    updateModeBadgeInteraction(linked, state.mode || "setup");
 
     const deviceTypeBadge = q("status-device-type-badge");
     const piSerial = String(dev.pi_serial || "").trim();
@@ -419,6 +429,321 @@
     }
     badge.classList.add("text-bg-warning");
     badge.textContent = "ONLINE / UNLINKED";
+  }
+
+  function getSetupLinkType() {
+    const checked = document.querySelector('input[name="setup-link-type"]:checked');
+    return checked ? String(checked.value || "skip") : "skip";
+  }
+
+  function setSetupError(message = "") {
+    const box = q("setup-wizard-error");
+    if (!box) return;
+    const msg = String(message || "").trim();
+    if (!msg) {
+      box.classList.add("d-none");
+      box.textContent = "";
+      return;
+    }
+    box.classList.remove("d-none");
+    box.textContent = msg;
+  }
+
+  function updateSetupStepDots() {
+    for (let i = 1; i <= 3; i += 1) {
+      const dot = q(`setup-step-dot-${i}`);
+      if (!dot) continue;
+      dot.classList.remove("active", "done");
+      if (i < setupWizardState.step) dot.classList.add("done");
+      else if (i === setupWizardState.step) dot.classList.add("active");
+    }
+  }
+
+  function updateSetupPanels() {
+    for (let i = 1; i <= 3; i += 1) {
+      const panel = q(`setup-step-${i}`);
+      if (!panel) continue;
+      panel.classList.toggle("d-none", i !== setupWizardState.step);
+    }
+  }
+
+  function updateSetupFooterButtons() {
+    const back = q("setup-wizard-back");
+    const next = q("setup-wizard-next");
+    const complete = q("setup-wizard-complete");
+    const skipComplete = q("setup-wizard-skip-complete");
+    const step2Actions = q("setup-step-2-success-actions");
+    if (!back || !next || !complete || !skipComplete || !step2Actions) return;
+
+    back.disabled = setupWizardState.step <= 1;
+    next.classList.add("d-none");
+    complete.classList.add("d-none");
+    skipComplete.classList.add("d-none");
+
+    if (setupWizardState.step === 1) {
+      next.classList.remove("d-none");
+      next.textContent = "Weiter";
+    } else if (setupWizardState.step === 2) {
+      if (!setupWizardState.registered) {
+        next.classList.remove("d-none");
+        next.textContent = "Jetzt verknüpfen";
+      }
+      step2Actions.classList.toggle("d-none", !setupWizardState.registered);
+    } else if (setupWizardState.step === 3) {
+      complete.classList.remove("d-none");
+      if (setupWizardState.linkType === "skip") {
+        complete.classList.add("d-none");
+      }
+      skipComplete.classList.remove("d-none");
+      skipComplete.textContent = setupWizardState.linkType === "skip" ? "Fertig" : "Ohne Zuordnung beenden";
+    }
+  }
+
+  function updateSetupSearchUi() {
+    const wrap = q("setup-link-search-wrap");
+    if (!wrap) return;
+    const showSearch = setupWizardState.linkType === "user" || setupWizardState.linkType === "customer";
+    wrap.classList.toggle("d-none", !showSearch);
+  }
+
+  function renderSetupSearchResults(items = []) {
+    const host = q("setup-link-search-results");
+    if (!host) return;
+    clearNode(host);
+    if (!Array.isArray(items) || !items.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary small";
+      empty.textContent = "Keine Treffer.";
+      host.append(empty);
+      return;
+    }
+    for (const item of items) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "list-group-item list-group-item-action";
+      const subtitle = item.subtitle ? `<div class="small text-secondary">${escapeHtml(item.subtitle)}</div>` : "";
+      btn.innerHTML = `<div class="fw-semibold">${escapeHtml(item.name || item.id || "-")}</div>${subtitle}`;
+      btn.addEventListener("click", () => {
+        setupWizardState.selectedLinkItem = item;
+        const sel = q("setup-link-selection");
+        if (sel) {
+          const kind = setupWizardState.linkType === "user" ? "User" : "Customer";
+          sel.textContent = `${kind} ausgewählt: ${item.name} (${item.id})`;
+        }
+      });
+      host.append(btn);
+    }
+  }
+
+  function setSetupBusy(isBusy) {
+    const ids = [
+      "setup-wizard-back",
+      "setup-wizard-next",
+      "setup-wizard-complete",
+      "setup-wizard-skip-complete",
+      "setup-finish-now",
+      "setup-go-step-3",
+    ];
+    for (const id of ids) {
+      const el = q(id);
+      if (el) el.disabled = !!isBusy;
+    }
+  }
+
+  function resetSetupWizard() {
+    const cfg = (statusDashboardState.status || {}).config || {};
+    setupWizardState.step = 1;
+    setupWizardState.panelUrl = String(cfg.admin_base_url || "").trim();
+    setupWizardState.token = String(cfg.registration_token || "").trim();
+    setupWizardState.verifiedUrl = false;
+    setupWizardState.registered = false;
+    setupWizardState.linkType = "skip";
+    setupWizardState.selectedLinkItem = null;
+    setupWizardState.searchSeq = 0;
+    if (setupWizardState.searchTimer) {
+      window.clearTimeout(setupWizardState.searchTimer);
+      setupWizardState.searchTimer = null;
+    }
+    q("setup-panel-url").value = setupWizardState.panelUrl;
+    q("setup-registration-token").value = setupWizardState.token;
+    q("setup-step-1-result").textContent = "Noch nicht geprüft.";
+    q("setup-step-2-result").textContent = "Noch nicht verknüpft.";
+    q("setup-link-search").value = "";
+    q("setup-link-search-status").textContent = "Mindestens 2 Zeichen eingeben.";
+    q("setup-link-selection").textContent = "Keine Auswahl.";
+    renderSetupSearchResults([]);
+    q("setup-link-type-skip").checked = true;
+    updateSetupSearchUi();
+    setSetupError("");
+    updateSetupStepDots();
+    updateSetupPanels();
+    updateSetupFooterButtons();
+  }
+
+  function openSetupWizard() {
+    resetSetupWizard();
+    const modal = bootstrap.Modal.getOrCreateInstance(q("setupWizardModal"));
+    modal.show();
+  }
+
+  async function wizardCheckPanelUrl() {
+    setupWizardState.panelUrl = String(q("setup-panel-url").value || "").trim();
+    if (!setupWizardState.panelUrl) {
+      throw new Error("Bitte eine Panel-URL eingeben.");
+    }
+    if (!/^https?:\/\//i.test(setupWizardState.panelUrl) && !/^[a-z0-9.-]+(?::\d+)?$/i.test(setupWizardState.panelUrl)) {
+      throw new Error("Panel-URL ist ungültig.");
+    }
+    const payload = await fetchJson("/api/panel/test-url", {
+      method: "POST",
+      body: { url: setupWizardState.panelUrl },
+      timeoutMs: 10000,
+    });
+    setupWizardState.verifiedUrl = true;
+    const result = q("setup-step-1-result");
+    if (result) {
+      const h = payload.handshake_http || "-";
+      result.textContent = `URL validiert. Handshake erreichbar (HTTP ${h}).`;
+    }
+    if (els.adminBase) els.adminBase.value = setupWizardState.panelUrl;
+    if (setupWizardState.step < 2) setupWizardState.step = 2;
+  }
+
+  async function wizardRegisterWithToken() {
+    setupWizardState.token = String(q("setup-registration-token").value || "").trim();
+    if (!setupWizardState.token) {
+      throw new Error("Bitte einen Registrierungstoken eingeben.");
+    }
+    const validatePayload = await fetchJson("/api/panel/validate-token", {
+      method: "POST",
+      body: {
+        admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
+        registration_token: setupWizardState.token,
+      },
+      timeoutMs: 10000,
+    });
+    if (!validatePayload.valid) {
+      throw new Error("Token ist ungültig.");
+    }
+    const registerPayload = await fetchJson("/api/panel/register", {
+      method: "POST",
+      body: {
+        admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
+        registration_token: setupWizardState.token,
+      },
+      timeoutMs: 12000,
+    });
+    setupWizardState.registered = !!registerPayload.ok;
+    if (els.regToken) els.regToken.value = setupWizardState.token;
+    const result = q("setup-step-2-result");
+    if (result) {
+      const h = registerPayload.http || "-";
+      result.textContent = `Gerät erfolgreich verknüpft (HTTP ${h}).`;
+    }
+    await refreshStatus();
+  }
+
+  async function wizardSearchLinks(query) {
+    const qv = String(query || "").trim();
+    const statusEl = q("setup-link-search-status");
+    if (qv.length < 2) {
+      renderSetupSearchResults([]);
+      if (statusEl) statusEl.textContent = "Mindestens 2 Zeichen eingeben.";
+      return;
+    }
+    const target = setupWizardState.linkType === "customer" ? "customers" : "users";
+    const seq = ++setupWizardState.searchSeq;
+    if (statusEl) statusEl.textContent = "Suche läuft…";
+    const params = new URLSearchParams({
+      q: qv,
+      registration_token: setupWizardState.token,
+      admin_base_url: setupWizardState.panelUrl,
+    });
+    const payload = await fetchJson(`/api/panel/search-${target}?${params.toString()}`, {
+      cache: "no-store",
+      timeoutMs: 10000,
+    });
+    if (seq !== setupWizardState.searchSeq) return;
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    renderSetupSearchResults(items);
+    if (statusEl) statusEl.textContent = items.length ? `${items.length} Treffer` : "Keine Treffer";
+  }
+
+  async function wizardAssignSelection() {
+    if (!setupWizardState.registered) {
+      throw new Error("Gerät ist noch nicht verknüpft.");
+    }
+    if (setupWizardState.linkType === "skip") {
+      return;
+    }
+    if (!setupWizardState.selectedLinkItem || !setupWizardState.selectedLinkItem.id) {
+      throw new Error("Bitte erst einen Eintrag auswählen.");
+    }
+    await fetchJson("/api/panel/assign", {
+      method: "POST",
+      body: {
+        admin_base_url: setupWizardState.panelUrl,
+        registration_token: setupWizardState.token,
+        target_type: setupWizardState.linkType,
+        target_id: setupWizardState.selectedLinkItem.id,
+      },
+      timeoutMs: 10000,
+    });
+  }
+
+  async function completeSetupWizard(closeOnly = false) {
+    const modalEl = q("setupWizardModal");
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.hide();
+    await refreshStatus();
+    if (!closeOnly) {
+      toast("Gerät erfolgreich mit dem Panel verknüpft.", "success");
+    }
+  }
+
+  async function wizardNext() {
+    setSetupError("");
+    setSetupBusy(true);
+    try {
+      if (setupWizardState.step === 1) {
+        await wizardCheckPanelUrl();
+      } else if (setupWizardState.step === 2) {
+        await wizardRegisterWithToken();
+      }
+    } catch (err) {
+      setSetupError(err && err.message ? err.message : String(err || "Unbekannter Fehler"));
+    } finally {
+      setSetupBusy(false);
+      updateSetupStepDots();
+      updateSetupPanels();
+      updateSetupFooterButtons();
+    }
+  }
+
+  function wizardBack() {
+    if (setupWizardState.step <= 1) return;
+    setupWizardState.step -= 1;
+    setSetupError("");
+    updateSetupStepDots();
+    updateSetupPanels();
+    updateSetupFooterButtons();
+  }
+
+  function updateModeBadgeInteraction(linked, modeRaw) {
+    const modeBadge = q("status-mode-badge");
+    if (!modeBadge) return;
+    const mode = String(modeRaw || "setup").toUpperCase();
+    modeBadge.textContent = mode;
+    modeBadge.classList.remove("text-bg-light", "text-bg-success", "text-bg-warning", "text-dark");
+    if (linked) {
+      modeBadge.classList.add("text-bg-success");
+      modeBadge.disabled = true;
+      modeBadge.title = "Gerät ist bereits verknüpft";
+    } else {
+      modeBadge.classList.add("text-bg-warning", "text-dark");
+      modeBadge.disabled = false;
+      modeBadge.title = "Setup-Assistent öffnen";
+    }
   }
 
   function renderStatus(data) {
@@ -2098,10 +2423,8 @@
   }
 
   async function panelCheckLink() {
-    const data = await fetchJson("/api/panel/link-status");
-    q("status-linked").textContent = yn(!!data.linked);
-    q("status-last-check").textContent = (data.panel_link_state || {}).last_check || "-";
-    q("status-last-error").textContent = (data.panel_link_state || {}).last_error || "-";
+    await fetchJson("/api/panel/link-status");
+    await refreshStatus();
     toast("Panel link status refreshed", "success");
   }
 
@@ -2540,6 +2863,15 @@
   }
 
   function bindButtons() {
+    q("status-mode-badge").addEventListener("click", () => {
+      const status = statusDashboardState.status || {};
+      const state = status.state || {};
+      const cfg = status.config || {};
+      const panel = state.panel || cfg.panel_link_state || {};
+      if (!panel.linked) {
+        openSetupWizard();
+      }
+    });
     q("btn-refresh-status").addEventListener("click", () => run(refreshState));
     q("btn-refresh-fingerprint").addEventListener("click", () => run(refreshFingerprint));
     q("btn-pull-plan").addEventListener("click", () => run(pullPlan));
@@ -2661,6 +2993,74 @@
       const modal = bootstrap.Modal.getOrCreateInstance(q("unlinkModal"));
       modal.hide();
       await run(panelUnlink);
+    });
+
+    q("setup-wizard-next").addEventListener("click", () => {
+      wizardNext().catch((err) => {
+        setSetupError(err && err.message ? err.message : String(err || "Unbekannter Fehler"));
+      });
+    });
+    q("setup-wizard-back").addEventListener("click", () => wizardBack());
+    q("setup-finish-now").addEventListener("click", () => run(() => completeSetupWizard(false)));
+    q("setup-go-step-3").addEventListener("click", () => {
+      setupWizardState.step = 3;
+      setSetupError("");
+      updateSetupSearchUi();
+      updateSetupStepDots();
+      updateSetupPanels();
+      updateSetupFooterButtons();
+    });
+    q("setup-wizard-complete").addEventListener("click", async () => {
+      setSetupError("");
+      setSetupBusy(true);
+      try {
+        await wizardAssignSelection();
+        await completeSetupWizard(false);
+      } catch (err) {
+        setSetupError(err && err.message ? err.message : String(err || "Unbekannter Fehler"));
+      } finally {
+        setSetupBusy(false);
+      }
+    });
+    q("setup-wizard-skip-complete").addEventListener("click", async () => {
+      try {
+        await completeSetupWizard(true);
+      } catch (err) {
+        setSetupError(err && err.message ? err.message : String(err || "Unbekannter Fehler"));
+      }
+    });
+    q("setupWizardModal").addEventListener("hidden.bs.modal", () => {
+      setSetupError("");
+      if (setupWizardState.searchTimer) {
+        window.clearTimeout(setupWizardState.searchTimer);
+        setupWizardState.searchTimer = null;
+      }
+      setupWizardState.searchSeq += 1;
+    });
+    for (const radio of document.querySelectorAll('input[name="setup-link-type"]')) {
+      radio.addEventListener("change", () => {
+        setupWizardState.linkType = getSetupLinkType();
+        setupWizardState.selectedLinkItem = null;
+        q("setup-link-selection").textContent = "Keine Auswahl.";
+        renderSetupSearchResults([]);
+        const status = q("setup-link-search-status");
+        if (status) status.textContent = "Mindestens 2 Zeichen eingeben.";
+        updateSetupSearchUi();
+        updateSetupFooterButtons();
+      });
+    }
+    q("setup-link-search").addEventListener("input", () => {
+      if (setupWizardState.searchTimer) {
+        window.clearTimeout(setupWizardState.searchTimer);
+      }
+      setupWizardState.selectedLinkItem = null;
+      q("setup-link-selection").textContent = "Keine Auswahl.";
+      const query = q("setup-link-search").value || "";
+      setupWizardState.searchTimer = window.setTimeout(() => {
+        wizardSearchLinks(query).catch((err) => {
+          setSetupError(err && err.message ? err.message : String(err || "Unbekannter Fehler"));
+        });
+      }, 280);
     });
   }
 

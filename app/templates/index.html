@@ -83,7 +83,7 @@
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                   <span id="status-linked-badge" class="badge text-bg-secondary">UNLINKED</span>
-                  <span id="status-mode-badge" class="badge text-bg-light border text-dark">SETUP</span>
+                  <button id="status-mode-badge" type="button" class="badge text-bg-light border text-dark status-setup-trigger">SETUP</button>
                 </div>
               </div>
               <div class="status-quick-actions mb-2">
@@ -847,6 +847,88 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
           <button id="btn-storage-rename-confirm" type="button" class="btn btn-primary">Umbenennen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="setupWizardModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title d-flex align-items-center gap-2 mb-1">
+              <i class="bi bi-link-45deg"></i>
+              Gerät mit Panel verbinden
+            </h5>
+            <div class="small text-secondary">Setup-Assistent für URL, Token und optionale Zuordnung.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="setup-wizard-steps mb-3">
+            <div id="setup-step-dot-1" class="setup-step-dot active"><span>1</span>Panel URL</div>
+            <div id="setup-step-dot-2" class="setup-step-dot"><span>2</span>Token</div>
+            <div id="setup-step-dot-3" class="setup-step-dot"><span>3</span>Zuordnung</div>
+          </div>
+
+          <div id="setup-wizard-error" class="alert alert-danger py-2 d-none mb-3"></div>
+
+          <section id="setup-step-1" class="setup-step-panel">
+            <label for="setup-panel-url" class="form-label">Panel URL</label>
+            <input id="setup-panel-url" type="url" class="form-control" placeholder="https://admin.example.com" autocomplete="off" spellcheck="false">
+            <div class="form-text">Gib die URL des Admin-Panels ein. Die Link-Route wird serverseitig geprüft.</div>
+            <div id="setup-step-1-result" class="small mt-2 text-secondary">Noch nicht geprüft.</div>
+          </section>
+
+          <section id="setup-step-2" class="setup-step-panel d-none">
+            <label for="setup-registration-token" class="form-label">Registrierungstoken</label>
+            <input id="setup-registration-token" type="text" class="form-control" placeholder="Token" autocomplete="off" spellcheck="false">
+            <div class="form-text">Gib den vom Panel erzeugten Registrierungstoken ein.</div>
+            <div id="setup-step-2-result" class="small mt-2 text-secondary">Noch nicht verknüpft.</div>
+            <div id="setup-step-2-success-actions" class="d-none mt-3 border rounded p-2 bg-light">
+              <div class="small text-secondary mb-2">Gerät wurde verknüpft. Optional kannst du jetzt eine Zuordnung setzen.</div>
+              <div class="d-flex flex-wrap gap-2">
+                <button id="setup-finish-now" type="button" class="btn btn-success btn-sm">Speichern und beenden</button>
+                <button id="setup-go-step-3" type="button" class="btn btn-outline-primary btn-sm">Weiter zu Schritt 3</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="setup-step-3" class="setup-step-panel d-none">
+            <div class="mb-2">Möchtest du dieses Gerät direkt einem User oder Customer zuordnen?</div>
+            <div class="d-flex flex-wrap gap-3 mb-2">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="setup-link-type" id="setup-link-type-user" value="user">
+                <label class="form-check-label" for="setup-link-type-user">User verbinden</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="setup-link-type" id="setup-link-type-customer" value="customer">
+                <label class="form-check-label" for="setup-link-type-customer">Customer verbinden</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="setup-link-type" id="setup-link-type-skip" value="skip" checked>
+                <label class="form-check-label" for="setup-link-type-skip">Überspringen</label>
+              </div>
+            </div>
+            <div id="setup-link-search-wrap" class="d-none">
+              <label for="setup-link-search" class="form-label">Suche</label>
+              <input id="setup-link-search" type="text" class="form-control" placeholder="Name, E-Mail oder Firma">
+              <div class="form-text">Live-Suche mit Vorschlägen.</div>
+              <div id="setup-link-search-status" class="small text-secondary mt-2">Mindestens 2 Zeichen eingeben.</div>
+              <div id="setup-link-search-results" class="list-group mt-2 setup-search-results"></div>
+              <div id="setup-link-selection" class="small mt-2 text-secondary">Keine Auswahl.</div>
+            </div>
+          </section>
+        </div>
+        <div class="modal-footer d-flex justify-content-between">
+          <button id="setup-wizard-back" type="button" class="btn btn-outline-secondary btn-sm" disabled>Zurück</button>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+            <button id="setup-wizard-next" type="button" class="btn btn-primary btn-sm">Weiter</button>
+            <button id="setup-wizard-complete" type="button" class="btn btn-success btn-sm d-none">Zuordnung speichern</button>
+            <button id="setup-wizard-skip-complete" type="button" class="btn btn-outline-success btn-sm d-none">Ohne Zuordnung beenden</button>
+          </div>
         </div>
       </div>
     </div>

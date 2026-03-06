@@ -234,7 +234,48 @@ curl -sS -X POST http://127.0.0.1:5070/api/panel/register \
 
 ---
 
-## 11) POST `/api/plan/pull`
+## 11) POST `/api/panel/validate-token`
+- **Auth:** none
+- **Body JSON:**
+```json
+{
+  "admin_base_url": "https://admin.example.tld",
+  "registration_token": "TOKEN"
+}
+```
+- Prüft URL + Token gegen Panel-Endpoint `/api/device/link/verify-token`.
+- **200:** `{ "ok": true, "valid": true, ... }`
+- **400:** ungültige Eingaben / Token ungültig
+- **502:** Transportfehler
+
+---
+
+## 12) GET `/api/panel/search-users`
+## 13) GET `/api/panel/search-customers`
+- **Auth:** none
+- **Query:** `q`, `registration_token`, optional `admin_base_url`
+- Proxy-Live-Suche für Setup-Wizard Schritt 3.
+- **200:** normalisierte `items[]` mit `id`, `name`, `subtitle`.
+
+---
+
+## 14) POST `/api/panel/assign`
+- **Auth:** none
+- **Body JSON:**
+```json
+{
+  "admin_base_url": "https://admin.example.tld",
+  "registration_token": "TOKEN",
+  "target_type": "user",
+  "target_id": "123"
+}
+```
+- Sendet optionale User/Customer-Zuordnung an `/api/device/link/assign`.
+- **200:** Zuordnung erfolgreich.
+
+---
+
+## 15) POST `/api/plan/pull`
 - **Auth:** none
 - **Body JSON (optional fields, aber faktisch required via fallback chain):**
 ```json
@@ -256,20 +297,20 @@ curl -sS -X POST http://127.0.0.1:5070/api/plan/pull \
 
 ---
 
-## 12) GET `/api/plan/current`
+## 16) GET `/api/plan/current`
 - **Auth:** none
 - **200:** `{ "ok": true, "plan": {...} }`
 - **404:** `{ "ok": false, "error": "plan_missing", "path": "..." }`
 
 ---
 
-## 13) GET `/`
+## 17) GET `/`
 - HTML Setup/Diagnostics Oberfläche.
 - Nutzt JS `fetch()` auf oben genannte JSON-Endpunkte.
 
 ---
 
-## 14) GET `/api/network/info`
+## 18) GET `/api/network/info`
 - **Auth:** none
 - **200:** Netzwerkstatus aus Wrapper-Script (`network_info.sh`)
 

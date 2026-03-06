@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from flask import Blueprint, jsonify, request
 
 from app.core.config import _panel_url, _safe_base_url, ensure_config
 from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint
-from app.core.httpclient import http_get_text, http_post_json
+from app.core.httpclient import http_get_json, http_get_text, http_post_json
 from app.core.jsonio import write_json
 from app.core.paths import CONFIG_PATH
 from app.core.state import update_state
@@ -65,6 +67,85 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
     return payload
 
 
+def _is_truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'ok', 'valid', 'linked', 'success')
+    return False
+
+
+def _panel_handshake_url(base_url: str) -> str:
+    return f"{base_url}/api/device/link/handshake"
+
+
+def _panel_verify_token_url(base_url: str) -> str:
+    return f"{base_url}/api/device/link/verify-token"
+
+
+def _panel_assign_url(base_url: str) -> str:
+    return f"{base_url}/api/device/link/assign"
+
+
+def _response_indicates_success(code: int | None, resp: dict | None) -> bool:
+    if code is None:
+        return False
+    if code < 200 or code >= 300:
+        return False
+    if not isinstance(resp, dict):
+        return True
+    for key in ('ok', 'success', 'valid', 'linked', 'registered', 'assigned'):
+        if key in resp:
+            return _is_truthy(resp.get(key))
+    return True
+
+
+def _extract_items(resp: dict | None) -> list[dict]:
+    if not isinstance(resp, dict):
+        return []
+    direct_candidates = (
+        resp.get('items'),
+        resp.get('results'),
+        resp.get('users'),
+        resp.get('customers'),
+    )
+    for candidate in direct_candidates:
+        if isinstance(candidate, list):
+            return [item for item in candidate if isinstance(item, dict)]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        for key in ('items', 'results', 'users', 'customers'):
+            candidate = data.get(key)
+            if isinstance(candidate, list):
+                return [item for item in candidate if isinstance(item, dict)]
+    return []
+
+
+def _normalize_search_items(items: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for item in items:
+        ident = str(item.get('id') or item.get('uuid') or item.get('slug') or '').strip()
+        if not ident:
+            continue
+        name = str(item.get('name') or item.get('fullName') or item.get('displayName') or '').strip()
+        if not name:
+            first = str(item.get('firstName') or item.get('first_name') or '').strip()
+            last = str(item.get('lastName') or item.get('last_name') or '').strip()
+            name = " ".join(part for part in (first, last) if part).strip() or ident
+        subtitle = str(item.get('email') or item.get('company') or item.get('slug') or '').strip()
+        normalized.append(
+            {
+                'id': ident,
+                'name': name,
+                'subtitle': subtitle,
+                'raw': item,
+            }
+        )
+    return normalized
+
+
 @bp_panel.post('/api/panel/test-url')
 def api_panel_test_url():
     data = request.get_json(force=True, silent=True) or {}
@@ -76,6 +157,31 @@ def api_panel_test_url():
     code, _, err = http_get_text(base, timeout=5)
     if code is None:
         return jsonify(ok=False, error=f'URL unreachable: {err}'), 400
+    handshake_url = _panel_handshake_url(base)
+    hs_code, hs_resp, hs_err = http_get_json(handshake_url, timeout=6)
+    if hs_code is None:
+        return jsonify(
+            ok=False,
+            error='panel_handshake_unreachable',
+            detail=str(hs_err),
+            base_url=base,
+            handshake_url=handshake_url,
+            base_http=code,
+        ), 400
+    schema_ok = isinstance(hs_resp, dict) and any(
+        key in hs_resp for key in ('ok', 'success', 'message', 'data', 'version')
+    )
+    if hs_code >= 400 or not schema_ok:
+        return jsonify(
+            ok=False,
+            error='panel_handshake_invalid',
+            detail='Panel link handshake endpoint missing or unexpected response',
+            base_url=base,
+            base_http=code,
+            handshake_url=handshake_url,
+            handshake_http=hs_code,
+            handshake_response=hs_resp,
+        ), 400
 
     cfg = ensure_config()
     cfg['admin_base_url'] = base
@@ -87,7 +193,14 @@ def api_panel_test_url():
     dev = ensure_device()
     fp = ensure_fingerprint()
     update_state(cfg, dev, fp, mode='setup', message='panel URL updated')
-    return jsonify(ok=True, base_url=base, http=code)
+    return jsonify(
+        ok=True,
+        base_url=base,
+        http=code,
+        handshake_url=handshake_url,
+        handshake_http=hs_code,
+        handshake_response=hs_resp,
+    )
 
 
 @bp_panel.post('/api/panel/ping')
@@ -184,6 +297,17 @@ def api_panel_register():
         ), 400
 
     payload = _panel_register_payload(cfg, dev, fp, host, ip, token)
+    # Optional wizard context for panel-side direct assignment hooks.
+    assignment = data.get('assignment') if isinstance(data.get('assignment'), dict) else {}
+    if assignment:
+        payload['assignment'] = assignment
+    link_target_type = (data.get('link_target_type') or '').strip()
+    link_target_id = str(data.get('link_target_id') or '').strip()
+    if link_target_type in ('user', 'customer') and link_target_id:
+        payload['linkTargetType'] = link_target_type
+        payload['linkTargetId'] = link_target_id
+        payload['link_target_type'] = link_target_type
+        payload['link_target_id'] = link_target_id
     code, resp, err = http_post_json(url, payload, timeout=8)
 
     if code is None:
@@ -208,6 +332,143 @@ def api_panel_register():
     update_state(cfg, dev, fp, mode=mode, message='panel register', panel_state_overrides=st)
 
     return jsonify(ok=linked, panel_link_state=st, response=resp, http=code, resolved_url=url), (200 if linked else 400)
+
+
+@bp_panel.post('/api/panel/validate-token')
+def api_panel_validate_token():
+    cfg = ensure_config()
+    dev = ensure_device()
+
+    data = request.get_json(force=True, silent=True) or {}
+    request_base = _safe_base_url((data.get('admin_base_url') or ''))
+    base_url = request_base or _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base_url:
+        return jsonify(ok=False, error='admin_base_url missing'), 400
+
+    token = (data.get('registration_token') or '').strip()
+    if not token:
+        return jsonify(ok=False, error='registration_token missing'), 400
+
+    verify_url = _panel_verify_token_url(base_url)
+    payload = {
+        'registrationToken': token,
+        'token': token,
+        'deviceUuid': dev.get('device_uuid') or '',
+        'device_uuid': dev.get('device_uuid') or '',
+    }
+    code, resp, err = http_post_json(verify_url, payload, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='token_verify_failed', detail=str(err), verify_url=verify_url), 502
+
+    valid = _response_indicates_success(code, resp)
+    if request_base and valid:
+        cfg['admin_base_url'] = request_base
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+    return jsonify(ok=valid, valid=valid, http=code, verify_url=verify_url, response=resp), (200 if valid else 400)
+
+
+def _search_proxy(target: str):
+    cfg = ensure_config()
+    dev = ensure_device()
+
+    q = (request.args.get('q') or '').strip()
+    token = (request.args.get('registration_token') or request.args.get('token') or '').strip()
+    request_base = _safe_base_url((request.args.get('admin_base_url') or ''))
+    base_url = request_base or _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base_url:
+        return jsonify(ok=False, error='admin_base_url missing'), 400
+    if len(q) < 2:
+        return jsonify(ok=False, error='query_too_short', detail='Search query must be at least 2 chars'), 400
+    if not token:
+        return jsonify(ok=False, error='registration_token missing'), 400
+
+    search_path = 'users' if target == 'users' else 'customers'
+    search_url = f"{base_url}/api/device/link/search/{search_path}"
+    payload = {
+        'registrationToken': token,
+        'token': token,
+        'q': q,
+        'query': q,
+        'deviceUuid': dev.get('device_uuid') or '',
+    }
+    code, resp, err = http_post_json(search_url, payload, timeout=8)
+    if code is not None and code >= 400:
+        # Backward compatible fallback if panel endpoint expects GET query params.
+        fallback_url = f"{search_url}?{urlencode({'q': q, 'registrationToken': token, 'deviceUuid': dev.get('device_uuid') or ''})}"
+        get_code, get_resp, get_err = http_get_json(fallback_url, timeout=8)
+        if get_code is not None and 200 <= get_code < 300:
+            code, resp, err = get_code, get_resp, ''
+        elif get_code is None and err == '':
+            err = get_err
+    if code is None:
+        return jsonify(ok=False, error='search_failed', detail=str(err), search_url=search_url), 502
+    if code < 200 or code >= 300:
+        return jsonify(ok=False, error='search_failed', http=code, search_url=search_url, response=resp), 400
+
+    items = _normalize_search_items(_extract_items(resp))
+    if request_base:
+        cfg['admin_base_url'] = request_base
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+    return jsonify(ok=True, items=items, http=code, response=resp, search_url=search_url)
+
+
+@bp_panel.get('/api/panel/search-users')
+def api_panel_search_users():
+    return _search_proxy('users')
+
+
+@bp_panel.get('/api/panel/search-customers')
+def api_panel_search_customers():
+    return _search_proxy('customers')
+
+
+@bp_panel.post('/api/panel/assign')
+def api_panel_assign():
+    cfg = ensure_config()
+    dev = ensure_device()
+
+    data = request.get_json(force=True, silent=True) or {}
+    request_base = _safe_base_url((data.get('admin_base_url') or ''))
+    base_url = request_base or _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base_url:
+        return jsonify(ok=False, error='admin_base_url missing'), 400
+
+    token = (data.get('registration_token') or data.get('token') or '').strip()
+    if not token:
+        return jsonify(ok=False, error='registration_token missing'), 400
+
+    target_type = (data.get('target_type') or data.get('link_target_type') or '').strip().lower()
+    target_id = str(data.get('target_id') or data.get('link_target_id') or '').strip()
+    if target_type not in ('user', 'customer'):
+        return jsonify(ok=False, error='target_type invalid'), 400
+    if not target_id:
+        return jsonify(ok=False, error='target_id missing'), 400
+
+    assign_url = _panel_assign_url(base_url)
+    payload = {
+        'registrationToken': token,
+        'token': token,
+        'targetType': target_type,
+        'targetId': target_id,
+        'target_type': target_type,
+        'target_id': target_id,
+        'deviceUuid': dev.get('device_uuid') or '',
+        'device_uuid': dev.get('device_uuid') or '',
+    }
+    code, resp, err = http_post_json(assign_url, payload, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='assign_failed', detail=str(err), assign_url=assign_url), 502
+    assigned = _response_indicates_success(code, resp)
+    if not assigned:
+        return jsonify(ok=False, error='assign_failed', http=code, assign_url=assign_url, response=resp), 400
+
+    if request_base:
+        cfg['admin_base_url'] = request_base
+    cfg['updated_at'] = utc_now()
+    write_json(CONFIG_PATH, cfg, mode=0o600)
+    return jsonify(ok=True, assigned=True, http=code, assign_url=assign_url, response=resp)
 
 
 @bp_panel.get('/api/panel/link-status')
