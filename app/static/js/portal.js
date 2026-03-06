@@ -375,7 +375,7 @@
       const delBtn = document.createElement("button");
       delBtn.className = "btn btn-outline-danger btn-sm";
       delBtn.textContent = "Löschen";
-      delBtn.addEventListener("click", () => run(() => wifiProfileDelete(ssid)));
+      delBtn.addEventListener("click", () => run(() => wifiProfileDelete(ssid, item?.nm?.uuid || "")));
       actions.append(upBtn, wpsBtn, prefBtn, delBtn);
       row.append(top, actions);
       host.append(row);
@@ -401,9 +401,9 @@
     toast(`Preferred gesetzt: ${ssid}`, "success");
   }
 
-  async function wifiProfileDelete(ssid) {
+  async function wifiProfileDelete(ssid, uuid = "") {
     if (!window.confirm(`Profil wirklich löschen? (${ssid})`)) return;
-    await fetchJson("/api/wifi/profiles/delete", { method: "POST", body: { ssid } });
+    await fetchJson("/api/wifi/profiles/delete", { method: "POST", body: { ssid, uuid } });
     await refreshWifiProfiles();
     toast(`Profil gelöscht: ${ssid}`, "success");
   }

@@ -95,11 +95,15 @@ case "${CMD}" in
     ;;
   profile-delete)
     SSID="${1:-}"
+    UUID="${2:-}"
     if [[ -z "${SSID}" ]]; then
       echo "missing ssid" >&2
       exit 2
     fi
-    run_nmcli connection delete "${SSID}"
+    if [[ -n "${UUID}" ]]; then
+      run_nmcli connection delete uuid "${UUID}" || true
+    fi
+    run_nmcli connection delete id "${SSID}" || run_nmcli connection delete "${SSID}"
     ;;
   profile-up)
     SSID="${1:-}"

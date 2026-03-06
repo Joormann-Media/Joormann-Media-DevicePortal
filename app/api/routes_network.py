@@ -533,10 +533,11 @@ def api_wifi_profiles_add():
 def api_wifi_profiles_delete():
     data = request.get_json(force=True, silent=True) or {}
     ssid = (data.get("ssid") or "").strip()
+    uuid = (data.get("uuid") or "").strip()
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
     try:
-        wifi_profile_delete(ssid)
+        wifi_profile_delete(ssid, uuid=uuid)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
@@ -549,7 +550,7 @@ def api_wifi_profiles_delete():
     if not ok:
         return _error("config_write_failed", "Profile deleted but config write failed", status=500, detail=err)
     log_event("wifi", "Removed Wi-Fi profile", data={"ssid": ssid})
-    return _ok({"ssid": ssid})
+    return _ok({"ssid": ssid, "uuid": uuid})
 
 
 @bp_network.post("/api/network/wifi/remove")

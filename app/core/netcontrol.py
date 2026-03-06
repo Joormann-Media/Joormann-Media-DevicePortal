@@ -258,14 +258,15 @@ def wifi_profile_set(ssid: str, priority: int, autoconnect: bool) -> dict:
     return {"ssid": ssid, "priority": prio, "autoconnect": autoconnect, "stdout": out}
 
 
-def wifi_profile_delete(ssid: str) -> dict:
+def wifi_profile_delete(ssid: str, uuid: str = "") -> dict:
     ssid = (ssid or "").strip()
+    uuid = (uuid or "").strip()
     if not ssid:
         raise NetControlError(code="invalid_payload", message="Missing ssid")
-    rc, out, err = _run_script("wifi_profile.sh", ["profile-delete", ssid], timeout=12, use_sudo=True)
+    rc, out, err = _run_script("wifi_profile.sh", ["profile-delete", ssid, uuid], timeout=12, use_sudo=True)
     if rc != 0:
         raise NetControlError(code="wifi_profile_delete_failed", message="Failed to delete Wi-Fi profile", detail=err or out)
-    return {"ssid": ssid, "stdout": out}
+    return {"ssid": ssid, "uuid": uuid, "stdout": out}
 
 
 def wifi_profile_up(ssid: str) -> dict:
