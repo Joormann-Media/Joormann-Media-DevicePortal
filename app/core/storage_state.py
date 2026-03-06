@@ -181,7 +181,17 @@ def _internal_summary(cfg: dict[str, Any]) -> dict[str, Any]:
     file_fstype = _file_fstype(image_path) if image_exists else ""
     filesystem = mounted_fstype or file_fstype or expected_fs
 
-    total_b, used_b, free_b, used_pct = _disk_usage(mount_path) if mounted else (image_size_bytes or size_gb * 1024 * 1024 * 1024, 0, 0, 0)
+    if mounted:
+        total_b, used_b, free_b, used_pct = _disk_usage(mount_path)
+    else:
+        # Fallback visibility: if loop mount is not active yet, show root filesystem
+        # utilization so operators still see live disk pressure.
+        total_b, used_b, free_b, used_pct = _disk_usage("/")
+        if total_b <= 0:
+            total_b = image_size_bytes or size_gb * 1024 * 1024 * 1024
+            used_b = 0
+            free_b = 0
+            used_pct = 0
     present = image_exists
     state = "mounted" if mounted else ("present" if present else "missing")
 
