@@ -86,6 +86,33 @@
                   <span id="status-mode-badge" class="badge text-bg-light border text-dark">SETUP</span>
                 </div>
               </div>
+              <div class="status-quick-actions mb-2">
+                <button id="btn-status-shutdown" class="btn btn-outline-danger btn-sm d-inline-flex align-items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v10"></path>
+                    <path d="M18.4 6.6a9 9 0 1 1-12.8 0"></path>
+                  </svg>
+                  Ausschalten
+                </button>
+                <button id="btn-status-reboot" class="btn btn-outline-warning btn-sm d-inline-flex align-items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 2v6h-6"></path>
+                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                    <path d="M3 22v-6h6"></path>
+                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                  </svg>
+                  Neustarten
+                </button>
+                <button id="btn-status-restart-portal" class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.5 9a9 9 0 0 1 14.13-3.36L23 10"></path>
+                    <path d="M20.5 15a9 9 0 0 1-14.13 3.36L1 14"></path>
+                  </svg>
+                  Portal neu starten
+                </button>
+              </div>
               <div class="status-kpi-grid">
                 <div class="status-kpi-item">
                   <div class="status-kpi-label">Hostname</div>

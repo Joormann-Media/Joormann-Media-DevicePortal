@@ -678,3 +678,41 @@ def portal_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_B
         "log": _tail_file(log_file, max_bytes=max_log_bytes) if log_file.exists() else "",
         "log_file": str(log_file),
     }
+
+
+def system_power_action(action: str) -> dict:
+    requested = (action or "").strip().lower()
+    if requested not in {"shutdown", "reboot"}:
+        raise NetControlError(code="invalid_action", message="Action must be 'shutdown' or 'reboot'")
+    rc, out, err = _run_script("system_power.sh", [requested], timeout=15, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "system_power_failed"),
+            message=parsed.get("message", "System power action failed"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "action": parsed.get("action", requested),
+        "message": parsed.get("message", "System action accepted"),
+    }
+
+
+def restart_portal_service(service_name: str = "device-portal.service") -> dict:
+    service = (service_name or "device-portal.service").strip() or "device-portal.service"
+    rc, out, err = _run_script("portal_restart.sh", [service], timeout=20, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "portal_restart_failed"),
+            message=parsed.get("message", "Portal restart failed"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "service_name": parsed.get("service_name", service),
+        "message": parsed.get("message", "Portal service restart requested"),
+    }

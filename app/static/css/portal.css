@@ -154,6 +154,12 @@ body.portal-body {
   gap: 0.75rem;
 }
 
+.status-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .status-kpi-item {
   border: 1px solid var(--portal-border);
   border-radius: 0.7rem;

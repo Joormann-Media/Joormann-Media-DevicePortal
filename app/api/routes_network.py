@@ -18,9 +18,11 @@ from app.core.netcontrol import (
     get_network_info,
     portal_update,
     portal_update_status,
+    restart_portal_service,
     set_ap_enabled,
     set_bluetooth_enabled,
     set_lan_enabled,
+    system_power_action,
     set_wifi_enabled,
     start_wps,
     wifi_connect,
@@ -1072,4 +1074,30 @@ def api_system_portal_update_status():
         return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "update_state_read_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/system/power")
+def api_system_power():
+    data = request.get_json(force=True, silent=True) or {}
+    action = str(data.get("action") or "").strip().lower()
+    if action not in {"shutdown", "reboot"}:
+        return _error("invalid_payload", "Field 'action' must be 'shutdown' or 'reboot'", status=400)
+    try:
+        result = system_power_action(action=action)
+        log_event("system", "System power action requested", data={"action": action})
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "system_power_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/system/portal/restart")
+def api_system_portal_restart():
+    try:
+        result = restart_portal_service(service_name="device-portal.service")
+        log_event("system", "Portal service restart requested", data={"service_name": result.get("service_name", "device-portal.service")})
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "portal_restart_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)

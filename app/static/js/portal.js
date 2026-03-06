@@ -2299,6 +2299,35 @@
     toast("Storage-Sicherheitseinstellung gespeichert.", "success");
   }
 
+  async function requestSystemPower(action) {
+    const target = String(action || "").toLowerCase();
+    if (target !== "shutdown" && target !== "reboot") {
+      throw new Error("Ungültige Systemaktion.");
+    }
+    const label = target === "shutdown" ? "Ausschalten" : "Neustarten";
+    const confirmed = window.confirm(`Raspberry Pi wirklich ${label}?`);
+    if (!confirmed) return;
+    await fetchJson("/api/system/power", {
+      method: "POST",
+      body: { action: target },
+      timeoutMs: 12000,
+    });
+    toast(target === "shutdown" ? "Ausschalten wurde angefordert." : "Neustart wurde angefordert.", "success");
+  }
+
+  async function restartPortalServiceNow() {
+    const confirmed = window.confirm("Portal-Service jetzt neu starten?");
+    if (!confirmed) return;
+    await fetchJson("/api/system/portal/restart", {
+      method: "POST",
+      timeoutMs: 12000,
+    });
+    toast("Portal-Neustart angefordert. Seite wird neu verbunden …", "success");
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 4500);
+  }
+
   async function updatePortal() {
     const btn = q("btn-system-update-portal");
     const logEl = q("system-update-log");
@@ -2618,6 +2647,9 @@
       await refreshApClients();
     }));
     q("btn-system-update-portal").addEventListener("click", () => run(updatePortal));
+    q("btn-status-shutdown").addEventListener("click", () => run(() => requestSystemPower("shutdown")));
+    q("btn-status-reboot").addEventListener("click", () => run(() => requestSystemPower("reboot")));
+    q("btn-status-restart-portal").addEventListener("click", () => run(restartPortalServiceNow));
     const heroUpdateBtn = q("hero-update-btn");
     if (heroUpdateBtn) {
       heroUpdateBtn.addEventListener("click", () => openUpdateTab());
