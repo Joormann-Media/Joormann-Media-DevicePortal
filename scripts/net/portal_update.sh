@@ -49,10 +49,17 @@ if [[ ! -x "${REPO_DIR}/install/setup_netcontrol.sh" ]]; then
   exit 4
 fi
 
+if [[ ! -x "${REPO_DIR}/install/setup_internal_storage.sh" ]]; then
+  echo "missing installer: ${REPO_DIR}/install/setup_internal_storage.sh" >&2
+  exit 4
+fi
+
 if ! id "${SERVICE_USER}" >/dev/null 2>&1; then
   echo "invalid service user: ${SERVICE_USER}" >&2
   exit 5
 fi
+
+SERVICE_GROUP="$(id -gn "${SERVICE_USER}" 2>/dev/null || echo "${SERVICE_USER}")"
 
 mkdir -p "${UPDATE_DIR}"
 chmod 0755 "${UPDATE_DIR}" || true
@@ -121,6 +128,28 @@ EOF
   NET_RC=$?
   if [[ ${NET_RC} -ne 0 ]]; then
     echo "[netcontrol] failed rc=${NET_RC}"
+    cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=${GIT_STATUS}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
+EOF
+    exit 0
+  fi
+
+  echo "[storage] setup internal loop media"
+  "${REPO_DIR}/install/setup_internal_storage.sh" "${SERVICE_USER}" "${SERVICE_GROUP}"
+  STORAGE_RC=$?
+  if [[ ${STORAGE_RC} -ne 0 ]]; then
+    echo "[storage] setup failed rc=${STORAGE_RC}"
     cat > "${STATE_FILE}" <<EOF
 status=failed
 success=false
