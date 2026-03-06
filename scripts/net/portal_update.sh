@@ -2,7 +2,15 @@
 set -euo pipefail
 
 MODE="${1:-start}"
-shift || true
+LEGACY_MODE="false"
+
+if [[ "${MODE}" == "start" ]]; then
+  shift || true
+else
+  # Backward compatibility for old callers:
+  # portal_update.sh <repo_dir> <service_user> [service_name] [update_dir]
+  LEGACY_MODE="true"
+fi
 
 emit() {
   local key="$1"
@@ -14,15 +22,17 @@ utc_now() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
-if [[ "${MODE}" != "start" ]]; then
-  echo "usage: $0 start <repo_dir> <service_user> [service_name] [update_dir]" >&2
-  exit 2
+if [[ "${LEGACY_MODE}" == "true" ]]; then
+  REPO_DIR="${1:-}"
+  SERVICE_USER="${2:-}"
+  SERVICE_NAME="${3:-device-portal.service}"
+  UPDATE_DIR="${4:-/tmp/deviceportal-updates}"
+else
+  REPO_DIR="${1:-}"
+  SERVICE_USER="${2:-}"
+  SERVICE_NAME="${3:-device-portal.service}"
+  UPDATE_DIR="${4:-/tmp/deviceportal-updates}"
 fi
-
-REPO_DIR="${1:-}"
-SERVICE_USER="${2:-}"
-SERVICE_NAME="${3:-device-portal.service}"
-UPDATE_DIR="${4:-/tmp/deviceportal-updates}"
 
 if [[ -z "${REPO_DIR}" || -z "${SERVICE_USER}" ]]; then
   echo "usage: $0 start <repo_dir> <service_user> [service_name] [update_dir]" >&2

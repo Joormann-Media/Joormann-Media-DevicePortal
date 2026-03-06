@@ -627,10 +627,11 @@ def api_wifi_profiles_prefer():
 def api_wifi_profiles_up():
     data = request.get_json(force=True, silent=True) or {}
     ssid = (data.get("ssid") or "").strip()
+    uuid = (data.get("uuid") or "").strip()
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
     try:
-        result = wifi_profile_up(ssid)
+        result = wifi_profile_up(ssid, uuid=uuid)
     except NetControlError as exc:
         if exc.code == "wifi_secrets_required":
             return _error(

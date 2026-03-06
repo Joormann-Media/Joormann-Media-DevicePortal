@@ -172,11 +172,57 @@ case "${CMD}" in
     ;;
   profile-up)
     SSID="${1:-}"
+    UUID="${2:-}"
     if [[ -z "${SSID}" ]]; then
       echo "missing ssid" >&2
       exit 2
     fi
-    run_nmcli connection up "${SSID}"
+    IFACE="$(detect_iface)"
+
+    PROFILE_UP_ERRS=()
+
+    if [[ -n "${UUID}" ]]; then
+      set +e
+      UUID_UP_OUT="$(run_nmcli_capture connection up uuid "${UUID}")"
+      UUID_UP_RC=$?
+      set -e
+      if [[ ${UUID_UP_RC} -eq 0 ]]; then
+        exit 0
+      fi
+      PROFILE_UP_ERRS+=("${UUID_UP_OUT}")
+    fi
+
+    set +e
+    ID_UP_OUT="$(run_nmcli_capture connection up id "${SSID}")"
+    ID_UP_RC=$?
+    set -e
+    if [[ ${ID_UP_RC} -eq 0 ]]; then
+      exit 0
+    fi
+    PROFILE_UP_ERRS+=("${ID_UP_OUT}")
+
+    # Fallback: match by stored Wi-Fi SSID (connection.id may differ from SSID).
+    CANDIDATE_UUID="$("${NMCLI}" -t -f NAME,UUID,TYPE,802-11-wireless.ssid connection show 2>/dev/null | awk -F: -v s="${SSID}" '$3=="802-11-wireless" && ($1==s || $4==s) {print $2; exit}')"
+    if [[ -n "${CANDIDATE_UUID}" ]]; then
+      set +e
+      CANDIDATE_UP_OUT="$(run_nmcli_capture connection up uuid "${CANDIDATE_UUID}")"
+      CANDIDATE_UP_RC=$?
+      set -e
+      if [[ ${CANDIDATE_UP_RC} -eq 0 ]]; then
+        exit 0
+      fi
+      PROFILE_UP_ERRS+=("${CANDIDATE_UP_OUT}")
+    fi
+
+    # If already connected to requested SSID, treat as success.
+    ACTIVE_SSID="$("${NMCLI}" -t -f ACTIVE,SSID dev wifi list ifname "${IFACE}" 2>/dev/null | awk -F: '$1=="yes"||$1=="*" {print $2; exit}')"
+    if [[ -n "${ACTIVE_SSID}" && "${ACTIVE_SSID}" == "${SSID}" ]]; then
+      echo "already_connected=true"
+      exit 0
+    fi
+
+    echo "${PROFILE_UP_ERRS[*]}" >&2
+    exit 46
     ;;
   *)
     echo "usage: $0 <scan|connect|profiles|profile-set|profile-delete|profile-up> [args...]" >&2

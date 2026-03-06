@@ -165,17 +165,36 @@ ensure_ipv4() {
 }
 
 persist_wps_profile() {
-  local conn_name
-  conn_name="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
-  if [[ -z "${conn_name}" || "${conn_name}" == "--" ]]; then
-    conn_name="$("${NMCLI}" -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wifi" {print $1; exit}')"
+  local conn_name conn_uuid ssid profile_uuid
+  ssid=""
+  if [[ -n "${WPA_CLI}" ]]; then
+    ssid="$("${WPA_CLI}" -i "${IFACE}" status 2>/dev/null | sed -n 's/^ssid=//p' | head -n1)"
   fi
-  if [[ -z "${conn_name}" || "${conn_name}" == "--" ]]; then
-    return 0
+  if [[ -z "${ssid}" ]]; then
+    ssid="$("${NMCLI}" -t -f ACTIVE,SSID dev wifi list ifname "${IFACE}" 2>/dev/null | awk -F: '$1=="yes"||$1=="*" {print $2; exit}')"
   fi
 
-  "${NMCLI}" connection modify "${conn_name}" connection.autoconnect yes connection.autoconnect-priority "${WPS_AUTOCONNECT_PRIORITY}" >/dev/null 2>&1 || true
-  "${NMCLI}" connection up "${conn_name}" >/dev/null 2>&1 || true
+  conn_name="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
+  conn_uuid="$("${NMCLI}" -t -f NAME,UUID,TYPE,DEVICE connection show --active 2>/dev/null | awk -F: -v dev="${IFACE}" -v name="${conn_name}" '$3=="802-11-wireless" && ($4==dev || $1==name) {print $2; exit}')"
+  if [[ -z "${conn_uuid}" && -n "${ssid}" ]]; then
+    conn_uuid="$("${NMCLI}" -t -f NAME,UUID,TYPE,802-11-wireless.ssid connection show 2>/dev/null | awk -F: -v s="${ssid}" '$3=="802-11-wireless" && ($1==s || $4==s) {print $2; exit}')"
+  fi
+
+  if [[ -n "${conn_uuid}" ]]; then
+    "${NMCLI}" connection modify uuid "${conn_uuid}" connection.autoconnect yes connection.autoconnect-priority "${WPS_AUTOCONNECT_PRIORITY}" >/dev/null 2>&1 || true
+    if [[ -n "${ssid}" ]]; then
+      profile_uuid="$("${NMCLI}" -t -f NAME,UUID,TYPE connection show 2>/dev/null | awk -F: -v s="${ssid}" '$3=="802-11-wireless" && $1==s {print $2; exit}')"
+      if [[ -z "${profile_uuid}" || "${profile_uuid}" == "${conn_uuid}" ]]; then
+        "${NMCLI}" connection modify uuid "${conn_uuid}" connection.id "${ssid}" >/dev/null 2>&1 || true
+      fi
+    fi
+    "${NMCLI}" connection up uuid "${conn_uuid}" >/dev/null 2>&1 || true
+  elif [[ -n "${ssid}" ]]; then
+    # No active NM profile found: create or normalize one by SSID.
+    "${NMCLI}" connection add type wifi con-name "${ssid}" ifname "${IFACE}" ssid "${ssid}" >/dev/null 2>&1 || true
+    "${NMCLI}" connection modify id "${ssid}" connection.autoconnect yes connection.autoconnect-priority "${WPS_AUTOCONNECT_PRIORITY}" >/dev/null 2>&1 || true
+    "${NMCLI}" connection up id "${ssid}" >/dev/null 2>&1 || true
+  fi
 
   if [[ -n "${WPA_CLI}" ]]; then
     "${WPA_CLI}" -i "${IFACE}" save_config >/dev/null 2>&1 || true

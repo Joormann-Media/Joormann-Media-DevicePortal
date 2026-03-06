@@ -297,11 +297,12 @@ def wifi_profile_delete(ssid: str, uuid: str = "") -> dict:
     return {"ssid": ssid, "uuid": uuid, "stdout": out}
 
 
-def wifi_profile_up(ssid: str) -> dict:
+def wifi_profile_up(ssid: str, uuid: str = "") -> dict:
     ssid = (ssid or "").strip()
+    uuid = (uuid or "").strip()
     if not ssid:
         raise NetControlError(code="invalid_payload", message="Missing ssid")
-    rc, out, err = _run_script("wifi_profile.sh", ["profile-up", ssid], timeout=25, use_sudo=True)
+    rc, out, err = _run_script("wifi_profile.sh", ["profile-up", ssid, uuid], timeout=25, use_sudo=True)
     if rc != 0:
         detail = err or out
         if _is_missing_wifi_secret_error(detail):

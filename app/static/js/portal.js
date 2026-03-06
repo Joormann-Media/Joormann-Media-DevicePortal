@@ -483,7 +483,7 @@
       const upBtn = document.createElement("button");
       upBtn.className = "btn btn-outline-primary btn-sm";
       upBtn.textContent = "Verbinden";
-      upBtn.addEventListener("click", () => run(() => wifiProfileUp(ssid)));
+      upBtn.addEventListener("click", () => run(() => wifiProfileUp(ssid, item?.nm?.uuid || "")));
       const wpsBtn = document.createElement("button");
       wpsBtn.className = "btn btn-outline-secondary btn-sm";
       wpsBtn.textContent = "WPS";
@@ -511,8 +511,8 @@
     return payload;
   }
 
-  async function wifiProfileUp(ssid) {
-    await fetchJson("/api/wifi/profiles/up", { method: "POST", body: { ssid } });
+  async function wifiProfileUp(ssid, uuid = "") {
+    await fetchJson("/api/wifi/profiles/up", { method: "POST", body: { ssid, uuid } });
     await refreshNetwork();
     await refreshWifiProfiles();
     toast(`Profil verbunden: ${ssid}`, "success");
