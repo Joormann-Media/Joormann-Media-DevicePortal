@@ -46,6 +46,12 @@ run_nmcli_capture() {
   return ${rc}
 }
 
+is_unknown_connection_error() {
+  local txt="${1:-}"
+  txt="$(echo "${txt}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${txt}" == *"unknown connection"* || "${txt}" == *"unknown connections"* || "${txt}" == *"unbekannte verbindung"* ]]
+}
+
 case "${CMD}" in
   scan)
     IFACE="${1:-$(detect_iface)}"
@@ -114,19 +120,35 @@ case "${CMD}" in
     IFACE="$(detect_iface)"
     ACTIVE_CONN="$(run_nmcli_capture -t -f GENERAL.CONNECTION device show "${IFACE}" | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
 
+    UUID_DELETE_ERR=""
+    ID_DELETE_ERR=""
+    NAME_DELETE_ERR=""
+
     if [[ -n "${UUID}" ]]; then
       run_nmcli_capture connection down uuid "${UUID}" >/dev/null || true
-      if run_nmcli_capture connection delete uuid "${UUID}" >/dev/null; then
+      set +e
+      UUID_DELETE_ERR="$(run_nmcli_capture connection delete uuid "${UUID}")"
+      UUID_DELETE_RC=$?
+      set -e
+      if [[ ${UUID_DELETE_RC} -eq 0 ]]; then
         exit 0
       fi
       ERRORS+=("delete uuid ${UUID} failed")
     fi
 
     run_nmcli_capture connection down id "${SSID}" >/dev/null || true
-    if run_nmcli_capture connection delete id "${SSID}" >/dev/null; then
+    set +e
+    ID_DELETE_ERR="$(run_nmcli_capture connection delete id "${SSID}")"
+    ID_DELETE_RC=$?
+    set -e
+    if [[ ${ID_DELETE_RC} -eq 0 ]]; then
       exit 0
     fi
-    if run_nmcli_capture connection delete "${SSID}" >/dev/null; then
+    set +e
+    NAME_DELETE_ERR="$(run_nmcli_capture connection delete "${SSID}")"
+    NAME_DELETE_RC=$?
+    set -e
+    if [[ ${NAME_DELETE_RC} -eq 0 ]]; then
       exit 0
     fi
     ERRORS+=("delete id/name '${SSID}' failed")
@@ -136,6 +158,11 @@ case "${CMD}" in
     if [[ -n "${ACTIVE_CONN}" && "${ACTIVE_CONN}" == "${SSID}" ]]; then
       run_nmcli_capture device disconnect "${IFACE}" >/dev/null || true
       echo "profile_not_found_disconnected_active=true"
+      exit 0
+    fi
+
+    if is_unknown_connection_error "${UUID_DELETE_ERR} ${ID_DELETE_ERR} ${NAME_DELETE_ERR}"; then
+      echo "profile_missing=true"
       exit 0
     fi
 

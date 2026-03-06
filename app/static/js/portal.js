@@ -327,6 +327,7 @@
       priority: Number.isFinite(item.priority) ? item.priority : 0,
       autoconnect: !!item.autoconnect,
       source: "nm",
+      nm: { uuid: item.uuid || "" },
     })).filter((item) => item.ssid);
     const profiles = (data.profiles && data.profiles.length) ? data.profiles : ((data.configured && data.configured.length) ? data.configured : unmanagedFallback);
     const preferred = data.preferred_ssid || "";
