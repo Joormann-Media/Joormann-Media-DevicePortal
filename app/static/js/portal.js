@@ -273,11 +273,16 @@
     q("status-health-ram").textContent = ramText;
 
     const internal = storage.internal || {};
-    const internalPct = toPct(internal.used_percent || 0);
+    const internalTotalBytes = Number(internal.loop_total_bytes || internal.total_bytes || 0);
+    const internalUsedBytes = Number(internal.loop_used_bytes || internal.used_bytes || 0);
+    const internalPct = toPct(
+      internal.loop_used_percent
+        ?? (internalTotalBytes > 0 ? (internalUsedBytes / internalTotalBytes) * 100 : 0),
+    );
     setProgressBar("status-health-media-progress", internalPct, "auto");
     q("status-health-media-usage").textContent = `${internalPct}%`;
-    if (internal.total_bytes) {
-      q("status-health-media-meta").textContent = `${formatBytes(internal.used_bytes || 0)} / ${formatBytes(internal.total_bytes || 0)} | ${internal.mount_path || "-"}`;
+    if (internalTotalBytes > 0) {
+      q("status-health-media-meta").textContent = `${formatBytes(internalUsedBytes)} / ${formatBytes(internalTotalBytes)} | ${internal.mount_path || "-"}`;
     } else {
       q("status-health-media-meta").textContent = "keine internen Speicherdaten";
     }
@@ -1522,19 +1527,19 @@
     const info = internal || {};
     const statusEl = q("storage-internal-status");
     const progress = q("storage-internal-progress");
-    const rootPercent = (info.root_used_percent ?? info.used_percent ?? 0);
-    const rootTotal = (info.root_total_bytes ?? info.total_bytes ?? 0);
-    const rootUsed = (info.root_used_bytes ?? info.used_bytes ?? 0);
-    const rootFree = (info.root_free_bytes ?? info.free_bytes ?? 0);
-    const percent = Math.max(0, Math.min(100, Number(rootPercent)));
-    q("storage-internal-name").textContent = "Internes Dateisystem";
+    const loopTotal = Number(info.loop_total_bytes ?? info.total_bytes ?? 0);
+    const loopUsed = Number(info.loop_used_bytes ?? info.used_bytes ?? 0);
+    const loopFree = Number(info.loop_free_bytes ?? info.free_bytes ?? Math.max(0, loopTotal - loopUsed));
+    const loopPercentRaw = info.loop_used_percent ?? (loopTotal > 0 ? (loopUsed / loopTotal) * 100 : 0);
+    const percent = Math.max(0, Math.min(100, Number(loopPercentRaw || 0)));
+    q("storage-internal-name").textContent = "Interner Medienspeicher (Loop)";
     q("storage-internal-image").textContent = info.image_path || "-";
     q("storage-internal-source").textContent = info.mounted_source || "-";
-    q("storage-internal-mount").textContent = "/";
+    q("storage-internal-mount").textContent = info.mount_path || "-";
     q("storage-internal-fs").textContent = info.filesystem || info.expected_filesystem || "-";
-    q("storage-internal-size").textContent = formatBytes(rootTotal);
-    q("storage-internal-used").textContent = formatBytes(rootUsed);
-    q("storage-internal-free").textContent = formatBytes(rootFree);
+    q("storage-internal-size").textContent = formatBytes(loopTotal);
+    q("storage-internal-used").textContent = formatBytes(loopUsed);
+    q("storage-internal-free").textContent = formatBytes(loopFree);
     q("storage-internal-percent").textContent = `${percent}%`;
     progress.style.width = `${percent}%`;
     progress.textContent = `${percent}%`;
@@ -1544,9 +1549,12 @@
     else progress.classList.add("bg-success");
 
     statusEl.className = "badge";
-    if (info.present) {
-      statusEl.classList.add("text-bg-danger");
-      statusEl.textContent = "locked";
+    if (info.mounted) {
+      statusEl.classList.add("text-bg-success");
+      statusEl.textContent = "gemountet";
+    } else if (info.present) {
+      statusEl.classList.add("text-bg-warning");
+      statusEl.textContent = "vorhanden";
     } else {
       statusEl.classList.add("text-bg-secondary");
       statusEl.textContent = "missing";
