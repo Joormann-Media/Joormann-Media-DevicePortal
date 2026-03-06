@@ -324,6 +324,30 @@ def api_network_wifi_wps_status():
             log_event("wps", "DHCP request after WPS failed", level="warning", data={"ifname": ifname, "detail": exc.detail or exc.message})
     if phase["phase"] in ("connected", "timeout"):
         set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": phase["phase"]})
+    if phase["phase"] == "connected":
+        connected_ssid = (status.get("ssid") or "").strip()
+        if connected_ssid:
+            try:
+                wifi_profile_set(connected_ssid, PREFERRED_WIFI_PRIORITY, True)
+            except NetControlError as exc:
+                log_event("wps", "Could not set autoconnect priority after WPS", level="warning", data={"ssid": connected_ssid, "detail": exc.detail or exc.message})
+            try:
+                cfg = ensure_config()
+                profiles = _norm_profiles(cfg)
+                found = False
+                for item in profiles:
+                    if item["ssid"] == connected_ssid:
+                        item["priority"] = max(int(item.get("priority") or 0), PREFERRED_WIFI_PRIORITY)
+                        item["autoconnect"] = True
+                        found = True
+                        break
+                if not found:
+                    profiles.append({"ssid": connected_ssid, "priority": PREFERRED_WIFI_PRIORITY, "autoconnect": True})
+                ok, err = _save_wifi_profiles(cfg, profiles, preferred=connected_ssid, last_ssid=connected_ssid)
+                if not ok:
+                    log_event("wps", "Could not persist connected SSID after WPS", level="warning", data={"ssid": connected_ssid, "detail": err})
+            except Exception as exc:
+                log_event("wps", "Post-WPS config update failed", level="warning", data={"ssid": connected_ssid, "detail": str(exc)})
     return _ok(
         {
             "ifname": ifname,

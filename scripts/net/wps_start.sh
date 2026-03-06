@@ -12,6 +12,7 @@ WPA_CLI="$(command -v wpa_cli || true)"
 DHCPCD_BIN="$(command -v dhcpcd || true)"
 DHCLIENT_BIN="$(command -v dhclient || true)"
 TIMEOUT_BIN="$(command -v timeout || true)"
+WPS_AUTOCONNECT_PRIORITY="${WPS_AUTOCONNECT_PRIORITY:-900}"
 
 emit_result() {
   local success="$1"
@@ -163,6 +164,24 @@ ensure_ipv4() {
   fi
 }
 
+persist_wps_profile() {
+  local conn_name
+  conn_name="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
+  if [[ -z "${conn_name}" || "${conn_name}" == "--" ]]; then
+    conn_name="$("${NMCLI}" -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="wifi" {print $1; exit}')"
+  fi
+  if [[ -z "${conn_name}" || "${conn_name}" == "--" ]]; then
+    return 0
+  fi
+
+  "${NMCLI}" connection modify "${conn_name}" connection.autoconnect yes connection.autoconnect-priority "${WPS_AUTOCONNECT_PRIORITY}" >/dev/null 2>&1 || true
+  "${NMCLI}" connection up "${conn_name}" >/dev/null 2>&1 || true
+
+  if [[ -n "${WPA_CLI}" ]]; then
+    "${WPA_CLI}" -i "${IFACE}" save_config >/dev/null 2>&1 || true
+  fi
+}
+
 IFACE="$(detect_iface)"
 if [[ ! -d "/sys/class/net/${IFACE}" ]]; then
   emit_result "false" "wifi_interface_missing" "Failed to start WPS" "No usable Wi-Fi interface found (checked: ${IFACE})." "Pruefe WLAN-Adapter und NetworkManager Device-Status." "${IFACE}"
@@ -249,6 +268,7 @@ if [[ -n "${wps_started_method}" ]]; then
       while [[ ${elapsed_bg} -le ${max_wait} ]]; do
         if is_connected; then
           ensure_ipv4
+          persist_wps_profile
           exit 0
         fi
         sleep 3
@@ -264,6 +284,7 @@ if [[ -n "${wps_started_method}" ]]; then
   while [[ ${elapsed} -le ${WAIT_SECONDS} ]]; do
     if is_connected; then
       ensure_ipv4
+      persist_wps_profile
       emit_result "true" "connected" "WLAN erfolgreich per WPS verbunden." "${wps_started_method}" "Verbindung hergestellt. Netzwerkinformationen wurden aktualisiert." "${IFACE}"
       collect_wifi_info
       exit 0
