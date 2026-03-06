@@ -578,10 +578,7 @@
     else progress.classList.add("bg-success");
 
     statusEl.className = "badge";
-    if (info.mounted) {
-      statusEl.classList.add("text-bg-success");
-      statusEl.textContent = "gemountet";
-    } else if (info.present) {
+    if (info.present) {
       statusEl.classList.add("text-bg-danger");
       statusEl.textContent = "locked";
     } else {
