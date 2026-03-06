@@ -12,3 +12,6 @@ build/
 *.swp
 *.bak
 .DS_Store
+var/data/*.json
+var/assets/*
+!var/assets/.gitkeep

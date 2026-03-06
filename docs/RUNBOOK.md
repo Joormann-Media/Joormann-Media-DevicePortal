@@ -1,7 +1,7 @@
 # Runbook: Joormann-Media DevicePortal
 
 ## Abstract
-Betriebsanleitung für lokalen Start, Produktionsstart (systemd/gunicorn), Basis-Hardening und Troubleshooting.
+Betriebsanleitung für lokalen Start, Produktionsstart (systemd/venv), Basis-Hardening und Troubleshooting.
 
 ## 1) Local Development
 
@@ -21,22 +21,21 @@ pip install -r requirements.txt
 ### Dev-URL
 - `http://127.0.0.1:5070/`
 
-## 2) Production Start (systemd + gunicorn)
+## 2) Production Start (systemd + venv)
 
-### Referenz Unit
-- [docs/systemd/device-portal.service](/home/djanebmb/projects/Joormann-Media-Deviceportal/docs/systemd/device-portal.service)
-
-Wichtige Zeilen:
-- WorkingDirectory: `/opt/jm-deviceportal`
-- ExecStart: `python3 -m gunicorn -w 2 -b 0.0.0.0:5070 app.main:app`
-
-### Beispiel-Installation
+### Provisioning/Installation
 ```bash
-sudo cp docs/systemd/device-portal.service /etc/systemd/system/device-portal.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now device-portal.service
+cd /home/djanebmb/projects/Joormann-Media-Deviceportal
+sudo ./install/setup_portal.sh "$(pwd)" djanebmb
+sudo ./install/setup_netcontrol.sh "$(pwd)" djanebmb
 sudo systemctl status device-portal.service
 ```
+
+Die Unit wird durch `setup_portal.sh` dynamisch erzeugt:
+- `User=<SERVICE_USER>`
+- `WorkingDirectory=<REPO_DIR>`
+- `ExecStart=<REPO_DIR>/.venv/bin/python -m app.main`
+- `EnvironmentFile=-/etc/default/jm-deviceportal`
 
 ## 3) Environment / Pfade
 
@@ -48,7 +47,7 @@ Quelle: [app/core/paths.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/
 Empfehlung Prod:
 - `CONFIG_PATH=<PORTAL_DIR>/var/data/config.json`
 - `DEVICE_PATH=<PORTAL_DIR>/var/data/device.json`
-- Files Eigentümer auf Service-User (`www-data`) oder passende ACL.
+- Files Eigentümer auf Service-User (`djanebmb` im Beispiel) oder passende ACL.
 
 ## 4) Reverse Proxy (Nginx) – im Repo nicht enthalten
 
@@ -105,7 +104,7 @@ journalctl -u device-portal.service -f
 - Rechte/Ownership prüfen:
 ```bash
 sudo ls -la /opt/jm-deviceportal/var/data
-sudo chown -R www-data:www-data /opt/jm-deviceportal/var/data
+sudo chown -R djanebmb:djanebmb /opt/jm-deviceportal/var/data
 ```
 
 ## 7) Empfohlene Betriebs-Hardening Schritte

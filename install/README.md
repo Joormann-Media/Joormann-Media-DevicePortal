@@ -3,20 +3,25 @@
 ## 1) Portal Basis einrichten
 
 ```bash
-sudo ./install/setup_portal.sh /opt/jm-deviceportal www-data
+sudo ./install/setup_portal.sh "$(pwd)" djanebmb
 ```
 
 - installiert Python-Prereqs
+- erstellt/aktualisiert `.venv` im Repo und installiert `requirements.txt`
 - legt `<REPO_DIR>/var/data` und `<REPO_DIR>/var/assets` an
-- setzt `<REPO_DIR>/var/assets` auf den Service-User (Standard: `www-data`) damit Event-/WPS-State-Dateien schreibbar sind
-- setzt `<REPO_DIR>/var/data` auf den Service-User (Standard: `www-data`) damit Config/State/Plan schreibbar sind
+- setzt `<REPO_DIR>/var/assets` auf den Service-User (Standard: aktueller `SUDO_USER`) damit Event-/WPS-State-Dateien schreibbar sind
+- setzt `<REPO_DIR>/var/data` auf den Service-User (Standard: aktueller `SUDO_USER`) damit Config/State/Plan schreibbar sind
 - migriert vorhandene Legacy-Dateien aus `/etc/device/*.json` nach `<REPO_DIR>/var/data/*.json` (falls Ziel noch fehlt)
-- installiert/aktiviert `device-portal.service` aus `docs/systemd/device-portal.service`
+- schreibt `/etc/default/jm-deviceportal` mit Datenpfaden/ASSET_DIR
+- schreibt und aktiviert eine systemd-Unit mit:
+  - `User=<SERVICE_USER>`
+  - `WorkingDirectory=<REPO_DIR>`
+  - `ExecStart=<REPO_DIR>/.venv/bin/python -m app.main`
 
 ## 2) Netzwerk-Steuerung einrichten
 
 ```bash
-sudo ./install/setup_netcontrol.sh /opt/jm-deviceportal www-data
+sudo ./install/setup_netcontrol.sh "$(pwd)" djanebmb
 ```
 
 - installiert `nmcli`/`rfkill`-relevante Pakete
