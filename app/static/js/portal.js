@@ -13,6 +13,8 @@
   let storageInitialized = false;
   let knownStorageStates = new Map();
   let knownNewStorageIds = new Set();
+  let knownStorageById = new Map();
+  let selectedStorageDeviceId = "";
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
 
   function q(id) {
@@ -333,6 +335,18 @@
     await refreshStorageStatus();
   }
 
+  function storageTypeBadge(driveType = "", isInternal = false) {
+    if (isInternal) return "internal";
+    if (String(driveType || "").toLowerCase() === "usb") return "USB-Drive";
+    return String(driveType || "extern");
+  }
+
+  function storageStatusBadge(item) {
+    if (item && item.mounted) return { cls: "text-bg-success", text: "gemountet" };
+    if (item && item.present) return { cls: "text-bg-warning", text: "vorhanden" };
+    return { cls: "text-bg-secondary", text: "nicht vorhanden" };
+  }
+
   async function storageFormat(deviceId, currentLabel = "") {
     const filesystemInput = (window.prompt("Dateisystem für Formatierung (ext4, vfat, exfat):", "vfat") || "").trim().toLowerCase();
     if (!filesystemInput) return;
@@ -443,37 +457,11 @@
       extra.className = "text-secondary mb-2";
       extra.textContent = `Enabled: ${item.is_enabled ? "yes" : "no"} | Auto-Mount: ${item.auto_mount ? "yes" : "no"} | Last seen: ${item.last_seen_at || "-"}${item.last_error ? ` | Fehler: ${item.last_error}` : ""}`;
 
-      const actions = document.createElement("div");
-      actions.className = "d-flex flex-wrap gap-2";
-      const mountBtn = document.createElement("button");
-      mountBtn.className = "btn btn-outline-primary btn-sm";
-      mountBtn.textContent = "Mount";
-      mountBtn.disabled = !item.present;
-      mountBtn.addEventListener("click", () => run(() => storageMount(item.id)));
-      const umountBtn = document.createElement("button");
-      umountBtn.className = "btn btn-outline-secondary btn-sm";
-      umountBtn.textContent = "Unmount";
-      umountBtn.addEventListener("click", () => run(() => storageUnmount(item.id)));
-      const enabledBtn = document.createElement("button");
-      enabledBtn.className = "btn btn-outline-dark btn-sm";
-      enabledBtn.textContent = item.is_enabled ? "Deaktivieren" : "Aktivieren";
-      enabledBtn.addEventListener("click", () => run(() => storageToggleEnabled(item.id, !item.is_enabled)));
-      const autoBtn = document.createElement("button");
-      autoBtn.className = "btn btn-outline-dark btn-sm";
-      autoBtn.textContent = item.auto_mount ? "Auto-Mount aus" : "Auto-Mount an";
-      autoBtn.addEventListener("click", () => run(() => storageToggleAutoMount(item.id, !item.auto_mount)));
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "btn btn-outline-danger btn-sm";
-      removeBtn.textContent = "Entfernen";
-      removeBtn.addEventListener("click", () => run(() => storageRemove(item.id)));
-      const formatBtn = document.createElement("button");
-      formatBtn.className = "btn btn-outline-danger btn-sm";
-      formatBtn.textContent = "Formatieren";
-      formatBtn.disabled = !item.present;
-      formatBtn.addEventListener("click", () => run(() => storageFormat(item.id, item.label || item.name || "")));
-      actions.append(mountBtn, umountBtn, enabledBtn, autoBtn, formatBtn, removeBtn);
+      const actionsHint = document.createElement("div");
+      actionsHint.className = "small text-secondary";
+      actionsHint.textContent = "Aktionen über das Edit-Icon in der Laufwerke-Karte.";
 
-      row.append(top, meta, extra, actions);
+      row.append(top, meta, extra, actionsHint);
       host.append(row);
     }
   }
@@ -620,6 +608,16 @@
       const right = document.createElement("div");
       right.className = "d-flex align-items-center gap-1 flex-shrink-0";
       right.append(typeBadge, badge);
+      if (!d.is_internal && knownStorageById.has(String(d.id || ""))) {
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center";
+        editBtn.title = "Laufwerk bearbeiten";
+        editBtn.setAttribute("aria-label", "Laufwerk bearbeiten");
+        editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+        editBtn.addEventListener("click", () => openStorageDeviceModal(String(d.id || "")));
+        right.append(editBtn);
+      }
       top.append(title, right);
 
       const fs = d.filesystem || "-";
@@ -657,13 +655,52 @@
 
   function renderStorageStatus(payload) {
     const data = payload.data || payload || {};
+    const knownList = Array.isArray(data.known) ? data.known : [];
+    knownStorageById = new Map(knownList.map((item) => [String(item.id || ""), item]));
     q("storage-summary").textContent = `${data.known_count || 0} bekannt / ${data.new_count || 0} neu / ${data.ignored_count || 0} ignoriert`;
     renderStorageInternal(data.internal || {});
     renderStorageDrives(data.drives || []);
     renderStorageNew(data.new || []);
-    renderStorageKnown(data.known || []);
+    renderStorageKnown(knownList);
     renderStorageIgnored(data.ignored || []);
     processStorageDeltas(data);
+  }
+
+  function openStorageDeviceModal(deviceId) {
+    const item = knownStorageById.get(String(deviceId || ""));
+    if (!item) {
+      toast("Laufwerkdaten nicht gefunden.", "danger");
+      return;
+    }
+    selectedStorageDeviceId = String(item.id || "");
+    q("storage-modal-title").textContent = item.name || item.label || item.uuid || item.part_uuid || "Laufwerk";
+    const typeBadge = q("storage-modal-type-badge");
+    typeBadge.textContent = storageTypeBadge(item.drive_type || "", false);
+    const statusMeta = storageStatusBadge(item);
+    const statusBadge = q("storage-modal-status-badge");
+    statusBadge.className = `badge ${statusMeta.cls}`;
+    statusBadge.textContent = statusMeta.text;
+
+    q("storage-modal-ident").textContent = item.uuid || item.part_uuid || "-";
+    q("storage-modal-fs").textContent = item.filesystem || "-";
+    q("storage-modal-total").textContent = formatBytes(item.total_bytes || item.size_bytes || 0);
+    q("storage-modal-used").textContent = formatBytes(item.used_bytes || 0);
+    q("storage-modal-free").textContent = formatBytes(item.free_bytes || 0);
+    q("storage-modal-mount").textContent = item.mount_path || "-";
+    q("storage-modal-current-mount").textContent = item.current_mount_path || "-";
+    q("storage-modal-device").textContent = item.current_device_path || item.last_seen_device_path || "-";
+    q("storage-modal-enabled").textContent = item.is_enabled ? "yes" : "no";
+    q("storage-modal-automount").textContent = item.auto_mount ? "yes" : "no";
+    q("storage-modal-last-seen").textContent = item.last_seen_at || "-";
+    q("storage-modal-error").textContent = item.last_error || "-";
+
+    q("btn-storage-modal-mount").disabled = !item.present;
+    q("btn-storage-modal-enabled").textContent = item.is_enabled ? "Deaktivieren" : "Aktivieren";
+    q("btn-storage-modal-automount").textContent = item.auto_mount ? "Auto-Mount aus" : "Auto-Mount an";
+    q("btn-storage-modal-format").disabled = !item.present;
+
+    const modal = bootstrap.Modal.getOrCreateInstance(q("storageDeviceModal"));
+    modal.show();
   }
 
   async function refreshStorageStatus() {
@@ -1399,6 +1436,43 @@
     q("btn-wifi-manual-add").addEventListener("click", () => run(wifiProfilesAddManual));
     q("btn-wifi-logs-refresh").addEventListener("click", () => run(refreshWifiLogs));
     q("btn-storage-refresh").addEventListener("click", () => run(refreshStorageStatus));
+    q("btn-storage-modal-mount").addEventListener("click", () => run(async () => {
+      if (!selectedStorageDeviceId) return;
+      await storageMount(selectedStorageDeviceId);
+      openStorageDeviceModal(selectedStorageDeviceId);
+    }));
+    q("btn-storage-modal-unmount").addEventListener("click", () => run(async () => {
+      if (!selectedStorageDeviceId) return;
+      await storageUnmount(selectedStorageDeviceId);
+      openStorageDeviceModal(selectedStorageDeviceId);
+    }));
+    q("btn-storage-modal-enabled").addEventListener("click", () => run(async () => {
+      if (!selectedStorageDeviceId) return;
+      const item = knownStorageById.get(selectedStorageDeviceId);
+      if (!item) return;
+      await storageToggleEnabled(selectedStorageDeviceId, !item.is_enabled);
+      openStorageDeviceModal(selectedStorageDeviceId);
+    }));
+    q("btn-storage-modal-automount").addEventListener("click", () => run(async () => {
+      if (!selectedStorageDeviceId) return;
+      const item = knownStorageById.get(selectedStorageDeviceId);
+      if (!item) return;
+      await storageToggleAutoMount(selectedStorageDeviceId, !item.auto_mount);
+      openStorageDeviceModal(selectedStorageDeviceId);
+    }));
+    q("btn-storage-modal-format").addEventListener("click", () => run(async () => {
+      if (!selectedStorageDeviceId) return;
+      const item = knownStorageById.get(selectedStorageDeviceId);
+      await storageFormat(selectedStorageDeviceId, item?.label || item?.name || "");
+      openStorageDeviceModal(selectedStorageDeviceId);
+    }));
+    q("btn-storage-modal-remove").addEventListener("click", () => run(async () => {
+      if (!selectedStorageDeviceId) return;
+      await storageRemove(selectedStorageDeviceId);
+      const modal = bootstrap.Modal.getOrCreateInstance(q("storageDeviceModal"));
+      modal.hide();
+      selectedStorageDeviceId = "";
+    }));
     q("btn-ap-enable").addEventListener("click", () => run(() => toggleAp(true)));
     q("btn-ap-disable").addEventListener("click", () => run(() => toggleAp(false)));
     q("btn-ap-refresh").addEventListener("click", () => run(async () => {

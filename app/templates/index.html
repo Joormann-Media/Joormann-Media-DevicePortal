@@ -467,6 +467,47 @@
     </div>
   </div>
 
+  <div class="modal fade" id="storageDeviceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <span id="storage-modal-title">Laufwerk</span>
+            <span id="storage-modal-type-badge" class="badge text-bg-light border text-dark">extern</span>
+            <span id="storage-modal-status-badge" class="badge text-bg-secondary">unbekannt</span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <dl class="portal-kv mb-0">
+            <dt>UUID / PARTUUID</dt><dd id="storage-modal-ident">-</dd>
+            <dt>Dateisystem</dt><dd id="storage-modal-fs">-</dd>
+            <dt>Gesamt</dt><dd id="storage-modal-total">-</dd>
+            <dt>Belegt</dt><dd id="storage-modal-used">-</dd>
+            <dt>Frei</dt><dd id="storage-modal-free">-</dd>
+            <dt>Mount</dt><dd id="storage-modal-mount">-</dd>
+            <dt>Aktuell</dt><dd id="storage-modal-current-mount">-</dd>
+            <dt>Device</dt><dd id="storage-modal-device">-</dd>
+            <dt>Enabled</dt><dd id="storage-modal-enabled">-</dd>
+            <dt>Auto-Mount</dt><dd id="storage-modal-automount">-</dd>
+            <dt>Last seen</dt><dd id="storage-modal-last-seen">-</dd>
+            <dt>Fehler</dt><dd id="storage-modal-error">-</dd>
+          </dl>
+        </div>
+        <div class="modal-footer d-flex flex-wrap justify-content-between gap-2">
+          <div class="d-flex flex-wrap gap-2">
+            <button id="btn-storage-modal-mount" type="button" class="btn btn-outline-primary btn-sm">Mount</button>
+            <button id="btn-storage-modal-unmount" type="button" class="btn btn-outline-secondary btn-sm">Unmount</button>
+            <button id="btn-storage-modal-enabled" type="button" class="btn btn-outline-dark btn-sm">Deaktivieren</button>
+            <button id="btn-storage-modal-automount" type="button" class="btn btn-outline-dark btn-sm">Auto-Mount aus</button>
+            <button id="btn-storage-modal-format" type="button" class="btn btn-outline-danger btn-sm">Formatieren</button>
+          </div>
+          <button id="btn-storage-modal-remove" type="button" class="btn btn-danger btn-sm">Entfernen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="{{ url_for('static', filename='js/portal.js') }}"></script>
 </body>
