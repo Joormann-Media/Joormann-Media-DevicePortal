@@ -5,7 +5,7 @@ Die Startseite `/` wurde auf eine tab-basierte SaaS-UI umgestellt (Bootstrap 5 +
 
 ## Struktur
 
-- Hero mit Runtime-Badge (`ONLINE / LINKED` etc.)
+- Hero mit Runtime-Badge (`ONLINE / LINKED` etc.) und Update-Status (`Up to date` / `Update verfügbar`)
 - Tab 1: `Status & Link`
 - Tab 2: `Netzwerk & WLAN`
 - Tab 3: `Stream Einstellungen` (Platzhalter)

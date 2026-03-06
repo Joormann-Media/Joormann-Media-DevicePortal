@@ -88,6 +88,7 @@ curl -sS http://127.0.0.1:5070/health
   - `config` (persistierte Config)
   - `device` (mit maskiertem `auth_key`)
   - `fingerprint` (short)
+  - `app_update` (lokaler/remote Git-Stand + Update verfügbar)
   - `state`
 
 **200 example**
@@ -97,6 +98,7 @@ curl -sS http://127.0.0.1:5070/health
   "config": {"admin_base_url": "https://..."},
   "device": {"device_uuid": "...", "auth_key": "********abcd"},
   "fingerprint": {"hostname": "...", "kernel": "..."},
+  "app_update": {"available": false, "local_branch": "main", "local_commit": "abc...", "remote_commit": "abc...", "error": ""},
   "state": {"mode": "setup", "panel": {"linked": false}}
 }
 ```

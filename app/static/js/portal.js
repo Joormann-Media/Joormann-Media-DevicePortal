@@ -159,8 +159,25 @@
     const panel = (state.panel || cfg.panel_link_state || {});
     const linked = !!panel.linked;
     const online = !!state.hostname;
+    const update = data.app_update || {};
 
     setStatusBadge(linked, online);
+    const updateBadge = q("hero-update");
+    if (updateBadge) {
+      updateBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
+      if (update.available) {
+        updateBadge.classList.add("text-bg-warning");
+        const shortLocal = (update.local_commit || "").slice(0, 7);
+        const shortRemote = (update.remote_commit || "").slice(0, 7);
+        updateBadge.textContent = `Update verfügbar (${shortLocal} -> ${shortRemote})`;
+      } else if (update.error) {
+        updateBadge.classList.add("text-bg-secondary");
+        updateBadge.textContent = "Update-Check nicht verfügbar";
+      } else {
+        updateBadge.classList.add("text-bg-success");
+        updateBadge.textContent = "Up to date";
+      }
+    }
 
     q("status-hostname").textContent = state.hostname || "-";
     q("status-ip").textContent = state.ip || "-";
