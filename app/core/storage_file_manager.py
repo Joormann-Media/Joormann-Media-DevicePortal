@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import mimetypes
-import os
 import posixpath
 import shutil
 import stat
@@ -366,26 +365,53 @@ class StorageFileManagerService:
                 skipped.append({"file": original_name or "-", "reason": "invalid filename"})
                 continue
 
-            file_item.stream.seek(0, os.SEEK_END)
-            size = int(file_item.stream.tell() or 0)
-            file_item.stream.seek(0)
-            if size <= 0:
-                skipped.append({"file": original_name or safe_name, "reason": "empty file"})
-                continue
-            if size > _UPLOAD_MAX_FILE_BYTES:
+            declared_size = int(file_item.content_length or 0)
+            if declared_size > _UPLOAD_MAX_FILE_BYTES:
                 skipped.append({"file": original_name or safe_name, "reason": "file too large"})
                 continue
 
             destination = self._next_available_name(target_dir, safe_name)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            file_item.save(str(destination))
+            try:
+                file_item.save(str(destination))
+            except PermissionError as exc:
+                raise NetControlError(
+                    code="storage_upload_write_failed",
+                    message="Upload failed: permission denied",
+                    detail=str(exc),
+                ) from exc
+            except OSError as exc:
+                raise NetControlError(
+                    code="storage_upload_write_failed",
+                    message="Upload failed while writing file",
+                    detail=str(exc),
+                ) from exc
+
+            try:
+                written_size = int(destination.stat().st_size)
+            except OSError as exc:
+                raise NetControlError(
+                    code="storage_upload_stat_failed",
+                    message="Upload finished but file metadata could not be read",
+                    detail=str(exc),
+                ) from exc
+
+            if written_size <= 0:
+                destination.unlink(missing_ok=True)
+                skipped.append({"file": original_name or safe_name, "reason": "empty file"})
+                continue
+            if written_size > _UPLOAD_MAX_FILE_BYTES:
+                destination.unlink(missing_ok=True)
+                skipped.append({"file": original_name or safe_name, "reason": "file too large"})
+                continue
+
             rel = self.relative_to_root(root, destination)
             uploaded.append(
                 {
                     "name": destination.name,
                     "original_name": original_name or destination.name,
                     "path": rel,
-                    "size_bytes": int(destination.stat().st_size),
+                    "size_bytes": written_size,
                 }
             )
 

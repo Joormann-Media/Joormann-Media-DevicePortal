@@ -486,6 +486,8 @@ def api_network_storage_file_manager_upload():
     device_id = str(request.form.get("device_id") or "").strip()
     rel_path = str(request.form.get("path") or "").strip()
     files = request.files.getlist("files")
+    if not files:
+        files = request.files.getlist("files[]")
     if not device_id:
         return _error("invalid_payload", "Form field 'device_id' is required", status=400)
     if not files:
@@ -495,6 +497,8 @@ def api_network_storage_file_manager_upload():
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed",) else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
+    except Exception as exc:
+        return _error("storage_upload_failed_internal", "Upload failed", status=500, detail=str(exc))
 
 
 @bp_network.post("/api/network/wps")

@@ -681,8 +681,21 @@
     const listData = listPayload.data || {};
     storageFmState.currentPath = String(listData.current_path || treeData.current_path || "");
     q("storage-fm-path-badge").textContent = `/${storageFmState.currentPath}`.replace(/\/$/, "") || "/";
+    const upBtn = q("btn-storage-fm-dir-up");
+    if (upBtn) {
+      upBtn.disabled = !storageFmState.currentPath;
+    }
     renderStorageFmTree(treeData);
     renderStorageFmEntries(listData.entries || []);
+  }
+
+  async function storageFileManagerGoUp() {
+    if (!storageFmState.active || !storageFmState.deviceId) return;
+    const current = String(storageFmState.currentPath || "").trim();
+    if (!current) return;
+    const parts = current.split("/").filter(Boolean);
+    parts.pop();
+    await storageFileManagerLoadPath(parts.join("/"));
   }
 
   async function openStorageFileManager(deviceId) {
@@ -706,6 +719,7 @@
     storageFmState.uploadRunning = false;
     q("storage-fm-device-badge").textContent = storageFmState.deviceName;
     q("storage-fm-path-badge").textContent = "/";
+    q("btn-storage-fm-dir-up").disabled = true;
     q("storage-fm-preview").textContent = "Lade Verzeichnis...";
     q("storage-fm-upload-progress-wrap").classList.add("d-none");
     renderStorageFmUploadQueue();
@@ -725,6 +739,7 @@
     clearStoragePreviewObjectUrl();
     setStorageFileManagerActive(false);
     q("storage-fm-preview").textContent = "Datei oder Ordner auswählen.";
+    q("btn-storage-fm-dir-up").disabled = true;
     renderStorageFmUploadQueue();
   }
 
@@ -2073,6 +2088,7 @@
     q("btn-wifi-logs-refresh").addEventListener("click", () => run(refreshWifiLogs));
     q("btn-storage-refresh").addEventListener("click", () => run(refreshStorageStatus));
     q("btn-storage-fm-back").addEventListener("click", () => closeStorageFileManager());
+    q("btn-storage-fm-dir-up").addEventListener("click", () => run(storageFileManagerGoUp));
     q("btn-storage-fm-select-all").addEventListener("click", () => storageFileManagerSelectAll());
     q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
     q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
