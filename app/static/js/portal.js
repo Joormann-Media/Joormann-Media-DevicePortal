@@ -33,6 +33,11 @@
   const portalSecurityState = {
     storageDeleteHardcoreMode: false,
   };
+  const statusDashboardState = {
+    status: null,
+    network: null,
+    storage: null,
+  };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
   const STORAGE_FM_UPLOAD_MAX_FILE_BYTES = 512 * 1024 * 1024;
@@ -161,6 +166,186 @@
     return `${fixed} ${units[idx]}`;
   }
 
+  function toPct(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return 0;
+    return Math.max(0, Math.min(100, Math.round(num)));
+  }
+
+  function setProgressBar(barId, pct, variant = "success") {
+    const el = q(barId);
+    if (!el) return;
+    const width = toPct(pct);
+    el.style.width = `${width}%`;
+    el.textContent = `${width}%`;
+    el.classList.remove("bg-success", "bg-warning", "bg-danger", "bg-info");
+    if (variant === "auto") {
+      if (width >= 90) el.classList.add("bg-danger");
+      else if (width >= 75) el.classList.add("bg-warning");
+      else el.classList.add("bg-success");
+      return;
+    }
+    el.classList.add(`bg-${variant}`);
+  }
+
+  function renderStatusIdentityCard() {
+    const data = statusDashboardState.status || {};
+    const state = data.state || {};
+    const cfg = data.config || {};
+    const panel = state.panel || cfg.panel_link_state || {};
+    const dev = data.device || {};
+    const fp = data.fingerprint || {};
+    const linked = !!panel.linked;
+
+    const linkedBadge = q("status-linked-badge");
+    linkedBadge.classList.remove("text-bg-success", "text-bg-warning");
+    linkedBadge.classList.add(linked ? "text-bg-success" : "text-bg-warning");
+    linkedBadge.textContent = linked ? "LINKED" : "UNLINKED";
+
+    const modeBadge = q("status-mode-badge");
+    modeBadge.textContent = String(state.mode || "setup").toUpperCase();
+
+    const deviceTypeBadge = q("status-device-type-badge");
+    const piSerial = String(dev.pi_serial || "").trim();
+    const isPi = !!piSerial && !piSerial.startsWith("unknown");
+    deviceTypeBadge.classList.remove("text-bg-secondary", "text-bg-light");
+    deviceTypeBadge.classList.add(isPi ? "text-bg-secondary" : "text-bg-light", "border", "text-dark");
+    deviceTypeBadge.textContent = isPi ? "Raspberry Pi" : "Dev System";
+
+    const synthesizedFingerprint = [
+      String(dev.device_uuid || "").replace(/-/g, "").slice(0, 8),
+      String(dev.machine_id || "").slice(0, 8),
+      String(fp.hostname || state.hostname || "").slice(0, 12),
+    ]
+      .filter(Boolean)
+      .join("-");
+
+    q("status-fingerprint").textContent = synthesizedFingerprint || "unavailable";
+    q("status-fingerprint-updated").textContent = fp.collected_at || "-";
+    q("status-device-uuid").textContent = dev.device_uuid || "-";
+    q("status-auth-key").textContent = dev.auth_key || "-";
+    q("status-pi-serial").textContent = dev.pi_serial || "-";
+    q("status-machine-id").textContent = dev.machine_id || "-";
+    q("status-kernel").textContent = fp.kernel || "-";
+    q("status-os").textContent = (fp.os || {}).pretty_name || "-";
+  }
+
+  function renderStatusHealthCard() {
+    const status = statusDashboardState.status || {};
+    const network = statusDashboardState.network || {};
+    const storage = statusDashboardState.storage || {};
+
+    const fp = status.fingerprint || {};
+    const cpuModel = String(fp.cpu_model || "").trim();
+    q("status-health-cpu").textContent = cpuModel || "unavailable";
+    q("status-health-ram").textContent = "unavailable";
+
+    const internal = storage.internal || {};
+    const internalPct = toPct(internal.used_percent || 0);
+    setProgressBar("status-health-media-progress", internalPct, "auto");
+    q("status-health-media-usage").textContent = `${internalPct}%`;
+    if (internal.total_bytes) {
+      q("status-health-media-meta").textContent = `${formatBytes(internal.used_bytes || 0)} / ${formatBytes(internal.total_bytes || 0)} | ${internal.mount_path || "-"}`;
+    } else {
+      q("status-health-media-meta").textContent = "keine internen Speicherdaten";
+    }
+
+    const drives = Array.isArray(storage.drives) ? storage.drives : [];
+    const external = drives.filter((d) => !d.is_internal);
+    const externalTotal = external.reduce((sum, item) => sum + Number(item.total_bytes || 0), 0);
+    const externalUsed = external.reduce((sum, item) => sum + Number(item.used_bytes || 0), 0);
+    const mountedCount = external.filter((item) => !!item.mounted).length;
+    const externalPct = externalTotal > 0 ? toPct((externalUsed / externalTotal) * 100) : 0;
+
+    setProgressBar("status-health-external-progress", externalPct, "info");
+    q("status-health-external-usage").textContent = externalTotal > 0 ? `${externalPct}%` : "-";
+    q("status-health-external-meta").textContent =
+      external.length > 0
+        ? `${mountedCount}/${external.length} mounted | ${formatBytes(externalUsed)} / ${formatBytes(externalTotal)}`
+        : "keine externen Laufwerke";
+
+    const healthBadge = q("status-health-badge");
+    healthBadge.classList.remove("text-bg-success", "text-bg-warning", "text-bg-danger", "text-bg-secondary");
+    const internalMounted = !!internal.mounted;
+    const netConnected = !!(((network.interfaces || {}).wifi || {}).connected || ((network.interfaces || {}).lan || {}).carrier);
+    if (internalMounted && netConnected) {
+      healthBadge.classList.add("text-bg-success");
+      healthBadge.textContent = "healthy";
+    } else if (internalMounted || netConnected) {
+      healthBadge.classList.add("text-bg-warning");
+      healthBadge.textContent = "degraded";
+    } else {
+      healthBadge.classList.add("text-bg-danger");
+      healthBadge.textContent = "warning";
+    }
+  }
+
+  function renderStatusSoftwareSection() {
+    const status = statusDashboardState.status || {};
+    const network = statusDashboardState.network || {};
+    const storage = statusDashboardState.storage || {};
+    const update = status.app_update || {};
+    const host = q("status-software-list");
+    if (!host) return;
+    clearNode(host);
+
+    const items = [
+      {
+        name: "DevicePortal",
+        type: "managed",
+        version: (update.local_commit || "").slice(0, 7) || "-",
+        state: update.error ? "unknown" : "installed",
+        badge: update.error ? "secondary" : "success",
+      },
+      {
+        name: "Portal Update",
+        type: "git",
+        version: update.available ? `${(update.local_commit || "").slice(0, 7)} -> ${(update.remote_commit || "").slice(0, 7)}` : (update.local_commit || "").slice(0, 7) || "-",
+        state: update.available ? "update available" : (update.error ? "check failed" : "up to date"),
+        badge: update.available ? "warning" : (update.error ? "secondary" : "success"),
+      },
+      {
+        name: "Tailscale",
+        type: "apt",
+        version: (network.tailscale || {}).ip || "-",
+        state: (network.tailscale || {}).present ? "installed" : "missing",
+        badge: (network.tailscale || {}).present ? "success" : "secondary",
+      },
+      {
+        name: "Storage Service",
+        type: "managed",
+        version: `${Number(storage.known_count || 0)} known`,
+        state: Number(storage.known_count || 0) > 0 ? "active" : "idle",
+        badge: Number(storage.known_count || 0) > 0 ? "success" : "secondary",
+      },
+    ];
+
+    for (const item of items) {
+      const card = document.createElement("div");
+      card.className = "status-software-item";
+      const top = document.createElement("div");
+      top.className = "status-software-top";
+      const name = document.createElement("div");
+      name.className = "status-software-name";
+      name.textContent = item.name;
+      const badge = document.createElement("span");
+      badge.className = `badge text-bg-${item.badge}`;
+      badge.textContent = item.state;
+      top.append(name, badge);
+
+      const meta = document.createElement("div");
+      meta.className = "status-software-meta";
+      meta.textContent = `Type: ${item.type} | Version: ${item.version || "-"}`;
+      card.append(top, meta);
+      host.append(card);
+    }
+
+    const countBadge = q("status-software-count");
+    if (countBadge) {
+      countBadge.textContent = `${items.length} Komponenten`;
+    }
+  }
+
   function setWpsTarget(target) {
     if (target && target.ssid) {
       selectedWpsTarget = {
@@ -204,6 +389,7 @@
     const linked = !!panel.linked;
     const online = !!state.hostname;
     const update = data.app_update || {};
+    statusDashboardState.status = data;
 
     setStatusBadge(linked, online);
     const updateBadge = q("hero-update");
@@ -231,6 +417,9 @@
     q("status-stream-slug").textContent = state.selected_stream_slug || cfg.selected_stream_slug || "-";
     q("status-last-check").textContent = panel.last_check || "-";
     q("status-last-error").textContent = panel.last_error || "-";
+    renderStatusIdentityCard();
+    renderStatusHealthCard();
+    renderStatusSoftwareSection();
 
     if (!els.adminBase.value) {
       els.adminBase.value = cfg.admin_base_url || "";
@@ -266,6 +455,7 @@
   function renderNetwork(payload) {
     const data = payload.data || payload;
     networkState = data;
+    statusDashboardState.network = data;
 
     const lan = (data.interfaces || {}).lan || {};
     const wifi = (data.interfaces || {}).wifi || {};
@@ -302,6 +492,8 @@
     els.btnWifiToggle.textContent = wifi.enabled ? "Disable Wi-Fi" : "Enable Wi-Fi";
     els.btnBtToggle.textContent = bt.enabled ? "Disable Bluetooth" : "Enable Bluetooth";
     els.btnLanToggle.textContent = lan.enabled ? "Disable LAN" : "Enable LAN";
+    renderStatusHealthCard();
+    renderStatusSoftwareSection();
   }
 
   async function refreshStatus() {
@@ -1420,6 +1612,7 @@
 
   function renderStorageStatus(payload) {
     const data = payload.data || payload || {};
+    statusDashboardState.storage = data;
     const knownList = Array.isArray(data.known) ? data.known : [];
     const drivesList = Array.isArray(data.drives) ? data.drives : [];
     knownStorageById = new Map(knownList.map((item) => [String(item.id || ""), item]));
@@ -1430,6 +1623,8 @@
     renderStorageNew(data.new || []);
     renderStorageKnown(knownList);
     renderStorageIgnored(data.ignored || []);
+    renderStatusHealthCard();
+    renderStatusSoftwareSection();
     processStorageDeltas(data);
     if (storageFmState.active) {
       const selected = knownDrivesById.get(String(storageFmState.deviceId || "")) || knownStorageById.get(String(storageFmState.deviceId || ""));

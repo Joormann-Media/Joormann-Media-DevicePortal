@@ -66,19 +66,154 @@
     <div class="tab-content pt-3">
       <div class="tab-pane fade show active" id="status-pane" role="tabpanel" aria-labelledby="status-tab">
         <div class="row g-3">
-          <div class="col-12 col-xl-12">
-            <div class="portal-card p-3 h-100">
-              <h2 class="h5 mb-3">Live Overview</h2>
-              <dl class="row portal-kv mb-0">
-                <dt class="col-5">Hostname</dt><dd id="status-hostname" class="col-7">{{ hostname }}</dd>
-                <dt class="col-5">IP</dt><dd id="status-ip" class="col-7">{{ ip }}</dd>
-                <dt class="col-5">Linked</dt><dd id="status-linked" class="col-7">{{ panel.linked and 'yes' or 'no' }}</dd>
-                <dt class="col-5">Panel URL</dt><dd id="status-panel-url" class="col-7">{{ cfg.admin_base_url or '—' }}</dd>
-                <dt class="col-5">Device Slug</dt><dd id="status-device-slug" class="col-7">{{ cfg.device_slug or '—' }}</dd>
-                <dt class="col-5">Stream Slug</dt><dd id="status-stream-slug" class="col-7">{{ cfg.selected_stream_slug or '—' }}</dd>
-                <dt class="col-5">Last Check</dt><dd id="status-last-check" class="col-7">{{ panel.last_check or '—' }}</dd>
-                <dt class="col-5">Last Error</dt><dd id="status-last-error" class="col-7">{{ panel.last_error or '—' }}</dd>
-              </dl>
+          <div class="col-12">
+            <div class="portal-card p-3">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div>
+                  <h2 class="h5 mb-1 d-flex align-items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="7" height="9" rx="1"></rect>
+                      <rect x="14" y="3" width="7" height="5" rx="1"></rect>
+                      <rect x="14" y="12" width="7" height="9" rx="1"></rect>
+                      <rect x="3" y="16" width="7" height="5" rx="1"></rect>
+                    </svg>
+                    Status Dashboard
+                  </h2>
+                  <div class="small text-secondary">Identity, Link-Status und Ressourcen im schnellen Überblick.</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                  <span id="status-linked-badge" class="badge text-bg-secondary">UNLINKED</span>
+                  <span id="status-mode-badge" class="badge text-bg-light border text-dark">SETUP</span>
+                </div>
+              </div>
+              <div class="status-kpi-grid">
+                <div class="status-kpi-item">
+                  <div class="status-kpi-label">Hostname</div>
+                  <div id="status-hostname" class="status-kpi-value">{{ hostname }}</div>
+                </div>
+                <div class="status-kpi-item">
+                  <div class="status-kpi-label">IP</div>
+                  <div id="status-ip" class="status-kpi-value">{{ ip }}</div>
+                </div>
+                <div class="status-kpi-item">
+                  <div class="status-kpi-label">Panel URL</div>
+                  <div id="status-panel-url" class="status-kpi-value">{{ cfg.admin_base_url or '—' }}</div>
+                </div>
+                <div class="status-kpi-item">
+                  <div class="status-kpi-label">Stream</div>
+                  <div id="status-stream-slug" class="status-kpi-value">{{ cfg.selected_stream_slug or '—' }}</div>
+                </div>
+                <div class="status-kpi-item">
+                  <div class="status-kpi-label">Last Check</div>
+                  <div id="status-last-check" class="status-kpi-value">{{ panel.last_check or '—' }}</div>
+                </div>
+                <div class="status-kpi-item">
+                  <div class="status-kpi-label">Last Error</div>
+                  <div id="status-last-error" class="status-kpi-value">{{ panel.last_error or '—' }}</div>
+                </div>
+              </div>
+              <div class="d-none">
+                <span id="status-linked">{{ panel.linked and 'yes' or 'no' }}</span>
+                <span id="status-device-slug">{{ cfg.device_slug or '—' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-6">
+            <div class="portal-card p-3 h-100 status-card">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <h3 class="h6 mb-0 d-flex align-items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 12a10 10 0 0 1 20 0"></path>
+                    <path d="M5 12a7 7 0 0 1 14 0"></path>
+                    <path d="M8 12a4 4 0 0 1 8 0"></path>
+                    <line x1="12" y1="12" x2="12" y2="20"></line>
+                    <line x1="8" y1="16" x2="16" y2="16"></line>
+                  </svg>
+                  Device Identity
+                </h3>
+                <span id="status-device-type-badge" class="badge text-bg-light border text-dark">device</span>
+              </div>
+              <div class="status-fingerprint-box mb-3">
+                <div class="small text-secondary mb-1">Fingerprint</div>
+                <code id="status-fingerprint" class="status-fingerprint-value">{{ fp.hostname or 'unavailable' }}</code>
+                <div class="small text-secondary mt-1">Aktualisiert: <span id="status-fingerprint-updated">{{ fp.collected_at or '—' }}</span></div>
+              </div>
+              <div class="status-kv-grid">
+                <div class="status-kv-row"><span class="status-kv-key">Device UUID</span><code id="status-device-uuid">{{ dev.device_uuid or '—' }}</code></div>
+                <div class="status-kv-row"><span class="status-kv-key">Auth Key</span><code id="status-auth-key">{{ dev.auth_key or '—' }}</code></div>
+                <div class="status-kv-row"><span class="status-kv-key">Pi Serial</span><code id="status-pi-serial">{{ dev.pi_serial or '—' }}</code></div>
+                <div class="status-kv-row"><span class="status-kv-key">Machine ID</span><code id="status-machine-id">{{ dev.machine_id or '—' }}</code></div>
+                <div class="status-kv-row"><span class="status-kv-key">Kernel</span><code id="status-kernel">{{ fp.kernel or '—' }}</code></div>
+                <div class="status-kv-row"><span class="status-kv-key">OS</span><span id="status-os">{{ fp.os.pretty_name or '—' }}</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-6">
+            <div class="portal-card p-3 h-100 status-card">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <h3 class="h6 mb-0 d-flex align-items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"></path>
+                    <path d="m19 9-5 5-4-4-3 3"></path>
+                  </svg>
+                  System Health
+                </h3>
+                <span id="status-health-badge" class="badge text-bg-secondary">collecting</span>
+              </div>
+              <div class="status-health-metrics mb-3">
+                <div class="status-health-metric">
+                  <div class="status-kpi-label">CPU / Load</div>
+                  <div id="status-health-cpu" class="status-kpi-value">unavailable</div>
+                </div>
+                <div class="status-health-metric">
+                  <div class="status-kpi-label">RAM</div>
+                  <div id="status-health-ram" class="status-kpi-value">unavailable</div>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center small mb-1">
+                  <span>Interner Medienspeicher</span>
+                  <span id="status-health-media-usage">-</span>
+                </div>
+                <div class="progress">
+                  <div id="status-health-media-progress" class="progress-bar" style="width:0%">0%</div>
+                </div>
+                <div class="small text-secondary mt-1">
+                  <span id="status-health-media-meta">-</span>
+                </div>
+              </div>
+
+              <div>
+                <div class="d-flex justify-content-between align-items-center small mb-1">
+                  <span>Externe Laufwerke</span>
+                  <span id="status-health-external-usage">-</span>
+                </div>
+                <div class="progress">
+                  <div id="status-health-external-progress" class="progress-bar bg-info" style="width:0%">0%</div>
+                </div>
+                <div class="small text-secondary mt-1">
+                  <span id="status-health-external-meta">-</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="portal-card p-3 status-card">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <h3 class="h6 mb-0 d-flex align-items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 18 22 12 16 6"></path>
+                    <path d="m8 6-6 6 6 6"></path>
+                  </svg>
+                  Software Übersicht
+                </h3>
+                <span id="status-software-count" class="badge text-bg-light border text-dark">0 Komponenten</span>
+              </div>
+              <div id="status-software-list" class="status-software-list"></div>
             </div>
           </div>
         </div>

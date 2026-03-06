@@ -143,3 +143,118 @@ body.portal-body {
   border-radius: 0.5rem;
   border: 1px solid var(--portal-border);
 }
+
+.status-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+}
+
+.status-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.status-kpi-item {
+  border: 1px solid var(--portal-border);
+  border-radius: 0.7rem;
+  background: #fff;
+  padding: 0.65rem 0.75rem;
+}
+
+.status-kpi-label {
+  color: var(--portal-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-kpi-value {
+  font-weight: 700;
+  font-size: 0.96rem;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.status-fingerprint-box {
+  border: 1px solid #cfe3ff;
+  background: linear-gradient(160deg, #f4f8ff 0%, #f9fcff 100%);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+
+.status-fingerprint-value {
+  display: inline-block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  word-break: break-all;
+}
+
+.status-kv-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+
+.status-kv-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 145px) 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.status-kv-key {
+  color: var(--portal-muted);
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+
+.status-kv-row code {
+  font-size: 0.8rem;
+  color: #1f2937;
+  word-break: break-all;
+}
+
+.status-health-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.status-health-metric {
+  border: 1px solid var(--portal-border);
+  border-radius: 0.7rem;
+  background: #fff;
+  padding: 0.6rem 0.7rem;
+}
+
+.status-software-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.65rem;
+}
+
+.status-software-item {
+  border: 1px solid var(--portal-border);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.65rem 0.75rem;
+}
+
+.status-software-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.status-software-name {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.status-software-meta {
+  font-size: 0.78rem;
+  color: var(--portal-muted);
+}
