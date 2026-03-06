@@ -101,8 +101,14 @@ case "${CMD}" in
       exit 2
     fi
     if [[ -n "${UUID}" ]]; then
-      run_nmcli connection delete uuid "${UUID}" || true
+      # If this exact profile is active, disconnect first, then delete by UUID.
+      run_nmcli connection down uuid "${UUID}" || true
+      if run_nmcli connection delete uuid "${UUID}"; then
+        exit 0
+      fi
     fi
+    # Fallback for systems where UUID is missing or stale: try by id/name.
+    run_nmcli connection down id "${SSID}" || true
     run_nmcli connection delete id "${SSID}" || run_nmcli connection delete "${SSID}"
     ;;
   profile-up)
