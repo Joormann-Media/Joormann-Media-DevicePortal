@@ -355,6 +355,13 @@
       upBtn.className = "btn btn-outline-primary btn-sm";
       upBtn.textContent = "Verbinden";
       upBtn.addEventListener("click", () => run(() => wifiProfileUp(ssid)));
+      const wpsBtn = document.createElement("button");
+      wpsBtn.className = "btn btn-outline-secondary btn-sm";
+      wpsBtn.textContent = "WPS";
+      wpsBtn.addEventListener("click", () => run(async () => {
+        setWpsTarget({ ssid, bssid: "" });
+        await startWps({ ssid, bssid: "" });
+      }));
       const prefBtn = document.createElement("button");
       prefBtn.className = "btn btn-outline-secondary btn-sm";
       prefBtn.textContent = "Prefer";
@@ -363,7 +370,7 @@
       delBtn.className = "btn btn-outline-danger btn-sm";
       delBtn.textContent = "Löschen";
       delBtn.addEventListener("click", () => run(() => wifiProfileDelete(ssid)));
-      actions.append(upBtn, prefBtn, delBtn);
+      actions.append(upBtn, wpsBtn, prefBtn, delBtn);
       row.append(top, actions);
       host.append(row);
     }

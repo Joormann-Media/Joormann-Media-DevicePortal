@@ -72,6 +72,23 @@ def _parse_kv_output(raw: str) -> dict[str, str]:
     return parsed
 
 
+def _is_missing_wifi_secret_error(detail: str) -> bool:
+    text = (detail or "").lower()
+    if not text:
+        return False
+    markers = (
+        "secrets were required",
+        "secret agent",
+        "password",
+        "passwort",
+        "wps button",
+        "geheimdaten",
+        "psk",
+        "--ask",
+    )
+    return any(marker in text for marker in markers)
+
+
 def _split_nmcli_escaped(line: str) -> list[str]:
     fields: list[str] = []
     buf: list[str] = []
@@ -257,7 +274,14 @@ def wifi_profile_up(ssid: str) -> dict:
         raise NetControlError(code="invalid_payload", message="Missing ssid")
     rc, out, err = _run_script("wifi_profile.sh", ["profile-up", ssid], timeout=25, use_sudo=True)
     if rc != 0:
-        raise NetControlError(code="wifi_profile_up_failed", message="Failed to activate Wi-Fi profile", detail=err or out)
+        detail = err or out
+        if _is_missing_wifi_secret_error(detail):
+            raise NetControlError(
+                code="wifi_secrets_required",
+                message="Stored Wi-Fi profile requires credentials or WPS pairing",
+                detail=detail,
+            )
+        raise NetControlError(code="wifi_profile_up_failed", message="Failed to activate Wi-Fi profile", detail=detail)
     return {"ssid": ssid, "stdout": out}
 
 

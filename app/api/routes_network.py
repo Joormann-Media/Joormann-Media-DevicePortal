@@ -555,6 +555,13 @@ def api_wifi_profiles_up():
     try:
         result = wifi_profile_up(ssid)
     except NetControlError as exc:
+        if exc.code == "wifi_secrets_required":
+            return _error(
+                "wifi_secrets_required",
+                "Profil kann nicht direkt verbunden werden: Passwort fehlt oder WPS-Kopplung notwendig.",
+                status=409,
+                detail="Bitte entweder Passwort im Profil hinterlegen (manuell hinzufügen) oder WPS für dieses WLAN starten.",
+            )
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
     cfg = ensure_config()
