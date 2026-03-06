@@ -24,6 +24,7 @@ DEFAULT_CONFIG: dict = {
     'wifi_profiles': [],
     'preferred_wifi': '',
     'last_wifi_ssid': '',
+    'storage_delete_hardcore_mode': False,
 }
 
 

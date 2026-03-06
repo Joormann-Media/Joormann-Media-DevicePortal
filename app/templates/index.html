@@ -66,54 +66,19 @@
     <div class="tab-content pt-3">
       <div class="tab-pane fade show active" id="status-pane" role="tabpanel" aria-labelledby="status-tab">
         <div class="row g-3">
-          <div class="col-12 col-xl-6">
+          <div class="col-12 col-xl-12">
             <div class="portal-card p-3 h-100">
               <h2 class="h5 mb-3">Live Overview</h2>
               <dl class="row portal-kv mb-0">
                 <dt class="col-5">Hostname</dt><dd id="status-hostname" class="col-7">{{ hostname }}</dd>
                 <dt class="col-5">IP</dt><dd id="status-ip" class="col-7">{{ ip }}</dd>
                 <dt class="col-5">Linked</dt><dd id="status-linked" class="col-7">{{ panel.linked and 'yes' or 'no' }}</dd>
+                <dt class="col-5">Panel URL</dt><dd id="status-panel-url" class="col-7">{{ cfg.admin_base_url or '—' }}</dd>
                 <dt class="col-5">Device Slug</dt><dd id="status-device-slug" class="col-7">{{ cfg.device_slug or '—' }}</dd>
                 <dt class="col-5">Stream Slug</dt><dd id="status-stream-slug" class="col-7">{{ cfg.selected_stream_slug or '—' }}</dd>
                 <dt class="col-5">Last Check</dt><dd id="status-last-check" class="col-7">{{ panel.last_check or '—' }}</dd>
                 <dt class="col-5">Last Error</dt><dd id="status-last-error" class="col-7">{{ panel.last_error or '—' }}</dd>
               </dl>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-6">
-            <div class="portal-card p-3 h-100">
-              <h2 class="h5 mb-3">Panel / Plan Aktionen</h2>
-
-              <div class="row g-2 mb-2">
-                <div class="col-12">
-                  <label for="admin-base-url" class="form-label">Panel URL</label>
-                  <input id="admin-base-url" class="form-control" value="{{ cfg.admin_base_url }}" placeholder="https://admin.example.com">
-                </div>
-                <div class="col-12">
-                  <label for="registration-token" class="form-label">Registration Token</label>
-                  <input id="registration-token" class="form-control" value="{{ cfg.registration_token }}" placeholder="Token">
-                </div>
-                <div class="col-md-6">
-                  <label for="device-slug" class="form-label">Device Slug</label>
-                  <input id="device-slug" class="form-control" value="{{ cfg.device_slug }}" placeholder="device-slug">
-                </div>
-                <div class="col-md-6">
-                  <label for="stream-slug" class="form-label">Stream Slug</label>
-                  <input id="stream-slug" class="form-control" value="{{ cfg.selected_stream_slug }}" placeholder="stream-slug">
-                </div>
-              </div>
-
-              <div class="d-flex flex-wrap gap-2">
-                <button id="btn-refresh-status" class="btn btn-dark btn-sm">Refresh Status</button>
-                <button id="btn-refresh-fingerprint" class="btn btn-outline-dark btn-sm">Refresh Fingerprint</button>
-                <button id="btn-pull-plan" class="btn btn-outline-primary btn-sm">Pull Plan</button>
-                <button id="btn-check-link" class="btn btn-outline-secondary btn-sm">Check Panel Link</button>
-                <button id="btn-panel-test" class="btn btn-outline-secondary btn-sm">Test/Save URL</button>
-                <button id="btn-panel-ping" class="btn btn-outline-secondary btn-sm">Panel Ping</button>
-                <button id="btn-panel-register" class="btn btn-outline-success btn-sm">Panel Register</button>
-                <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#unlinkModal">Unlink</button>
-              </div>
             </div>
           </div>
         </div>
@@ -371,6 +336,11 @@
             </button>
           </li>
           <li class="nav-item" role="presentation">
+            <button class="nav-link" id="system-sub-link-tab" data-bs-toggle="tab" data-bs-target="#system-sub-link" type="button" role="tab">
+              Link
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
             <button class="nav-link" id="system-sub-wifi-tab" data-bs-toggle="tab" data-bs-target="#system-sub-wifi" type="button" role="tab">
               WLAN Verwaltung
             </button>
@@ -417,6 +387,25 @@
                 </div>
               </div>
 
+              <div class="col-12">
+                <div class="portal-card p-3">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                      <h3 class="h6 mb-1">Storage Sicherheitsmodus</h3>
+                      <div class="small text-secondary">Wenn aktiv, ist beim Löschen im File-Manager die Eingabe <code>DELETE</code> zwingend.</div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="form-check form-switch m-0">
+                        <input class="form-check-input" type="checkbox" role="switch" id="system-storage-delete-hardcore">
+                        <label class="form-check-label small" for="system-storage-delete-hardcore">Hardcore Delete</label>
+                      </div>
+                      <button id="btn-system-storage-security-save" class="btn btn-outline-primary btn-sm">Speichern</button>
+                      <span id="system-storage-security-status" class="badge text-bg-secondary">-</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div class="col-12 col-xl-4">
                 <div class="portal-card p-3 h-100">
                   <div class="d-flex justify-content-between align-items-center mb-2">
@@ -446,6 +435,46 @@
                   </div>
                   <div id="ap-clients-list" class="list-group list-group-flush small">
                     <div class="text-secondary">Keine verbundenen AP-Clients.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-pane fade" id="system-sub-link" role="tabpanel" aria-labelledby="system-sub-link-tab">
+            <div class="row g-3">
+              <div class="col-12">
+                <div class="portal-card p-3 h-100">
+                  <h2 class="h5 mb-3">Panel / Link Aktionen</h2>
+
+                  <div class="row g-2 mb-2">
+                    <div class="col-12">
+                      <label for="admin-base-url" class="form-label">Panel URL</label>
+                      <input id="admin-base-url" class="form-control" value="{{ cfg.admin_base_url }}" placeholder="https://admin.example.com">
+                    </div>
+                    <div class="col-12">
+                      <label for="registration-token" class="form-label">Registration Token</label>
+                      <input id="registration-token" class="form-control" value="{{ cfg.registration_token }}" placeholder="Token">
+                    </div>
+                    <div class="col-md-6">
+                      <label for="device-slug" class="form-label">Device Slug</label>
+                      <input id="device-slug" class="form-control" value="{{ cfg.device_slug }}" placeholder="device-slug">
+                    </div>
+                    <div class="col-md-6">
+                      <label for="stream-slug" class="form-label">Stream Slug</label>
+                      <input id="stream-slug" class="form-control" value="{{ cfg.selected_stream_slug }}" placeholder="stream-slug">
+                    </div>
+                  </div>
+
+                  <div class="d-flex flex-wrap gap-2">
+                    <button id="btn-refresh-status" class="btn btn-dark btn-sm">Refresh Status</button>
+                    <button id="btn-refresh-fingerprint" class="btn btn-outline-dark btn-sm">Refresh Fingerprint</button>
+                    <button id="btn-pull-plan" class="btn btn-outline-primary btn-sm">Pull Plan</button>
+                    <button id="btn-check-link" class="btn btn-outline-secondary btn-sm">Check Panel Link</button>
+                    <button id="btn-panel-test" class="btn btn-outline-secondary btn-sm">Test/Save URL</button>
+                    <button id="btn-panel-ping" class="btn btn-outline-secondary btn-sm">Panel Ping</button>
+                    <button id="btn-panel-register" class="btn btn-outline-success btn-sm">Panel Register</button>
+                    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#unlinkModal">Unlink</button>
                   </div>
                 </div>
               </div>
@@ -606,20 +635,55 @@
         <div class="modal-body">
           <p class="mb-2">Du bist dabei, <strong id="storage-delete-count">0</strong> Eintrag/Einträge zu löschen.</p>
           <p class="mb-2 text-danger">Diese Aktion kann nicht rückgängig gemacht werden.</p>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" value="1" id="storage-delete-hardcore">
-            <label class="form-check-label small" for="storage-delete-hardcore">
-              Hardcore-Bestätigung aktivieren (Tippe <code>DELETE</code>)
+          <div id="storage-delete-confirm-wrap" class="d-none">
+            <label for="storage-delete-confirm-word" class="form-label small text-secondary mb-1">
+              Tippe zur Bestätigung <code>DELETE</code>:
             </label>
+            <input id="storage-delete-confirm-word" type="text" class="form-control" autocomplete="off" spellcheck="false" placeholder="DELETE">
           </div>
-          <label for="storage-delete-confirm-word" class="form-label small text-secondary mb-1">
-            Optional nur bei Hardcore:
-          </label>
-          <input id="storage-delete-confirm-word" type="text" class="form-control" autocomplete="off" spellcheck="false" placeholder="DELETE" disabled>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
           <button id="btn-storage-delete-confirm" type="button" class="btn btn-danger">Endgültig löschen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="storageNewFolderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-folder-plus me-1"></i>Neuer Ordner</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <label for="storage-new-folder-name" class="form-label">Ordnername</label>
+          <input id="storage-new-folder-name" type="text" class="form-control" autocomplete="off" spellcheck="false" placeholder="Neuer Ordner">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button id="btn-storage-new-folder-confirm" type="button" class="btn btn-primary">Erstellen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="storageRenameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-pencil-square me-1"></i>Eintrag umbenennen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="small text-secondary mb-2">Aktuell: <span id="storage-rename-current-name">-</span></div>
+          <label for="storage-rename-new-name" class="form-label">Neuer Name</label>
+          <input id="storage-rename-new-name" type="text" class="form-control" autocomplete="off" spellcheck="false" placeholder="Neuer Name">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button id="btn-storage-rename-confirm" type="button" class="btn btn-primary">Umbenennen</button>
         </div>
       </div>
     </div>

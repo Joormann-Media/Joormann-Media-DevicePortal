@@ -18,6 +18,7 @@
   let selectedStorageDeviceId = "";
   let storageFmPreviewObjectUrl = "";
   let storageDeletePendingPaths = [];
+  let storageRenamePendingPath = "";
   const storageFmState = {
     active: false,
     deviceId: "",
@@ -28,6 +29,9 @@
     activeEntryPath: "",
     uploadQueue: [],
     uploadRunning: false,
+  };
+  const portalSecurityState = {
+    storageDeleteHardcoreMode: false,
   };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
@@ -222,6 +226,7 @@
     q("status-hostname").textContent = state.hostname || "-";
     q("status-ip").textContent = state.ip || "-";
     q("status-linked").textContent = yn(linked);
+    q("status-panel-url").textContent = cfg.admin_base_url || "-";
     q("status-device-slug").textContent = state.device_slug || cfg.device_slug || "-";
     q("status-stream-slug").textContent = state.selected_stream_slug || cfg.selected_stream_slug || "-";
     q("status-last-check").textContent = panel.last_check || "-";
@@ -238,6 +243,23 @@
     }
     if (!els.streamSlug.value) {
       els.streamSlug.value = cfg.selected_stream_slug || "";
+    }
+
+    portalSecurityState.storageDeleteHardcoreMode = !!cfg.storage_delete_hardcore_mode;
+    const hardcoreToggle = q("system-storage-delete-hardcore");
+    const hardcoreStatus = q("system-storage-security-status");
+    if (hardcoreToggle) {
+      hardcoreToggle.checked = portalSecurityState.storageDeleteHardcoreMode;
+    }
+    if (hardcoreStatus) {
+      hardcoreStatus.classList.remove("text-bg-success", "text-bg-secondary");
+      if (portalSecurityState.storageDeleteHardcoreMode) {
+        hardcoreStatus.classList.add("text-bg-success");
+        hardcoreStatus.textContent = "aktiv";
+      } else {
+        hardcoreStatus.classList.add("text-bg-secondary");
+        hardcoreStatus.textContent = "inaktiv";
+      }
     }
   }
 
@@ -584,7 +606,7 @@
         renameBtn.textContent = "✏ Rename";
         renameBtn.addEventListener("click", (event) => {
           event.stopPropagation();
-          run(() => storageFileManagerRenameByPath(path));
+          run(() => storageFileManagerOpenRenameModal(path));
         });
         actions.append(openBtn, renameBtn);
         row.append(top, meta, actions);
@@ -602,7 +624,7 @@
         renameBtn.textContent = "✏ Rename";
         renameBtn.addEventListener("click", (event) => {
           event.stopPropagation();
-          run(() => storageFileManagerRenameByPath(path));
+          run(() => storageFileManagerOpenRenameModal(path));
         });
         actions.append(dl, renameBtn);
         row.append(top, meta, actions);
@@ -832,9 +854,9 @@
     }
     storageDeletePendingPaths = paths;
     q("storage-delete-count").textContent = String(paths.length);
-    q("storage-delete-hardcore").checked = false;
     q("storage-delete-confirm-word").value = "";
-    q("storage-delete-confirm-word").disabled = true;
+    const requireHard = !!portalSecurityState.storageDeleteHardcoreMode;
+    q("storage-delete-confirm-wrap").classList.toggle("d-none", !requireHard);
     const modal = bootstrap.Modal.getOrCreateInstance(q("storageDeleteConfirmModal"));
     modal.show();
   }
@@ -845,7 +867,7 @@
       toast("Keine Einträge ausgewählt.", "secondary");
       return;
     }
-    const requireHardConfirm = !!q("storage-delete-hardcore").checked;
+    const requireHardConfirm = !!portalSecurityState.storageDeleteHardcoreMode;
     const confirmWord = String(q("storage-delete-confirm-word").value || "").trim().toUpperCase();
     if (requireHardConfirm && confirmWord !== "DELETE") {
       toast("Löschen nicht bestätigt. Bitte DELETE eingeben.", "danger");
@@ -934,12 +956,16 @@
   }
 
   async function storageFileManagerCreateFolder() {
+    const modal = bootstrap.Modal.getOrCreateInstance(q("storageNewFolderModal"));
+    q("storage-new-folder-name").value = "";
+    modal.show();
+  }
+
+  async function storageFileManagerCreateFolderConfirmed() {
     if (!storageFmState.active || !storageFmState.deviceId) {
       throw new Error("Kein Laufwerk ausgewählt.");
     }
-    const name = window.prompt("Name des neuen Ordners:");
-    if (name === null) return;
-    const folderName = String(name || "").trim();
+    const folderName = String(q("storage-new-folder-name").value || "").trim();
     if (!folderName) {
       throw new Error("Ordnername darf nicht leer sein.");
     }
@@ -952,21 +978,39 @@
       },
       timeoutMs: 20000,
     });
+    bootstrap.Modal.getOrCreateInstance(q("storageNewFolderModal")).hide();
     toast("Ordner erstellt.", "success");
     await storageFileManagerLoadPath(storageFmState.currentPath);
   }
 
-  async function storageFileManagerRenameByPath(path) {
+  async function storageFileManagerOpenRenameModal(path) {
     const targetPath = String(path || "").trim();
     if (!targetPath) {
       throw new Error("Ungültiger Eintrag.");
     }
     const entry = (storageFmState.entries || []).find((item) => String(item.path || "") === targetPath);
     const currentName = String(entry?.name || targetPath.split("/").pop() || "").trim();
-    const input = window.prompt("Neuer Name:", currentName);
-    if (input === null) return;
-    const newName = String(input || "").trim();
-    if (!newName || newName === currentName) return;
+    storageRenamePendingPath = targetPath;
+    q("storage-rename-current-name").textContent = currentName || "-";
+    q("storage-rename-new-name").value = currentName || "";
+    bootstrap.Modal.getOrCreateInstance(q("storageRenameModal")).show();
+  }
+
+  async function storageFileManagerRenameConfirmed() {
+    const targetPath = String(storageRenamePendingPath || "").trim();
+    if (!targetPath) {
+      throw new Error("Kein Eintrag für Rename ausgewählt.");
+    }
+    const entry = (storageFmState.entries || []).find((item) => String(item.path || "") === targetPath);
+    const currentName = String(entry?.name || targetPath.split("/").pop() || "").trim();
+    const newName = String(q("storage-rename-new-name").value || "").trim();
+    if (!newName) {
+      throw new Error("Neuer Name darf nicht leer sein.");
+    }
+    if (newName === currentName) {
+      bootstrap.Modal.getOrCreateInstance(q("storageRenameModal")).hide();
+      return;
+    }
     await fetchJson("/api/network/storage/file-manager/rename", {
       method: "POST",
       body: {
@@ -976,13 +1020,15 @@
       },
       timeoutMs: 20000,
     });
+    bootstrap.Modal.getOrCreateInstance(q("storageRenameModal")).hide();
+    storageRenamePendingPath = "";
     toast("Eintrag umbenannt.", "success");
     await storageFileManagerLoadPath(storageFmState.currentPath);
   }
 
   async function storageFileManagerRenameSelected() {
     const targetPath = storageFmResolveRenamePath();
-    await storageFileManagerRenameByPath(targetPath);
+    await storageFileManagerOpenRenameModal(targetPath);
   }
 
   function storageFmSetUploadProgress(current, total, text = "") {
@@ -1992,6 +2038,30 @@
     }
   }
 
+  async function saveStorageSecuritySettings() {
+    const enabled = !!q("system-storage-delete-hardcore").checked;
+    const payload = await fetchJson("/api/system/settings", {
+      method: "POST",
+      body: {
+        storage_delete_hardcore_mode: enabled,
+      },
+      timeoutMs: 12000,
+    });
+    portalSecurityState.storageDeleteHardcoreMode = !!(payload.data || {}).storage_delete_hardcore_mode;
+    const statusBadge = q("system-storage-security-status");
+    if (statusBadge) {
+      statusBadge.classList.remove("text-bg-success", "text-bg-secondary");
+      if (portalSecurityState.storageDeleteHardcoreMode) {
+        statusBadge.classList.add("text-bg-success");
+        statusBadge.textContent = "aktiv";
+      } else {
+        statusBadge.classList.add("text-bg-secondary");
+        statusBadge.textContent = "inaktiv";
+      }
+    }
+    toast("Storage-Sicherheitseinstellung gespeichert.", "success");
+  }
+
   async function updatePortal() {
     const btn = q("btn-system-update-portal");
     const logEl = q("system-update-log");
@@ -2228,9 +2298,12 @@
     q("btn-storage-fm-dir-up").addEventListener("click", () => run(storageFileManagerGoUp));
     q("btn-storage-fm-new-folder").addEventListener("click", () => run(storageFileManagerCreateFolder));
     q("btn-storage-fm-rename").addEventListener("click", () => run(storageFileManagerRenameSelected));
+    q("btn-storage-new-folder-confirm").addEventListener("click", () => run(storageFileManagerCreateFolderConfirmed));
+    q("btn-storage-rename-confirm").addEventListener("click", () => run(storageFileManagerRenameConfirmed));
     q("btn-storage-fm-select-all").addEventListener("click", () => storageFileManagerSelectAll());
     q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
     q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
+    q("btn-system-storage-security-save").addEventListener("click", () => run(saveStorageSecuritySettings));
     const uploadDropZone = q("storage-fm-upload-dropzone");
     const uploadPicker = q("storage-fm-upload-picker");
     uploadDropZone.addEventListener("click", () => uploadPicker.click());
@@ -2251,16 +2324,18 @@
       run(storageFmUploadAll);
     });
     q("btn-storage-delete-confirm").addEventListener("click", () => run(storageFileManagerDeleteConfirmed));
-    q("storage-delete-hardcore").addEventListener("change", () => {
-      const hard = !!q("storage-delete-hardcore").checked;
-      q("storage-delete-confirm-word").disabled = !hard;
-      if (!hard) q("storage-delete-confirm-word").value = "";
-    });
     q("storageDeleteConfirmModal").addEventListener("hidden.bs.modal", () => {
       storageDeletePendingPaths = [];
       q("storage-delete-confirm-word").value = "";
-      q("storage-delete-hardcore").checked = false;
-      q("storage-delete-confirm-word").disabled = true;
+      q("storage-delete-confirm-wrap").classList.add("d-none");
+    });
+    q("storageNewFolderModal").addEventListener("hidden.bs.modal", () => {
+      q("storage-new-folder-name").value = "";
+    });
+    q("storageRenameModal").addEventListener("hidden.bs.modal", () => {
+      storageRenamePendingPath = "";
+      q("storage-rename-current-name").textContent = "-";
+      q("storage-rename-new-name").value = "";
     });
     q("btn-storage-modal-mount").addEventListener("click", () => run(async () => {
       if (!selectedStorageDeviceId) return;

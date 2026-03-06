@@ -1029,6 +1029,30 @@ def api_system_tailscale_disable_dns():
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
+@bp_network.post("/api/system/settings")
+def api_system_settings_update():
+    data = request.get_json(force=True, silent=True) or {}
+    if "storage_delete_hardcore_mode" not in data:
+        return _error("invalid_payload", "Field 'storage_delete_hardcore_mode' is required", status=400)
+    value = data.get("storage_delete_hardcore_mode")
+    if not isinstance(value, bool):
+        return _error("invalid_payload", "Field 'storage_delete_hardcore_mode' must be a boolean", status=400)
+
+    cfg = ensure_config()
+    cfg["storage_delete_hardcore_mode"] = bool(value)
+    cfg["updated_at"] = utc_now()
+    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist system settings", status=500, detail=err)
+    return _ok(
+        {
+            "storage_delete_hardcore_mode": bool(value),
+            "updated_at": cfg.get("updated_at", ""),
+            "message": "System settings updated",
+        }
+    )
+
+
 @bp_network.post("/api/system/portal/update")
 def api_system_portal_update():
     try:
