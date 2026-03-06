@@ -250,6 +250,7 @@
     const active = !!data.active;
     q("ap-ssid").textContent = data.ssid || "-";
     q("ap-ip").textContent = data.ip || "-";
+    q("ap-portal-url").textContent = data.portal_url || (data.ip ? `http://${data.ip}` : "-");
     q("ap-profile").textContent = data.profile || "jm-hotspot";
     q("ap-clients-count").textContent = String(data.clients_count || 0);
     const badge = q("ap-active-badge");

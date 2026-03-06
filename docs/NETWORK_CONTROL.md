@@ -53,6 +53,11 @@ Nur folgende Aktionen werden per sudo freigegeben:
 - `ap_status.sh`
 - `ap_clients.sh`
 - `portal_update.sh`
+
+AP-Erreichbarkeit:
+- Standard-AP-Subnetz: `192.168.4.1/24` (konfigurierbar über `AP_IP_CIDR` oder `/etc/joormann-media/provisioning/ap.conf` `IP_CIDR=...`)
+- Portal im AP-Modus: `http://192.168.4.1` (Fallback ggf. `:5070`, falls kein Reverse Proxy auf Port 80 aktiv ist)
+- Keine harte Captive-Portal-Sperre; Fokus auf direkte, robuste Erreichbarkeit
 - `bluetooth_toggle.sh`
 - `lan_toggle.sh`
 - `wps_start.sh`

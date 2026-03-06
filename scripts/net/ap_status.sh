@@ -32,6 +32,15 @@ if [[ "${ACTIVE}" == "true" && -n "${IW}" ]]; then
   CLIENTS_COUNT="$(iw dev "${IFACE}" station dump 2>/dev/null | awk '/^Station / {n+=1} END {print n+0}')"
 fi
 
+PORTAL_URL=""
+if [[ -n "${AP_IP}" ]]; then
+  if ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE '(^|:)80$'; then
+    PORTAL_URL="http://${AP_IP}"
+  else
+    PORTAL_URL="http://${AP_IP}:5070"
+  fi
+fi
+
 echo "ifname=${IFACE}"
 echo "profile=${PROFILE}"
 echo "active=${ACTIVE}"
@@ -41,3 +50,4 @@ echo "clients_count=${CLIENTS_COUNT}"
 echo "radio=${RADIO}"
 echo "device_state=${DEVICE_STATE}"
 echo "active_connection=${ACTIVE_CONN}"
+echo "portal_url=${PORTAL_URL}"

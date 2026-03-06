@@ -75,6 +75,7 @@ Zusätzliche Panel-Aktionen:
 - Manuelle WLAN-Konfiguration inkl. Hidden-SSID-Option.
 - Live-Ereignisbereich (`WPS / Ereignisse`) mit laufendem Polling.
 - AP-Bereich mit Status, AP-Buttons und AP-Clientliste (Live-Polling mit Delta-Flash für neue Clients).
+- AP-Hinweis im UI: Hotspot verbinden und `http://192.168.4.1` öffnen.
 
 ## System Aktionen
 

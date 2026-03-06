@@ -365,6 +365,7 @@ def get_ap_status(ifname: str = DEFAULT_WIFI_IFACE, profile: str = DEFAULT_AP_PR
         "active": parsed.get("active", "false").lower() == "true",
         "ssid": parsed.get("ssid", ""),
         "ip": parsed.get("ip", ""),
+        "portal_url": parsed.get("portal_url", ""),
         "clients_count": clients_count,
         "radio": parsed.get("radio", ""),
         "device_state": parsed.get("device_state", ""),

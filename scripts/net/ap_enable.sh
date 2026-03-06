@@ -5,6 +5,7 @@ IFACE="${1:-wlan0}"
 PROFILE="${2:-jm-hotspot}"
 NMCLI="$(command -v nmcli || true)"
 CONF_FILE="/etc/joormann-media/provisioning/ap.conf"
+DEFAULT_AP_CIDR="${AP_IP_CIDR:-192.168.4.1/24}"
 
 if [[ -z "${NMCLI}" ]]; then
   echo "nmcli not found" >&2
@@ -23,7 +24,7 @@ if ! "${NMCLI}" -t -f NAME connection show 2>/dev/null | grep -Fxq "${PROFILE}";
   PASSWORD=""
   BAND="bg"
   CHANNEL="6"
-  IP_CIDR="10.42.0.1/24"
+  IP_CIDR="${DEFAULT_AP_CIDR}"
 
   if [[ -f "${CONF_FILE}" ]]; then
     while IFS='=' read -r key value; do
@@ -50,7 +51,7 @@ if ! "${NMCLI}" -t -f NAME connection show 2>/dev/null | grep -Fxq "${PROFILE}";
   [[ -z "${SSID}" ]] && SSID="device-ap"
   [[ "${BAND}" != "bg" && "${BAND}" != "a" ]] && BAND="bg"
   [[ -z "${CHANNEL}" ]] && CHANNEL="6"
-  [[ -z "${IP_CIDR}" ]] && IP_CIDR="10.42.0.1/24"
+  [[ -z "${IP_CIDR}" ]] && IP_CIDR="${DEFAULT_AP_CIDR}"
 
   "${NMCLI}" connection add type wifi ifname "${IFACE}" con-name "${PROFILE}" autoconnect no ssid "${SSID}" >/dev/null
   "${NMCLI}" connection modify "${PROFILE}" connection.autoconnect no >/dev/null
@@ -68,6 +69,14 @@ if ! "${NMCLI}" -t -f NAME connection show 2>/dev/null | grep -Fxq "${PROFILE}";
   fi
 fi
 
+# Keep AP addressing predictable on every enable (existing profiles included).
+IP_CIDR="${DEFAULT_AP_CIDR}"
+if [[ -f "${CONF_FILE}" ]]; then
+  CONF_IP="$(awk -F= '/^IP_CIDR=/{print $2; exit}' "${CONF_FILE}" 2>/dev/null | tr -d ' ')"
+  [[ -n "${CONF_IP}" ]] && IP_CIDR="${CONF_IP}"
+fi
+"${NMCLI}" connection modify "${PROFILE}" ipv4.addresses "${IP_CIDR}" ipv4.method shared ipv6.method ignore >/dev/null 2>&1 || true
+
 "${NMCLI}" radio wifi on >/dev/null 2>&1 || true
 "${NMCLI}" device set "${IFACE}" managed yes >/dev/null 2>&1 || true
 "${NMCLI}" connection up "${PROFILE}" ifname "${IFACE}" >/dev/null
@@ -75,3 +84,4 @@ fi
 echo "ifname=${IFACE}"
 echo "profile=${PROFILE}"
 echo "enabled=true"
+echo "ip_cidr=${IP_CIDR}"
