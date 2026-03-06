@@ -18,6 +18,9 @@ Die Netzwerkkontrolle wird über dedizierte Wrapper-Skripte (`scripts/net/*`) um
   - `scripts/net/ap_disable.sh`
   - `scripts/net/ap_status.sh`
   - `scripts/net/ap_clients.sh`
+  - `scripts/net/storage_probe.sh`
+  - `scripts/net/storage_mount.sh`
+  - `scripts/net/storage_unmount.sh`
   - `scripts/net/portal_update.sh`
   - `scripts/net/bluetooth_toggle.sh`
   - `scripts/net/lan_toggle.sh`
@@ -52,6 +55,8 @@ Nur folgende Aktionen werden per sudo freigegeben:
 - `ap_disable.sh`
 - `ap_status.sh`
 - `ap_clients.sh`
+- `storage_mount.sh`
+- `storage_unmount.sh`
 - `portal_update.sh`
 
 AP-Erreichbarkeit:
@@ -65,6 +70,7 @@ AP-Erreichbarkeit:
 - `tailscale_dns_fix.sh`
 
 `network_info.sh` läuft ohne sudo.
+`storage_probe.sh` läuft ebenfalls ohne sudo.
 
 ## API-Endpunkte
 
@@ -80,6 +86,15 @@ AP-Erreichbarkeit:
 - `GET /api/network/ap/status`
 - `POST /api/network/ap/toggle`
 - `GET /api/network/ap/clients`
+- `GET /api/network/storage/status`
+- `POST /api/network/storage/register`
+- `POST /api/network/storage/ignore`
+- `POST /api/network/storage/unignore`
+- `POST /api/network/storage/remove`
+- `POST /api/network/storage/mount`
+- `POST /api/network/storage/unmount`
+- `POST /api/network/storage/toggle-enabled`
+- `POST /api/network/storage/toggle-automount`
 - `POST /api/system/portal/update`
 - `GET /api/system/portal/update/status`
 - `GET /api/network/wifi/logs`

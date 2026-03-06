@@ -58,6 +58,15 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | network | GET | `/api/network/ap/status` | `routes_network.api_network_ap_status` |
 | network | POST | `/api/network/ap/toggle` | `routes_network.api_network_ap_toggle` |
 | network | GET | `/api/network/ap/clients` | `routes_network.api_network_ap_clients` |
+| network | GET | `/api/network/storage/status` | `routes_network.api_network_storage_status` |
+| network | POST | `/api/network/storage/register` | `routes_network.api_network_storage_register` |
+| network | POST | `/api/network/storage/ignore` | `routes_network.api_network_storage_ignore` |
+| network | POST | `/api/network/storage/unignore` | `routes_network.api_network_storage_unignore` |
+| network | POST | `/api/network/storage/remove` | `routes_network.api_network_storage_remove` |
+| network | POST | `/api/network/storage/mount` | `routes_network.api_network_storage_mount` |
+| network | POST | `/api/network/storage/unmount` | `routes_network.api_network_storage_unmount` |
+| network | POST | `/api/network/storage/toggle-enabled` | `routes_network.api_network_storage_toggle_enabled` |
+| network | POST | `/api/network/storage/toggle-automount` | `routes_network.api_network_storage_toggle_automount` |
 | network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
 | network | POST | `/api/system/portal/update` | `routes_network.api_system_portal_update` |
 | network | GET | `/api/system/portal/update/status` | `routes_network.api_system_portal_update_status` |
@@ -257,6 +266,24 @@ curl -sS -X POST http://127.0.0.1:5070/api/plan/pull \
 ## 14) GET `/api/network/info`
 - **Auth:** none
 - **200:** Netzwerkstatus aus Wrapper-Script (`network_info.sh`)
+
+---
+
+## Storage (lokal, ohne Adminpanel-DB)
+
+Neue lokale Storage-Endpunkte arbeiten mit `var/data/config-storage.json`:
+
+- `GET /api/network/storage/status`: merged Erkennung + registrierte Geräte (known/new/missing/mounted).
+- `POST /api/network/storage/register`: neues Gerät in lokale Config übernehmen.
+- `POST /api/network/storage/ignore`: neu erkanntes Gerät ignorieren.
+- `POST /api/network/storage/unignore`: ignoriertes Gerät wieder freigeben.
+- `POST /api/network/storage/remove`: registriertes Gerät aus lokaler Config entfernen.
+- `POST /api/network/storage/mount`: manuelles Mounten eines registrierten Geräts.
+- `POST /api/network/storage/unmount`: manuelles Unmounten eines registrierten Geräts.
+- `POST /api/network/storage/toggle-enabled`: Gerät aktiv/deaktiviert markieren.
+- `POST /api/network/storage/toggle-automount`: Auto-Mount pro Gerät ein/aus.
+
+Wiedererkennung erfolgt primär über `UUID`, fallback `PARTUUID`; `/dev/sdX` wird nur als `last_seen_device_path` behandelt.
 
 **200 example**
 ```json

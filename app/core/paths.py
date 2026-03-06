@@ -6,6 +6,7 @@ from pathlib import Path
 PORTAL_DIR = str(Path(__file__).resolve().parents[2])
 DATA_DIR = str(Path(PORTAL_DIR) / 'var' / 'data')
 CONFIG_PATH = os.getenv('CONFIG_PATH', str(Path(DATA_DIR) / 'config.json'))
+STORAGE_CONFIG_PATH = os.getenv('STORAGE_CONFIG_PATH', str(Path(DATA_DIR) / 'config-storage.json'))
 DEVICE_PATH = os.getenv('DEVICE_PATH', str(Path(DATA_DIR) / 'device.json'))
 FINGERPRINT_PATH = os.getenv('FINGERPRINT_PATH', str(Path(DATA_DIR) / 'fingerprint.json'))
 STATE_PATH = os.getenv('STATE_PATH', str(Path(DATA_DIR) / 'state.json'))

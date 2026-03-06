@@ -45,6 +45,11 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link" id="storage-tab" data-bs-toggle="tab" data-bs-target="#storage-pane" type="button" role="tab">
+          <i class="bi bi-device-hdd me-1"></i>Storage
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link" id="stream-tab" data-bs-toggle="tab" data-bs-target="#stream-pane" type="button" role="tab">
           <i class="bi bi-broadcast me-1"></i>Stream Einstellungen
         </button>
@@ -184,6 +189,79 @@
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="storage-pane" role="tabpanel" aria-labelledby="storage-tab">
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="portal-card p-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <h2 class="h5 mb-0"><i class="bi bi-hdd-stack me-1"></i>Storage Übersicht</h2>
+                <div class="d-flex align-items-center gap-2">
+                  <span id="storage-summary" class="badge text-bg-secondary">0 bekannt / 0 neu / 0 ignoriert</span>
+                  <button id="btn-storage-refresh" class="btn btn-outline-dark btn-sm">Refresh Storage</button>
+                </div>
+              </div>
+              <small class="text-secondary">
+                Interner Medienspeicher: <code>/var/lib/deviceportal/media.img</code> (20G, ext4, loop) -> <code>/mnt/deviceportal/media</code>.
+                Externe Laufwerke werden UUID/PARTUUID-basiert wiedererkannt.
+              </small>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-4">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 id="storage-internal-name" class="h6 mb-0">Interner Medienspeicher</h3>
+                <span id="storage-internal-status" class="badge text-bg-secondary">missing</span>
+              </div>
+              <div class="progress mb-2" role="progressbar" aria-label="Internal storage used">
+                <div id="storage-internal-progress" class="progress-bar" style="width: 0%">0%</div>
+              </div>
+              <dl class="portal-kv mb-0">
+                <dt>Image</dt><dd id="storage-internal-image">-</dd>
+                <dt>Mount</dt><dd id="storage-internal-mount">-</dd>
+                <dt>Dateisystem</dt><dd id="storage-internal-fs">-</dd>
+                <dt>Gesamt</dt><dd id="storage-internal-size">-</dd>
+                <dt>Belegt</dt><dd id="storage-internal-used">-</dd>
+                <dt>Frei</dt><dd id="storage-internal-free">-</dd>
+                <dt>Nutzung</dt><dd id="storage-internal-percent">-</dd>
+              </dl>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-8">
+            <div class="portal-card p-3 h-100">
+              <h3 class="h6 mb-2">Laufwerke</h3>
+              <div id="storage-drives-list" class="row g-2">
+                <div class="col-12 text-secondary">Keine Laufwerke erkannt.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-5">
+            <div class="portal-card p-3 h-100">
+              <h3 class="h6 mb-2">Neu erkannte Geräte</h3>
+              <div id="storage-new-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Keine neuen Geräte erkannt.</div>
+              </div>
+              <hr>
+              <h3 class="h6 mb-2">Ignorierte Geräte</h3>
+              <div id="storage-ignored-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Keine ignorierten Geräte.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-7">
+            <div class="portal-card p-3 h-100">
+              <h3 class="h6 mb-2">Registrierte Speicher</h3>
+              <div id="storage-known-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Keine registrierten Speicher.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

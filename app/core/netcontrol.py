@@ -419,6 +419,58 @@ def get_ap_clients(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
     return {"ifname": iface, "clients": clients}
 
 
+def storage_probe() -> dict:
+    rc, out, err = _run_script("storage_probe.sh", [], timeout=12, use_sudo=False)
+    if rc != 0:
+        raise NetControlError(code="storage_probe_failed", message="Failed to read storage devices", detail=err or out)
+    try:
+        payload = json.loads(out) if out else {}
+    except Exception as exc:
+        raise NetControlError(code="storage_probe_invalid_json", message="Storage probe returned invalid JSON", detail=str(exc))
+    if not isinstance(payload, dict):
+        return {"devices": []}
+    devices = payload.get("devices")
+    if not isinstance(devices, list):
+        devices = []
+    return {"detected_at": payload.get("detected_at", ""), "devices": devices}
+
+
+def storage_mount(selector_type: str, selector_value: str, mount_path: str, mount_options: str = "defaults,noatime,nofail") -> dict:
+    sel_type = (selector_type or "").strip().lower()
+    sel_val = (selector_value or "").strip()
+    mnt_path = (mount_path or "").strip()
+    opts = (mount_options or "defaults,noatime,nofail").strip()
+    if sel_type not in ("uuid", "partuuid"):
+        raise NetControlError(code="invalid_selector_type", message="Storage mount selector must be uuid or partuuid")
+    if not sel_val:
+        raise NetControlError(code="invalid_selector_value", message="Storage mount selector is required")
+    if not mnt_path:
+        raise NetControlError(code="invalid_mount_path", message="Storage mount path is required")
+    rc, out, err = _run_script("storage_mount.sh", [sel_type, sel_val, mnt_path, opts], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="storage_mount_failed", message="Failed to mount storage device", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {
+        "mounted": parsed.get("mounted", "false").lower() == "true",
+        "mount_path": parsed.get("mount_path", mnt_path),
+        "device": parsed.get("device", ""),
+    }
+
+
+def storage_unmount(mount_path: str) -> dict:
+    mnt_path = (mount_path or "").strip()
+    if not mnt_path:
+        raise NetControlError(code="invalid_mount_path", message="Storage mount path is required")
+    rc, out, err = _run_script("storage_unmount.sh", [mnt_path], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="storage_unmount_failed", message="Failed to unmount storage device", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {
+        "mounted": parsed.get("mounted", "false").lower() == "true",
+        "mount_path": parsed.get("mount_path", mnt_path),
+    }
+
+
 def start_wps(ifname: str = DEFAULT_WIFI_IFACE, target_bssid: str = "", target_ssid: str = "") -> dict:
     iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
     if iface not in ALLOWED_WIFI_INTERFACES:

@@ -15,6 +15,7 @@ VENV_DIR="$REPO_DIR/.venv"
 REQUIREMENTS_FILE="$REPO_DIR/requirements.txt"
 SERVICE_FILE_DST="/etc/systemd/system/device-portal.service"
 ENV_FILE="/etc/default/jm-deviceportal"
+INTERNAL_STORAGE_SETUP="$REPO_DIR/install/setup_internal_storage.sh"
 
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   echo "Service user does not exist: $SERVICE_USER" >&2
@@ -53,6 +54,7 @@ fi
 cat > "$ENV_FILE" <<EOF
 NETCONTROL_BIN_DIR=/opt/deviceportal/bin
 CONFIG_PATH=$REPO_DIR/var/data/config.json
+STORAGE_CONFIG_PATH=$REPO_DIR/var/data/config-storage.json
 DEVICE_PATH=$REPO_DIR/var/data/device.json
 FINGERPRINT_PATH=$REPO_DIR/var/data/fingerprint.json
 STATE_PATH=$REPO_DIR/var/data/state.json
@@ -84,7 +86,15 @@ EOF
 
 systemctl daemon-reload
 systemctl enable device-portal.service
+
+if [[ -x "$INTERNAL_STORAGE_SETUP" ]]; then
+  if ! "$INTERNAL_STORAGE_SETUP" "$SERVICE_USER" "$SERVICE_GROUP"; then
+    echo "WARN: internal storage setup failed; portal continues without blocking startup." >&2
+  fi
+fi
+
 systemctl restart device-portal.service
+
 echo "Installed systemd unit: $SERVICE_FILE_DST"
 echo "Installed environment file: $ENV_FILE"
 echo "Portal base setup done."

@@ -5,10 +5,14 @@
   let selectedWpsTarget = null;
   let wpsPollHandle = null;
   let apPollHandle = null;
+  let storagePollHandle = null;
   let updatePollHandle = null;
   let currentUpdateJobId = "";
   let apClientsInitialized = false;
   let apKnownConnectedMacs = new Set();
+  let storageInitialized = false;
+  let knownStorageStates = new Map();
+  let knownNewStorageIds = new Set();
 
   function q(id) {
     return document.getElementById(id);
@@ -117,6 +121,20 @@
     while (el && el.firstChild) {
       el.removeChild(el.firstChild);
     }
+  }
+
+  function formatBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return "-";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let idx = 0;
+    let current = value;
+    while (current >= 1024 && idx < units.length - 1) {
+      current /= 1024;
+      idx += 1;
+    }
+    const fixed = current >= 10 ? current.toFixed(0) : current.toFixed(1);
+    return `${fixed} ${units[idx]}`;
   }
 
   function setWpsTarget(target) {
@@ -262,6 +280,370 @@
     const data = await fetchJson("/api/network/info");
     renderNetwork(data);
     return data;
+  }
+
+  async function storageRegister(deviceId) {
+    await fetchJson("/api/network/storage/register", { method: "POST", body: { device_id: deviceId, auto_mount: true } });
+    toast("Speicher wurde registriert.", "success");
+    await refreshStorageStatus();
+  }
+
+  async function storageIgnore(deviceId) {
+    await fetchJson("/api/network/storage/ignore", { method: "POST", body: { device_id: deviceId } });
+    toast("Gerät wird ignoriert.", "secondary");
+    await refreshStorageStatus();
+  }
+
+  async function storageUnignore(deviceId) {
+    await fetchJson("/api/network/storage/unignore", { method: "POST", body: { device_id: deviceId } });
+    toast("Gerät wieder freigegeben.", "success");
+    await refreshStorageStatus();
+  }
+
+  async function storageMount(deviceId) {
+    await fetchJson("/api/network/storage/mount", { method: "POST", body: { device_id: deviceId }, timeoutMs: 25000 });
+    toast("Speicher wurde gemountet.", "success");
+    await refreshStorageStatus();
+  }
+
+  async function storageUnmount(deviceId) {
+    await fetchJson("/api/network/storage/unmount", { method: "POST", body: { device_id: deviceId }, timeoutMs: 25000 });
+    toast("Speicher wurde ausgehängt.", "success");
+    await refreshStorageStatus();
+  }
+
+  async function storageToggleEnabled(deviceId, enabled) {
+    await fetchJson("/api/network/storage/toggle-enabled", { method: "POST", body: { device_id: deviceId, enabled } });
+    toast(enabled ? "Speicher aktiviert." : "Speicher deaktiviert.", "success");
+    await refreshStorageStatus();
+  }
+
+  async function storageToggleAutoMount(deviceId, autoMount) {
+    await fetchJson("/api/network/storage/toggle-automount", { method: "POST", body: { device_id: deviceId, auto_mount: autoMount } });
+    toast(autoMount ? "Auto-Mount aktiviert." : "Auto-Mount deaktiviert.", "success");
+    await refreshStorageStatus();
+  }
+
+  async function storageRemove(deviceId) {
+    if (!window.confirm("Speicher-Konfiguration wirklich entfernen?")) return;
+    await fetchJson("/api/network/storage/remove", { method: "POST", body: { device_id: deviceId } });
+    toast("Speicher-Konfiguration entfernt.", "success");
+    await refreshStorageStatus();
+  }
+
+  function renderStorageNew(list) {
+    const host = q("storage-new-list");
+    clearNode(host);
+    if (!Array.isArray(list) || list.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine neuen Geräte erkannt.";
+      host.append(empty);
+      return;
+    }
+    for (const item of list) {
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const title = document.createElement("strong");
+      title.textContent = item.label || item.uuid || item.part_uuid || item.device_path || "Unbekanntes Gerät";
+      const badge = document.createElement("span");
+      badge.className = "badge text-bg-warning";
+      badge.textContent = "neu";
+      top.append(title, badge);
+
+      const meta = document.createElement("div");
+      meta.className = "text-secondary mb-2";
+      const fs = item.filesystem || "-";
+      const size = formatBytes(item.size_bytes);
+      const path = item.device_path || "-";
+      const ident = item.uuid || item.part_uuid || "-";
+      meta.textContent = `FS: ${fs} | Größe: ${size} | Pfad: ${path} | ID: ${ident}`;
+
+      const actions = document.createElement("div");
+      actions.className = "d-flex gap-2";
+      const addBtn = document.createElement("button");
+      addBtn.className = "btn btn-outline-success btn-sm";
+      addBtn.textContent = "Als Speicher hinzufügen";
+      addBtn.addEventListener("click", () => run(() => storageRegister(item.id)));
+      const ignoreBtn = document.createElement("button");
+      ignoreBtn.className = "btn btn-outline-secondary btn-sm";
+      ignoreBtn.textContent = "Ignorieren";
+      ignoreBtn.addEventListener("click", () => run(() => storageIgnore(item.id)));
+      actions.append(addBtn, ignoreBtn);
+
+      row.append(top, meta, actions);
+      host.append(row);
+    }
+  }
+
+  function renderStorageKnown(list) {
+    const host = q("storage-known-list");
+    clearNode(host);
+    if (!Array.isArray(list) || list.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine registrierten Speicher.";
+      host.append(empty);
+      return;
+    }
+    for (const item of list) {
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const title = document.createElement("strong");
+      title.textContent = item.name || item.label || item.uuid || item.part_uuid || "Speicher";
+      const statusBadge = document.createElement("span");
+      if (item.mounted) {
+        statusBadge.className = "badge text-bg-success";
+        statusBadge.textContent = "gemountet";
+      } else if (item.present) {
+        statusBadge.className = "badge text-bg-warning";
+        statusBadge.textContent = "vorhanden";
+      } else {
+        statusBadge.className = "badge text-bg-secondary";
+        statusBadge.textContent = "nicht vorhanden";
+      }
+      top.append(title, statusBadge);
+
+      const meta = document.createElement("div");
+      meta.className = "text-secondary mb-2";
+      const fs = item.filesystem || "-";
+      const size = formatBytes(item.size_bytes);
+      const mountPath = item.mount_path || "-";
+      const currentMount = item.current_mount_path || "-";
+      const ident = item.uuid || item.part_uuid || "-";
+      meta.textContent = `FS: ${fs} | Größe: ${size} | Mount: ${mountPath} | Aktuell: ${currentMount} | ID: ${ident}`;
+
+      const extra = document.createElement("div");
+      extra.className = "text-secondary mb-2";
+      extra.textContent = `Enabled: ${item.is_enabled ? "yes" : "no"} | Auto-Mount: ${item.auto_mount ? "yes" : "no"} | Last seen: ${item.last_seen_at || "-"}${item.last_error ? ` | Fehler: ${item.last_error}` : ""}`;
+
+      const actions = document.createElement("div");
+      actions.className = "d-flex flex-wrap gap-2";
+      const mountBtn = document.createElement("button");
+      mountBtn.className = "btn btn-outline-primary btn-sm";
+      mountBtn.textContent = "Mount";
+      mountBtn.disabled = !item.present;
+      mountBtn.addEventListener("click", () => run(() => storageMount(item.id)));
+      const umountBtn = document.createElement("button");
+      umountBtn.className = "btn btn-outline-secondary btn-sm";
+      umountBtn.textContent = "Unmount";
+      umountBtn.addEventListener("click", () => run(() => storageUnmount(item.id)));
+      const enabledBtn = document.createElement("button");
+      enabledBtn.className = "btn btn-outline-dark btn-sm";
+      enabledBtn.textContent = item.is_enabled ? "Deaktivieren" : "Aktivieren";
+      enabledBtn.addEventListener("click", () => run(() => storageToggleEnabled(item.id, !item.is_enabled)));
+      const autoBtn = document.createElement("button");
+      autoBtn.className = "btn btn-outline-dark btn-sm";
+      autoBtn.textContent = item.auto_mount ? "Auto-Mount aus" : "Auto-Mount an";
+      autoBtn.addEventListener("click", () => run(() => storageToggleAutoMount(item.id, !item.auto_mount)));
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "btn btn-outline-danger btn-sm";
+      removeBtn.textContent = "Entfernen";
+      removeBtn.addEventListener("click", () => run(() => storageRemove(item.id)));
+      actions.append(mountBtn, umountBtn, enabledBtn, autoBtn, removeBtn);
+
+      row.append(top, meta, extra, actions);
+      host.append(row);
+    }
+  }
+
+  function renderStorageIgnored(list) {
+    const host = q("storage-ignored-list");
+    clearNode(host);
+    if (!Array.isArray(list) || list.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine ignorierten Geräte.";
+      host.append(empty);
+      return;
+    }
+    for (const item of list) {
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const title = document.createElement("strong");
+      title.textContent = item.label || item.uuid || item.part_uuid || item.id || "Ignoriertes Gerät";
+      const badge = document.createElement("span");
+      badge.className = `badge ${item.present ? "text-bg-warning" : "text-bg-secondary"}`;
+      badge.textContent = item.present ? "angeschlossen" : "nicht angeschlossen";
+      top.append(title, badge);
+
+      const meta = document.createElement("div");
+      meta.className = "text-secondary mb-2";
+      meta.textContent = `ID: ${item.id || "-"} | FS: ${item.filesystem || "-"} | Größe: ${formatBytes(item.size_bytes)} | Pfad: ${item.device_path || "-"}`;
+
+      const actions = document.createElement("div");
+      actions.className = "d-flex gap-2";
+      const unignoreBtn = document.createElement("button");
+      unignoreBtn.className = "btn btn-outline-primary btn-sm";
+      unignoreBtn.textContent = "Zurückholen";
+      unignoreBtn.addEventListener("click", () => run(() => storageUnignore(item.id)));
+      actions.append(unignoreBtn);
+
+      row.append(top, meta, actions);
+      host.append(row);
+    }
+  }
+
+  function processStorageDeltas(data) {
+    const known = Array.isArray(data.known) ? data.known : [];
+    const newer = Array.isArray(data.new) ? data.new : [];
+    const nextStates = new Map();
+    for (const item of known) {
+      nextStates.set(item.id, `${item.present ? 1 : 0}:${item.mounted ? 1 : 0}`);
+    }
+    const nextNew = new Set(newer.map((item) => item.id));
+
+    if (storageInitialized) {
+      for (const item of newer) {
+        if (!knownNewStorageIds.has(item.id)) {
+          const label = item.label || item.uuid || item.part_uuid || item.device_path || "Unbekannt";
+          toast(`Neues USB-Gerät erkannt: ${label}`, "success");
+        }
+      }
+      for (const item of known) {
+        const previous = knownStorageStates.get(item.id);
+        const current = `${item.present ? 1 : 0}:${item.mounted ? 1 : 0}`;
+        if (previous && previous !== current) {
+          if (!item.present) {
+            toast(`Speicher getrennt: ${item.name || item.label || item.id}`, "secondary");
+          } else if (item.mounted) {
+            toast(`Speicher gemountet: ${item.name || item.label || item.id}`, "success");
+          } else {
+            toast(`Speicher vorhanden, nicht gemountet: ${item.name || item.label || item.id}`, "secondary");
+          }
+        }
+      }
+    }
+    knownStorageStates = nextStates;
+    knownNewStorageIds = nextNew;
+    storageInitialized = true;
+  }
+
+  function renderStorageInternal(internal) {
+    const info = internal || {};
+    const statusEl = q("storage-internal-status");
+    const progress = q("storage-internal-progress");
+    const percent = Math.max(0, Math.min(100, Number(info.used_percent || 0)));
+    q("storage-internal-name").textContent = info.drive_name || "Interner Medienspeicher";
+    q("storage-internal-image").textContent = info.image_path || "-";
+    q("storage-internal-mount").textContent = info.mount_path || "-";
+    q("storage-internal-fs").textContent = info.filesystem || info.expected_filesystem || "-";
+    q("storage-internal-size").textContent = formatBytes(info.total_bytes || info.image_size_bytes || 0);
+    q("storage-internal-used").textContent = formatBytes(info.used_bytes || 0);
+    q("storage-internal-free").textContent = formatBytes(info.free_bytes || 0);
+    q("storage-internal-percent").textContent = `${percent}%`;
+    progress.style.width = `${percent}%`;
+    progress.textContent = `${percent}%`;
+    progress.classList.remove("bg-success", "bg-warning", "bg-danger");
+    if (percent >= 90) progress.classList.add("bg-danger");
+    else if (percent >= 75) progress.classList.add("bg-warning");
+    else progress.classList.add("bg-success");
+
+    statusEl.className = "badge";
+    if (info.mounted) {
+      statusEl.classList.add("text-bg-success");
+      statusEl.textContent = "gemountet";
+    } else if (info.present) {
+      statusEl.classList.add("text-bg-warning");
+      statusEl.textContent = "vorhanden";
+    } else {
+      statusEl.classList.add("text-bg-secondary");
+      statusEl.textContent = "missing";
+    }
+  }
+
+  function renderStorageDrives(drives) {
+    const host = q("storage-drives-list");
+    clearNode(host);
+    if (!Array.isArray(drives) || drives.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "col-12 text-secondary";
+      empty.textContent = "Keine Laufwerke erkannt.";
+      host.append(empty);
+      return;
+    }
+    for (const d of drives) {
+      const col = document.createElement("div");
+      col.className = "col-12 col-md-6";
+      const card = document.createElement("div");
+      card.className = "border rounded p-2 h-100";
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2 mb-1";
+      const title = document.createElement("strong");
+      title.textContent = d.drive_name || d.id || "Laufwerk";
+      const badge = document.createElement("span");
+      badge.className = `badge ${d.mounted ? "text-bg-success" : (d.present ? "text-bg-warning" : "text-bg-secondary")}`;
+      badge.textContent = d.mounted ? "gemountet" : (d.present ? "vorhanden" : "nicht da");
+      top.append(title, badge);
+
+      const fs = d.filesystem || "-";
+      const mp = d.mount_path || "-";
+      const total = Number(d.total_bytes || 0);
+      const used = Number(d.used_bytes || 0);
+      const free = Number(d.free_bytes || 0);
+      const pct = Math.max(0, Math.min(100, Number(d.used_percent || 0)));
+
+      const meta = document.createElement("div");
+      meta.className = "small text-secondary mb-1";
+      const kind = d.is_internal ? "intern" : (d.drive_type || "extern");
+      meta.textContent = `${kind} | FS: ${fs} | Mount: ${mp}`;
+
+      const progressWrap = document.createElement("div");
+      progressWrap.className = "progress mb-1";
+      const bar = document.createElement("div");
+      bar.className = "progress-bar";
+      bar.style.width = `${pct}%`;
+      bar.textContent = `${pct}%`;
+      if (pct >= 90) bar.classList.add("bg-danger");
+      else if (pct >= 75) bar.classList.add("bg-warning");
+      else bar.classList.add("bg-success");
+      progressWrap.append(bar);
+
+      const usage = document.createElement("div");
+      usage.className = "small text-secondary";
+      usage.textContent = `Gesamt: ${formatBytes(total)} | Belegt: ${formatBytes(used)} | Frei: ${formatBytes(free)}${d.uuid ? ` | UUID: ${d.uuid}` : ""}`;
+
+      card.append(top, meta, progressWrap, usage);
+      col.append(card);
+      host.append(col);
+    }
+  }
+
+  function renderStorageStatus(payload) {
+    const data = payload.data || payload || {};
+    q("storage-summary").textContent = `${data.known_count || 0} bekannt / ${data.new_count || 0} neu / ${data.ignored_count || 0} ignoriert`;
+    renderStorageInternal(data.internal || {});
+    renderStorageDrives(data.drives || []);
+    renderStorageNew(data.new || []);
+    renderStorageKnown(data.known || []);
+    renderStorageIgnored(data.ignored || []);
+    processStorageDeltas(data);
+  }
+
+  async function refreshStorageStatus() {
+    const payload = await fetchJson("/api/network/storage/status");
+    renderStorageStatus(payload);
+    return payload;
+  }
+
+  function startStoragePolling() {
+    if (storagePollHandle) {
+      window.clearInterval(storagePollHandle);
+    }
+    storagePollHandle = window.setInterval(async () => {
+      try {
+        await refreshStorageStatus();
+      } catch (_) {
+        // ignore transient polling errors
+      }
+    }, 7000);
   }
 
   function renderApStatus(payload) {
@@ -935,6 +1317,7 @@
     q("btn-wifi-profiles-apply").addEventListener("click", () => run(wifiProfilesApply));
     q("btn-wifi-manual-add").addEventListener("click", () => run(wifiProfilesAddManual));
     q("btn-wifi-logs-refresh").addEventListener("click", () => run(refreshWifiLogs));
+    q("btn-storage-refresh").addEventListener("click", () => run(refreshStorageStatus));
     q("btn-ap-enable").addEventListener("click", () => run(() => toggleAp(true)));
     q("btn-ap-disable").addEventListener("click", () => run(() => toggleAp(false)));
     q("btn-ap-refresh").addEventListener("click", () => run(async () => {
@@ -981,10 +1364,12 @@
     await run(refreshWifiProfiles);
     await run(refreshWpsStatus);
     await run(refreshWifiLogs);
+    await run(refreshStorageStatus);
     await run(refreshApStatus);
     await run(refreshApClients);
     await run(loadLastPortalUpdateStatus);
     startApPolling();
+    startStoragePolling();
     setWpsTarget(null);
   }
 

@@ -8,8 +8,9 @@ Die Startseite `/` wurde auf eine tab-basierte SaaS-UI umgestellt (Bootstrap 5 +
 - Hero mit Runtime-Badge (`ONLINE / LINKED` etc.) und Update-Status (`Up to date` / `Update verfügbar`)
 - Tab 1: `Status & Link`
 - Tab 2: `Netzwerk & WLAN`
-- Tab 3: `Stream Einstellungen` (Platzhalter)
-- Tab 4: `System Einstellungen` (DNS-Fix Aktion)
+- Tab 3: `Storage`
+- Tab 4: `Stream Einstellungen` (Platzhalter)
+- Tab 5: `System Einstellungen` (DNS-Fix Aktion)
 
 ## Frontend-Dateien
 
@@ -76,6 +77,21 @@ Zusätzliche Panel-Aktionen:
 - Live-Ereignisbereich (`WPS / Ereignisse`) mit laufendem Polling.
 - AP-Bereich mit Status, AP-Buttons und AP-Clientliste (Live-Polling mit Delta-Flash für neue Clients).
 - AP-Hinweis im UI: Hotspot verbinden und `http://192.168.4.1` öffnen.
+
+## Storage-Tab Inhalte
+
+- Interner Speicherbereich (Loop-Storage) mit:
+  - Statusbadge
+  - Image-/Mount-Pfad
+  - FS-Info
+  - Gesamt/Belegt/Frei
+  - Nutzungsbalken (Windows-ähnliche Laufwerksansicht)
+- Laufwerksübersicht (`drives`) als Karten mit Nutzungsbalken/Status.
+- Externe Gerätebereiche:
+  - `Neu erkannte Geräte` (Hinzufügen/Ignorieren)
+  - `Ignorierte Geräte` (Zurückholen)
+  - `Registrierte Speicher` (Mount/Unmount/Toggle/Entfernen)
+- Polling mit Delta-Logik (Toast nur bei echten Änderungen: neu erkannt, getrennt, gemountet).
 
 ## System Aktionen
 

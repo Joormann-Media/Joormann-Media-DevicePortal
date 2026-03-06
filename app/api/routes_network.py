@@ -33,6 +33,17 @@ from app.core.netcontrol import (
     wifi_scan,
 )
 from app.core.paths import CONFIG_PATH
+from app.core.storage_state import (
+    get_storage_state,
+    ignore_storage_device,
+    mount_storage_device,
+    register_storage_device,
+    remove_storage_device,
+    set_storage_auto_mount,
+    set_storage_enabled,
+    unmount_storage_device,
+    unignore_storage_device,
+)
 from app.core.timeutil import utc_now
 
 bp_network = Blueprint("network", __name__)
@@ -247,6 +258,128 @@ def api_network_ap_clients():
         return _ok(get_ap_clients(ifname=ifname))
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/storage/status")
+def api_network_storage_status():
+    try:
+        return _ok(get_storage_state())
+    except NetControlError as exc:
+        status = 500 if exc.code in ("storage_probe_failed", "storage_config_write_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/register")
+def api_network_storage_register():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    name = str(data.get("name") or "").strip()
+    auto_mount = bool(data.get("auto_mount", True))
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        result = register_storage_device(device_id=device_id, name=name, auto_mount=auto_mount)
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code == "storage_config_write_failed" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/ignore")
+def api_network_storage_ignore():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        return _ok(ignore_storage_device(device_id=device_id))
+    except NetControlError as exc:
+        status = 500 if exc.code == "storage_config_write_failed" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/unignore")
+def api_network_storage_unignore():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        return _ok(unignore_storage_device(device_id=device_id))
+    except NetControlError as exc:
+        status = 500 if exc.code == "storage_config_write_failed" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/remove")
+def api_network_storage_remove():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        return _ok(remove_storage_device(device_id=device_id))
+    except NetControlError as exc:
+        status = 500 if exc.code == "storage_config_write_failed" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/mount")
+def api_network_storage_mount():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        return _ok(mount_storage_device(device_id=device_id))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("storage_mount_failed", "execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/unmount")
+def api_network_storage_unmount():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        return _ok(unmount_storage_device(device_id=device_id))
+    except NetControlError as exc:
+        status = 500 if exc.code in ("storage_unmount_failed", "execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/toggle-enabled")
+def api_network_storage_toggle_enabled():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    if "enabled" not in data:
+        return _error("invalid_payload", "Fields 'device_id' and 'enabled' are required", status=400)
+    enabled = bool(data.get("enabled"))
+    if not device_id:
+        return _error("invalid_payload", "Fields 'device_id' and 'enabled' are required", status=400)
+    try:
+        return _ok(set_storage_enabled(device_id=device_id, enabled=enabled))
+    except NetControlError as exc:
+        status = 500 if exc.code == "storage_config_write_failed" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/storage/toggle-automount")
+def api_network_storage_toggle_automount():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or "").strip()
+    if "auto_mount" not in data:
+        return _error("invalid_payload", "Fields 'device_id' and 'auto_mount' are required", status=400)
+    auto_mount = bool(data.get("auto_mount"))
+    if not device_id:
+        return _error("invalid_payload", "Fields 'device_id' and 'auto_mount' are required", status=400)
+    try:
+        return _ok(set_storage_auto_mount(device_id=device_id, auto_mount=auto_mount))
+    except NetControlError as exc:
+        status = 500 if exc.code == "storage_config_write_failed" else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
