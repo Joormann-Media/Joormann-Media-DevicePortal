@@ -322,7 +322,13 @@
     wifiProfilesState = data;
     const host = q("wifi-profiles-list");
     clearNode(host);
-    const profiles = data.profiles || data.configured || [];
+    const unmanagedFallback = (data.unmanaged || []).map((item) => ({
+      ssid: item.name || "",
+      priority: Number.isFinite(item.priority) ? item.priority : 0,
+      autoconnect: !!item.autoconnect,
+      source: "nm",
+    })).filter((item) => item.ssid);
+    const profiles = (data.profiles && data.profiles.length) ? data.profiles : ((data.configured && data.configured.length) ? data.configured : unmanagedFallback);
     const preferred = data.preferred_ssid || "";
     const last = data.last_wifi_ssid || "";
     if (!profiles.length) {

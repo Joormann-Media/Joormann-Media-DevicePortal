@@ -447,6 +447,25 @@ def api_wifi_profiles():
     known = {item["ssid"] for item in profiles_cfg}
     unmanaged = [item for item in nm_profiles if item.get("name") not in known]
     profiles = _merged_profiles(profiles_cfg, nm_profiles, preferred_ssid, last_wifi_ssid)
+    if not profiles:
+        try:
+            wifi_status = get_wifi_status(ifname="wlan0")
+            active_ssid = (wifi_status.get("ssid") or "").strip()
+            if active_ssid:
+                profiles = [
+                    {
+                        "ssid": active_ssid,
+                        "priority": 0,
+                        "autoconnect": True,
+                        "exists": True,
+                        "source": "active",
+                        "preferred": bool(preferred_ssid and active_ssid == preferred_ssid),
+                        "last": bool(last_wifi_ssid and active_ssid == last_wifi_ssid),
+                        "nm": None,
+                    }
+                ]
+        except NetControlError:
+            pass
     return _ok(
         {
             "configured": configured,
