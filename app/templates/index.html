@@ -181,64 +181,6 @@
             </div>
           </div>
 
-          <div class="col-12 col-xl-6">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h3 class="h6 mb-0">WLAN Netze</h3>
-                <button id="btn-wifi-scan" class="btn btn-outline-dark btn-sm">Scan</button>
-              </div>
-              <div id="wifi-scan-list" class="list-group list-group-flush small">
-                <div class="text-secondary">Noch kein Scan ausgeführt.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-6">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h3 class="h6 mb-0">Gespeicherte WLAN Profile</h3>
-                <div class="d-flex gap-2">
-                  <button id="btn-wifi-profiles-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
-                  <button id="btn-wifi-profiles-apply" class="btn btn-outline-primary btn-sm">Apply</button>
-                </div>
-              </div>
-              <div id="wifi-profiles-list" class="list-group list-group-flush small mb-3">
-                <div class="text-secondary">Keine Profile geladen.</div>
-              </div>
-              <div class="row g-2">
-                <div class="col-md-5">
-                  <input id="wifi-manual-ssid" class="form-control form-control-sm" placeholder="SSID">
-                </div>
-                <div class="col-md-5">
-                  <input id="wifi-manual-password" class="form-control form-control-sm" type="password" placeholder="Passwort (optional)">
-                </div>
-                <div class="col-md-2 d-grid">
-                  <button id="btn-wifi-manual-add" class="btn btn-outline-success btn-sm">Add</button>
-                </div>
-                <div class="col-12">
-                  <div class="form-check form-check-sm">
-                    <input class="form-check-input" type="checkbox" id="wifi-manual-hidden">
-                    <label class="form-check-label small text-secondary" for="wifi-manual-hidden">
-                      Hidden SSID / verstecktes Netzwerk
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-6">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h3 class="h6 mb-0">WPS / Ereignisse</h3>
-                <button id="btn-wifi-logs-refresh" class="btn btn-outline-secondary btn-sm">Refresh Logs</button>
-              </div>
-              <div class="small mb-2">
-                <strong>Status:</strong> <span id="wifi-wps-phase">idle</span>
-              </div>
-              <pre id="wifi-event-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -250,36 +192,116 @@
       </div>
 
       <div class="tab-pane fade" id="system-pane" role="tabpanel" aria-labelledby="system-tab">
-        <div class="row g-3">
-          <div class="col-12 col-xl-7">
-            <div class="portal-card p-4">
-              <h2 class="h5">System Einstellungen</h2>
-              <p class="text-secondary mb-3">
-                Behebt DNS-Probleme durch Tailscale MagicDNS/Resolver-Override
-                (`tailscale --accept-dns=false`) und triggert danach NetworkManager neu.
-              </p>
-              <div class="d-flex flex-wrap gap-2 mb-3">
-                <button id="btn-fix-tailscale-dns" class="btn btn-outline-warning btn-sm">
-                  Tailscale DNS-Override deaktivieren
-                </button>
-                <button id="btn-system-refresh-network" class="btn btn-outline-secondary btn-sm">
-                  Netzwerkdaten aktualisieren
-                </button>
+        <ul class="nav nav-pills mb-3" id="systemSubTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="system-sub-general-tab" data-bs-toggle="tab" data-bs-target="#system-sub-general" type="button" role="tab">
+              Allgemein
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="system-sub-wifi-tab" data-bs-toggle="tab" data-bs-target="#system-sub-wifi" type="button" role="tab">
+              WLAN Verwaltung
+            </button>
+          </li>
+        </ul>
+
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="system-sub-general" role="tabpanel" aria-labelledby="system-sub-general-tab">
+            <div class="row g-3">
+              <div class="col-12 col-xl-7">
+                <div class="portal-card p-4">
+                  <h2 class="h5">System Einstellungen</h2>
+                  <p class="text-secondary mb-3">
+                    Behebt DNS-Probleme durch Tailscale MagicDNS/Resolver-Override
+                    (`tailscale --accept-dns=false`) und triggert danach NetworkManager neu.
+                  </p>
+                  <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button id="btn-fix-tailscale-dns" class="btn btn-outline-warning btn-sm">
+                      Tailscale DNS-Override deaktivieren
+                    </button>
+                    <button id="btn-system-refresh-network" class="btn btn-outline-secondary btn-sm">
+                      Netzwerkdaten aktualisieren
+                    </button>
+                  </div>
+                  <small class="text-secondary">
+                    Nutze das, wenn `github.com` o. a. Hosts nicht aufgelöst werden, obwohl `ping 1.1.1.1` funktioniert.
+                  </small>
+                </div>
               </div>
-              <small class="text-secondary">
-                Nutze das, wenn `github.com` o. a. Hosts nicht aufgelöst werden, obwohl `ping 1.1.1.1` funktioniert.
-              </small>
+
+              <div class="col-12 col-xl-5">
+                <div class="portal-card p-4 h-100">
+                  <h3 class="h6">Letzter DNS-Fix</h3>
+                  <dl class="portal-kv mb-0">
+                    <dt>Connection</dt><dd id="sys-dnsfix-connection">-</dd>
+                    <dt>DNS Server</dt><dd id="sys-dnsfix-dns">-</dd>
+                    <dt>Search</dt><dd id="sys-dnsfix-search">-</dd>
+                  </dl>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="col-12 col-xl-5">
-            <div class="portal-card p-4 h-100">
-              <h3 class="h6">Letzter DNS-Fix</h3>
-              <dl class="portal-kv mb-0">
-                <dt>Connection</dt><dd id="sys-dnsfix-connection">-</dd>
-                <dt>DNS Server</dt><dd id="sys-dnsfix-dns">-</dd>
-                <dt>Search</dt><dd id="sys-dnsfix-search">-</dd>
-              </dl>
+          <div class="tab-pane fade" id="system-sub-wifi" role="tabpanel" aria-labelledby="system-sub-wifi-tab">
+            <div class="row g-3">
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">WLAN Netze</h3>
+                    <button id="btn-wifi-scan" class="btn btn-outline-dark btn-sm">Scan</button>
+                  </div>
+                  <div id="wifi-scan-list" class="list-group list-group-flush small">
+                    <div class="text-secondary">Noch kein Scan ausgeführt.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">Gespeicherte WLAN Profile</h3>
+                    <div class="d-flex gap-2">
+                      <button id="btn-wifi-profiles-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                      <button id="btn-wifi-profiles-apply" class="btn btn-outline-primary btn-sm">Apply</button>
+                    </div>
+                  </div>
+                  <div id="wifi-profiles-list" class="list-group list-group-flush small mb-3">
+                    <div class="text-secondary">Keine Profile geladen.</div>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-md-5">
+                      <input id="wifi-manual-ssid" class="form-control form-control-sm" placeholder="SSID">
+                    </div>
+                    <div class="col-md-5">
+                      <input id="wifi-manual-password" class="form-control form-control-sm" type="password" placeholder="Passwort (optional)">
+                    </div>
+                    <div class="col-md-2 d-grid">
+                      <button id="btn-wifi-manual-add" class="btn btn-outline-success btn-sm">Add</button>
+                    </div>
+                    <div class="col-12">
+                      <div class="form-check form-check-sm">
+                        <input class="form-check-input" type="checkbox" id="wifi-manual-hidden">
+                        <label class="form-check-label small text-secondary" for="wifi-manual-hidden">
+                          Hidden SSID / verstecktes Netzwerk
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">WPS / Ereignisse</h3>
+                    <button id="btn-wifi-logs-refresh" class="btn btn-outline-secondary btn-sm">Refresh Logs</button>
+                  </div>
+                  <div class="small mb-2">
+                    <strong>Status:</strong> <span id="wifi-wps-phase">idle</span>
+                  </div>
+                  <pre id="wifi-event-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
+                </div>
+              </div>
             </div>
           </div>
         </div>

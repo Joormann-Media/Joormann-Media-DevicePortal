@@ -1,0 +1,349 @@
+{
+  "collected_at": "2026-03-06T12:19:18Z",
+  "hostname": "joormann-media-local",
+  "os": {
+    "pretty_name": "Ubuntu 24.04.3 LTS",
+    "version": "24.04.3 LTS (Noble Numbat)",
+    "id": "ubuntu"
+  },
+  "kernel": "6.8.0-100-generic",
+  "machine": "x86_64",
+  "cpu": {
+    "model": "45",
+    "serial": ""
+  },
+  "machine_id": "be541bf44a204c1ba8c97b07dbc6cbd7",
+  "memory": {
+    "mem_total_kb": 24557120
+  },
+  "disks": {
+    "blockdevices": [
+      {
+        "name": "sda",
+        "size": "931.5G",
+        "type": "disk",
+        "mountpoint": null,
+        "fstype": null,
+        "children": [
+          {
+            "name": "sda1",
+            "size": "1M",
+            "type": "part",
+            "mountpoint": null,
+            "fstype": null
+          },
+          {
+            "name": "sda2",
+            "size": "2G",
+            "type": "part",
+            "mountpoint": "/boot",
+            "fstype": "ext4"
+          },
+          {
+            "name": "sda3",
+            "size": "929.5G",
+            "type": "part",
+            "mountpoint": null,
+            "fstype": "LVM2_member",
+            "children": [
+              {
+                "name": "ubuntu--vg-ubuntu--lv",
+                "size": "100G",
+                "type": "lvm",
+                "mountpoint": "/",
+                "fstype": "ext4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "sdb",
+        "size": "1.8T",
+        "type": "disk",
+        "mountpoint": null,
+        "fstype": null,
+        "children": [
+          {
+            "name": "sdb1",
+            "size": "1.8T",
+            "type": "part",
+            "mountpoint": "/mnt/data_wd",
+            "fstype": "ext4"
+          }
+        ]
+      },
+      {
+        "name": "sdc",
+        "size": "7.3T",
+        "type": "disk",
+        "mountpoint": null,
+        "fstype": null,
+        "children": [
+          {
+            "name": "sdc1",
+            "size": "128M",
+            "type": "part",
+            "mountpoint": null,
+            "fstype": null
+          },
+          {
+            "name": "sdc2",
+            "size": "7.3T",
+            "type": "part",
+            "mountpoint": "/mnt/HDD2",
+            "fstype": "ntfs"
+          }
+        ]
+      },
+      {
+        "name": "sdd",
+        "size": "1.8T",
+        "type": "disk",
+        "mountpoint": null,
+        "fstype": null,
+        "children": [
+          {
+            "name": "sdd1",
+            "size": "1.8T",
+            "type": "part",
+            "mountpoint": "/mnt/HDD3",
+            "fstype": "ntfs"
+          }
+        ]
+      },
+      {
+        "name": "sde",
+        "size": "1.8T",
+        "type": "disk",
+        "mountpoint": null,
+        "fstype": null,
+        "children": [
+          {
+            "name": "sde1",
+            "size": "1.8T",
+            "type": "part",
+            "mountpoint": "/mnt/data_toshiba",
+            "fstype": "ext4"
+          }
+        ]
+      },
+      {
+        "name": "sdf",
+        "size": "931.5G",
+        "type": "disk",
+        "mountpoint": null,
+        "fstype": null,
+        "children": [
+          {
+            "name": "sdf1",
+            "size": "931.5G",
+            "type": "part",
+            "mountpoint": null,
+            "fstype": "linux_raid_member",
+            "children": [
+              {
+                "name": "md0",
+                "size": "1.8T",
+                "type": "raid0",
+                "mountpoint": "/mnt/raid",
+                "fstype": "ext4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "sdg",
+        "size": "931.5G",
+        "type": "disk",
+        "mountpoint": null,
+        "fstype": null,
+        "children": [
+          {
+            "name": "sdg1",
+            "size": "931.5G",
+            "type": "part",
+            "mountpoint": null,
+            "fstype": "linux_raid_member",
+            "children": [
+              {
+                "name": "md0",
+                "size": "1.8T",
+                "type": "raid0",
+                "mountpoint": "/mnt/raid",
+                "fstype": "ext4"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "network": [
+    {
+      "ifindex": 1,
+      "ifname": "lo",
+      "flags": [
+        "LOOPBACK",
+        "UP",
+        "LOWER_UP"
+      ],
+      "mtu": 65536,
+      "qdisc": "noqueue",
+      "operstate": "UNKNOWN",
+      "group": "default",
+      "txqlen": 1000,
+      "link_type": "loopback",
+      "address": "00:00:00:00:00:00",
+      "broadcast": "00:00:00:00:00:00",
+      "addr_info": [
+        {
+          "family": "inet",
+          "local": "127.0.0.1",
+          "prefixlen": 8,
+          "scope": "host",
+          "label": "lo",
+          "valid_life_time": 4294967295,
+          "preferred_life_time": 4294967295
+        },
+        {
+          "family": "inet6",
+          "local": "::1",
+          "prefixlen": 128,
+          "scope": "host",
+          "noprefixroute": true,
+          "valid_life_time": 4294967295,
+          "preferred_life_time": 4294967295
+        }
+      ]
+    },
+    {
+      "ifindex": 2,
+      "ifname": "enp8s0",
+      "flags": [
+        "BROADCAST",
+        "MULTICAST",
+        "UP",
+        "LOWER_UP"
+      ],
+      "mtu": 1500,
+      "qdisc": "fq_codel",
+      "operstate": "UP",
+      "group": "default",
+      "txqlen": 1000,
+      "link_type": "ether",
+      "address": "dc:62:79:ce:b7:eb",
+      "broadcast": "ff:ff:ff:ff:ff:ff",
+      "addr_info": [
+        {
+          "family": "inet",
+          "local": "192.168.178.36",
+          "prefixlen": 24,
+          "metric": 100,
+          "broadcast": "192.168.178.255",
+          "scope": "global",
+          "dynamic": true,
+          "label": "enp8s0",
+          "valid_life_time": 823878,
+          "preferred_life_time": 823878
+        },
+        {
+          "family": "inet6",
+          "local": "fdd5:cdbe:bd23:0:de62:79ff:fece:b7eb",
+          "prefixlen": 64,
+          "scope": "global",
+          "dynamic": true,
+          "mngtmpaddr": true,
+          "noprefixroute": true,
+          "valid_life_time": 7088,
+          "preferred_life_time": 3488
+        },
+        {
+          "family": "inet6",
+          "local": "2a02:8071:6142:ed60:de62:79ff:fece:b7eb",
+          "prefixlen": 64,
+          "scope": "global",
+          "dynamic": true,
+          "mngtmpaddr": true,
+          "noprefixroute": true,
+          "valid_life_time": 7088,
+          "preferred_life_time": 3488
+        },
+        {
+          "family": "inet6",
+          "local": "fe80::de62:79ff:fece:b7eb",
+          "prefixlen": 64,
+          "scope": "link",
+          "valid_life_time": 4294967295,
+          "preferred_life_time": 4294967295
+        }
+      ]
+    },
+    {
+      "ifindex": 3,
+      "ifname": "eno1",
+      "flags": [
+        "BROADCAST",
+        "MULTICAST"
+      ],
+      "mtu": 1500,
+      "qdisc": "noop",
+      "operstate": "DOWN",
+      "group": "default",
+      "txqlen": 1000,
+      "link_type": "ether",
+      "address": "90:2b:34:5e:bb:89",
+      "broadcast": "ff:ff:ff:ff:ff:ff",
+      "altnames": [
+        "enp0s25"
+      ],
+      "addr_info": []
+    },
+    {
+      "ifindex": 4,
+      "ifname": "tailscale0",
+      "flags": [
+        "POINTOPOINT",
+        "MULTICAST",
+        "NOARP",
+        "UP",
+        "LOWER_UP"
+      ],
+      "mtu": 1280,
+      "qdisc": "fq_codel",
+      "operstate": "UNKNOWN",
+      "group": "default",
+      "txqlen": 500,
+      "link_type": "none",
+      "addr_info": [
+        {
+          "family": "inet",
+          "local": "100.75.200.101",
+          "prefixlen": 32,
+          "scope": "global",
+          "label": "tailscale0",
+          "valid_life_time": 4294967295,
+          "preferred_life_time": 4294967295
+        },
+        {
+          "family": "inet6",
+          "local": "fd7a:115c:a1e0::fc01:c872",
+          "prefixlen": 128,
+          "scope": "global",
+          "valid_life_time": 4294967295,
+          "preferred_life_time": 4294967295
+        },
+        {
+          "family": "inet6",
+          "local": "fe80::d3b7:64a:8a4d:f1f5",
+          "prefixlen": 64,
+          "scope": "link",
+          "stable-privacy": true,
+          "valid_life_time": 4294967295,
+          "preferred_life_time": 4294967295
+        }
+      ]
+    }
+  ]
+}
