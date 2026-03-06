@@ -633,6 +633,6 @@ def portal_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_B
         "updated_at": parsed.get("updated_at", ""),
         "finished_at": parsed.get("finished_at", ""),
         "message": message,
-        "log": _tail_file(log_file, max_log_bytes=max_log_bytes) if log_file.exists() else "",
+        "log": _tail_file(log_file, max_bytes=max_log_bytes) if log_file.exists() else "",
         "log_file": str(log_file),
     }
