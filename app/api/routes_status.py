@@ -7,6 +7,7 @@ from app.core.device import ensure_device
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_fingerprint
 from app.core.gitinfo import get_update_info
 from app.core.state import get_state, update_state
+from app.core.systeminfo import parse_mem_stats_kb
 
 bp_status = Blueprint('status', __name__)
 
@@ -39,6 +40,9 @@ def api_status():
         config=cfg,
         device=dev_view,
         fingerprint=short_fingerprint(fp),
+        system={
+            "memory": parse_mem_stats_kb(),
+        },
         app_update=get_update_info(),
         state=state,
     )

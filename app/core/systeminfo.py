@@ -80,3 +80,33 @@ def parse_mem_total_kb() -> int | None:
     except Exception:
         return None
     return None
+
+
+def parse_mem_stats_kb() -> dict[str, int | None]:
+    stats: dict[str, int | None] = {
+        "mem_total_kb": None,
+        "mem_free_kb": None,
+        "mem_available_kb": None,
+    }
+    try:
+        with open('/proc/meminfo', 'r', encoding='utf-8') as f:
+            for line in f:
+                if ':' not in line:
+                    continue
+                key, rest = line.split(':', 1)
+                parts = rest.strip().split()
+                if not parts:
+                    continue
+                try:
+                    value = int(parts[0])
+                except Exception:
+                    continue
+                if key == 'MemTotal':
+                    stats["mem_total_kb"] = value
+                elif key == 'MemFree':
+                    stats["mem_free_kb"] = value
+                elif key == 'MemAvailable':
+                    stats["mem_available_kb"] = value
+    except Exception:
+        return stats
+    return stats

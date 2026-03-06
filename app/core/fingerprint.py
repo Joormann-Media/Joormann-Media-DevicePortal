@@ -83,5 +83,6 @@ def short_fingerprint(fp: dict) -> dict:
         'kernel': fp.get('kernel', ''),
         'machine': fp.get('machine', ''),
         'cpu_model': ((fp.get('cpu') or {}).get('model') if isinstance(fp.get('cpu'), dict) else ''),
+        'memory': fp.get('memory', {}) if isinstance(fp.get('memory'), dict) else {},
         'collected_at': fp.get('collected_at'),
     }

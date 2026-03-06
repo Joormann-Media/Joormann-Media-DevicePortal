@@ -238,7 +238,25 @@
     const fp = status.fingerprint || {};
     const cpuModel = String(fp.cpu_model || "").trim();
     q("status-health-cpu").textContent = cpuModel || "unavailable";
-    q("status-health-ram").textContent = "unavailable";
+    const mem = ((status.system || {}).memory || {});
+    const fpMemTotalKb = Number(((fp.memory || {}).mem_total_kb) || 0);
+    const totalKb = Number(mem.mem_total_kb || 0) || fpMemTotalKb;
+    const availableKb = Number(mem.mem_available_kb || 0);
+    const freeKb = Number(mem.mem_free_kb || 0);
+    let usedKb = 0;
+    let ramText = "unavailable";
+    if (totalKb > 0) {
+      if (availableKb > 0) {
+        usedKb = Math.max(0, totalKb - availableKb);
+      } else if (freeKb > 0) {
+        usedKb = Math.max(0, totalKb - freeKb);
+      } else {
+        usedKb = 0;
+      }
+      const usedPct = totalKb > 0 ? Math.round((usedKb / totalKb) * 100) : 0;
+      ramText = `${formatBytes(usedKb * 1024)} / ${formatBytes(totalKb * 1024)} (${usedPct}%)`;
+    }
+    q("status-health-ram").textContent = ramText;
 
     const internal = storage.internal || {};
     const internalPct = toPct(internal.used_percent || 0);
@@ -289,6 +307,8 @@
     if (!host) return;
     clearNode(host);
 
+    const tailscale = network.tailscale || {};
+    const tailscaleConnected = !!(tailscale.present && tailscale.ip);
     const items = [
       {
         name: "DevicePortal",
@@ -307,9 +327,9 @@
       {
         name: "Tailscale",
         type: "apt",
-        version: (network.tailscale || {}).ip || "-",
-        state: (network.tailscale || {}).present ? "installed" : "missing",
-        badge: (network.tailscale || {}).present ? "success" : "secondary",
+        version: tailscale.ip || "-",
+        state: tailscaleConnected ? "connected" : (tailscale.present ? "installed" : "missing"),
+        badge: tailscaleConnected ? "success" : (tailscale.present ? "warning" : "secondary"),
       },
       {
         name: "Storage Service",
@@ -466,7 +486,7 @@
     q("net-hostname").textContent = data.hostname || "-";
     q("net-gateway").textContent = routes.gateway || "-";
     q("net-dns").textContent = (routes.dns || []).join(", ") || "-";
-    q("net-tailscale").textContent = tailscale.present ? (tailscale.ip || "present") : "not present";
+    q("net-tailscale").textContent = tailscale.present ? (tailscale.ip ? `connected (${tailscale.ip})` : "installed (no IP)") : "not present";
 
     q("lan-ifname").textContent = lan.ifname || "eth0";
     q("lan-enabled").textContent = yn(!!lan.enabled);
