@@ -607,12 +607,22 @@
       card.className = "border rounded p-2 h-100";
       const top = document.createElement("div");
       top.className = "d-flex justify-content-between align-items-center gap-2 mb-1";
+      const left = document.createElement("div");
+      left.className = "d-flex align-items-center gap-2";
       const title = document.createElement("strong");
       title.textContent = d.drive_name || d.id || "Laufwerk";
+      const typeBadge = document.createElement("span");
+      typeBadge.className = "badge text-bg-light border text-dark";
+      const typeIcon = document.createElement("i");
+      const isInternal = !!d.is_internal;
+      const isUsb = !isInternal && String(d.drive_type || "").toLowerCase() === "usb";
+      typeIcon.className = isInternal ? "bi bi-hdd-stack me-1" : (isUsb ? "bi bi-usb-drive me-1" : "bi bi-device-hdd me-1");
+      typeBadge.append(typeIcon, document.createTextNode(isInternal ? "internal" : (isUsb ? "USB-Drive" : (d.drive_type || "extern"))));
       const badge = document.createElement("span");
       badge.className = `badge ${d.mounted ? "text-bg-success" : (d.present ? "text-bg-warning" : "text-bg-secondary")}`;
       badge.textContent = d.mounted ? "gemountet" : (d.present ? "vorhanden" : "nicht da");
-      top.append(title, badge);
+      left.append(title, typeBadge);
+      top.append(left, badge);
 
       const fs = d.filesystem || "-";
       const mp = d.mount_path || "-";
@@ -623,9 +633,8 @@
 
       const meta = document.createElement("div");
       meta.className = "small text-secondary mb-1";
-      const kind = d.is_internal ? "intern" : (d.drive_type || "extern");
       const src = d.source_device || "";
-      meta.textContent = `${kind} | FS: ${fs} | Mount: ${mp}${src ? ` | Device: ${src}` : ""}`;
+      meta.textContent = `FS: ${fs} | Mount: ${mp}${src ? ` | Device: ${src}` : ""}`;
 
       const progressWrap = document.createElement("div");
       progressWrap.className = "progress mb-1";
