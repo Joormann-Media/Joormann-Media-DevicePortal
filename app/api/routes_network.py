@@ -447,25 +447,6 @@ def api_wifi_profiles():
     known = {item["ssid"] for item in profiles_cfg}
     unmanaged = [item for item in nm_profiles if item.get("name") not in known]
     profiles = _merged_profiles(profiles_cfg, nm_profiles, preferred_ssid, last_wifi_ssid)
-    if not profiles:
-        try:
-            wifi_status = get_wifi_status(ifname="wlan0")
-            active_ssid = (wifi_status.get("ssid") or "").strip()
-            if active_ssid:
-                profiles = [
-                    {
-                        "ssid": active_ssid,
-                        "priority": 0,
-                        "autoconnect": True,
-                        "exists": True,
-                        "source": "active",
-                        "preferred": bool(preferred_ssid and active_ssid == preferred_ssid),
-                        "last": bool(last_wifi_ssid and active_ssid == last_wifi_ssid),
-                        "nm": None,
-                    }
-                ]
-        except NetControlError:
-            pass
     return _ok(
         {
             "configured": configured,
@@ -537,7 +518,17 @@ def api_wifi_profiles_delete():
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
     try:
+        current_ssid = ""
+        try:
+            current_ssid = (get_wifi_status(ifname="wlan0").get("ssid") or "").strip()
+        except NetControlError:
+            current_ssid = ""
         wifi_profile_delete(ssid, uuid=uuid)
+        if current_ssid and current_ssid == ssid:
+            try:
+                wifi_disconnect(ifname="wlan0")
+            except NetControlError:
+                pass
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
