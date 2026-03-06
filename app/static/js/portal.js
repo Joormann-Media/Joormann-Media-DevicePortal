@@ -604,10 +604,9 @@
       card.className = "border rounded p-2 h-100";
       const top = document.createElement("div");
       top.className = "d-flex justify-content-between align-items-center gap-2 mb-1";
-      const left = document.createElement("div");
-      left.className = "d-flex align-items-center gap-2";
       const title = document.createElement("strong");
       title.textContent = d.drive_name || d.id || "Laufwerk";
+      title.className = "text-truncate";
       const typeBadge = document.createElement("span");
       typeBadge.className = "badge text-bg-light border text-dark";
       const typeIcon = document.createElement("i");
@@ -618,8 +617,10 @@
       const badge = document.createElement("span");
       badge.className = `badge ${d.mounted ? "text-bg-success" : (d.present ? "text-bg-warning" : "text-bg-secondary")}`;
       badge.textContent = d.mounted ? "gemountet" : (d.present ? "vorhanden" : "nicht da");
-      left.append(title, typeBadge);
-      top.append(left, badge);
+      const right = document.createElement("div");
+      right.className = "d-flex align-items-center gap-1 flex-shrink-0";
+      right.append(typeBadge, badge);
+      top.append(title, right);
 
       const fs = d.filesystem || "-";
       const mp = d.mount_path || "-";
