@@ -14,6 +14,7 @@
   let knownStorageStates = new Map();
   let knownNewStorageIds = new Set();
   let knownStorageById = new Map();
+  let knownDrivesById = new Map();
   let selectedStorageDeviceId = "";
   let storageFmPreviewObjectUrl = "";
   let storageDeletePendingPaths = [];
@@ -672,7 +673,8 @@
   }
 
   async function openStorageFileManager(deviceId) {
-    const item = knownStorageById.get(String(deviceId || ""));
+    const deviceKey = String(deviceId || "");
+    const item = knownDrivesById.get(deviceKey) || knownStorageById.get(deviceKey);
     if (!item) {
       toast("Laufwerkdaten nicht gefunden.", "danger");
       return;
@@ -682,7 +684,7 @@
       return;
     }
     storageFmState.deviceId = String(item.id || "");
-    storageFmState.deviceName = item.name || item.label || item.uuid || item.id || "Storage";
+    storageFmState.deviceName = item.drive_name || item.name || item.label || item.uuid || item.id || "Storage";
     storageFmState.currentPath = "";
     storageFmState.entries = [];
     storageFmState.selectedPaths = new Set();
@@ -1007,7 +1009,8 @@
       const right = document.createElement("div");
       right.className = "d-flex align-items-center gap-1 flex-shrink-0";
       right.append(typeBadge, badge);
-      if (!d.is_internal && knownStorageById.has(String(d.id || ""))) {
+      const hasRegisteredConfig = knownStorageById.has(String(d.id || ""));
+      if (d.is_internal || hasRegisteredConfig) {
         const manageBtn = document.createElement("button");
         manageBtn.type = "button";
         manageBtn.className = "btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center";
@@ -1018,14 +1021,16 @@
         manageBtn.addEventListener("click", () => run(() => openStorageFileManager(String(d.id || ""))));
         right.append(manageBtn);
 
-        const editBtn = document.createElement("button");
-        editBtn.type = "button";
-        editBtn.className = "btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center";
-        editBtn.title = "Laufwerk bearbeiten";
-        editBtn.setAttribute("aria-label", "Laufwerk bearbeiten");
-        editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-        editBtn.addEventListener("click", () => openStorageDeviceModal(String(d.id || "")));
-        right.append(editBtn);
+        if (!d.is_internal) {
+          const editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.className = "btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center";
+          editBtn.title = "Laufwerk bearbeiten";
+          editBtn.setAttribute("aria-label", "Laufwerk bearbeiten");
+          editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+          editBtn.addEventListener("click", () => openStorageDeviceModal(String(d.id || "")));
+          right.append(editBtn);
+        }
       }
       top.append(title, right);
 
@@ -1065,16 +1070,18 @@
   function renderStorageStatus(payload) {
     const data = payload.data || payload || {};
     const knownList = Array.isArray(data.known) ? data.known : [];
+    const drivesList = Array.isArray(data.drives) ? data.drives : [];
     knownStorageById = new Map(knownList.map((item) => [String(item.id || ""), item]));
+    knownDrivesById = new Map(drivesList.map((item) => [String(item.id || ""), item]));
     q("storage-summary").textContent = `${data.known_count || 0} bekannt / ${data.new_count || 0} neu / ${data.ignored_count || 0} ignoriert`;
     renderStorageInternal(data.internal || {});
-    renderStorageDrives(data.drives || []);
+    renderStorageDrives(drivesList);
     renderStorageNew(data.new || []);
     renderStorageKnown(knownList);
     renderStorageIgnored(data.ignored || []);
     processStorageDeltas(data);
     if (storageFmState.active) {
-      const selected = knownStorageById.get(String(storageFmState.deviceId || ""));
+      const selected = knownDrivesById.get(String(storageFmState.deviceId || "")) || knownStorageById.get(String(storageFmState.deviceId || ""));
       if (!selected || !selected.present || !selected.mounted) {
         closeStorageFileManager();
         toast("Dateimanager geschlossen: Laufwerk ist nicht mehr verfügbar.", "secondary");

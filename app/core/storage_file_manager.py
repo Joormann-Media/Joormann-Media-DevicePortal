@@ -77,6 +77,20 @@ class StorageFileManagerService:
             raise NetControlError(code="invalid_storage_device", message="Storage device is required")
 
         cfg = ensure_storage_config()
+        internal_cfg = cfg.get("internal") if isinstance(cfg.get("internal"), dict) else {}
+        internal_id = str(internal_cfg.get("id") or "internal-media")
+        if device_key == internal_id:
+            mount_path_raw = str(internal_cfg.get("mount_path") or "/mnt/deviceportal/media").strip()
+            mount_path = Path(mount_path_raw)
+            if not mount_path.is_absolute():
+                raise NetControlError(code="storage_mount_path_invalid", message="Configured mount path is invalid")
+            if not mount_path.exists():
+                raise NetControlError(code="storage_mount_missing", message="Storage mount path is missing")
+            if not self._is_mounted(mount_path):
+                raise NetControlError(code="storage_not_mounted", message="Storage device is not mounted")
+            display_name = str(internal_cfg.get("name") or "Interner Medienspeicher (Loop)")
+            return StorageRoot(device_id=device_key, mount_path=mount_path.resolve(), display_name=display_name)
+
         devices = cfg.get("devices") if isinstance(cfg.get("devices"), list) else []
         target = next((item for item in devices if str(item.get("id") or "") == device_key), None)
         if not isinstance(target, dict):
