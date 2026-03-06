@@ -36,6 +36,16 @@ run_nmcli() {
   return 0
 }
 
+run_nmcli_capture() {
+  set +e
+  local out
+  out="$("${NMCLI}" "$@" 2>&1)"
+  local rc=$?
+  set -e
+  printf '%s' "${out}"
+  return ${rc}
+}
+
 case "${CMD}" in
   scan)
     IFACE="${1:-$(detect_iface)}"
@@ -100,16 +110,38 @@ case "${CMD}" in
       echo "missing ssid" >&2
       exit 2
     fi
+    ERRORS=()
+    IFACE="$(detect_iface)"
+    ACTIVE_CONN="$(run_nmcli_capture -t -f GENERAL.CONNECTION device show "${IFACE}" | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
+
     if [[ -n "${UUID}" ]]; then
-      # If this exact profile is active, disconnect first, then delete by UUID.
-      run_nmcli connection down uuid "${UUID}" || true
-      if run_nmcli connection delete uuid "${UUID}"; then
+      run_nmcli_capture connection down uuid "${UUID}" >/dev/null || true
+      if run_nmcli_capture connection delete uuid "${UUID}" >/dev/null; then
         exit 0
       fi
+      ERRORS+=("delete uuid ${UUID} failed")
     fi
-    # Fallback for systems where UUID is missing or stale: try by id/name.
-    run_nmcli connection down id "${SSID}" || true
-    run_nmcli connection delete id "${SSID}" || run_nmcli connection delete "${SSID}"
+
+    run_nmcli_capture connection down id "${SSID}" >/dev/null || true
+    if run_nmcli_capture connection delete id "${SSID}" >/dev/null; then
+      exit 0
+    fi
+    if run_nmcli_capture connection delete "${SSID}" >/dev/null; then
+      exit 0
+    fi
+    ERRORS+=("delete id/name '${SSID}' failed")
+
+    # Some WPS flows result in active runtime connection without persistent NM profile.
+    # In that case disconnect the device and treat as successful user intent.
+    if [[ -n "${ACTIVE_CONN}" && "${ACTIVE_CONN}" == "${SSID}" ]]; then
+      run_nmcli_capture device disconnect "${IFACE}" >/dev/null || true
+      echo "profile_not_found_disconnected_active=true"
+      exit 0
+    fi
+
+    echo "could not delete profile: ${SSID}" >&2
+    echo "${ERRORS[*]}" >&2
+    exit 44
     ;;
   profile-up)
     SSID="${1:-}"
