@@ -84,8 +84,14 @@ esac
 
 sync
 
+NEW_UUID="$(blkid -o value -s UUID "${DEV_REAL}" 2>/dev/null || true)"
+NEW_PARTUUID="$(blkid -o value -s PARTUUID "${DEV_REAL}" 2>/dev/null || true)"
+NEW_LABEL="$(blkid -o value -s LABEL "${DEV_REAL}" 2>/dev/null || true)"
+
 echo "success=true"
 echo "formatted=true"
 echo "device=${DEV_REAL}"
 echo "filesystem=${FILESYSTEM}"
-echo "label=${LABEL}"
+echo "label=${NEW_LABEL:-${LABEL}}"
+echo "uuid=${NEW_UUID}"
+echo "partuuid=${NEW_PARTUUID}"

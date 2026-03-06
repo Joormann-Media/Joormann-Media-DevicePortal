@@ -53,6 +53,23 @@ def _tail_file(path: Path, max_bytes: int = MAX_UPDATE_LOG_BYTES) -> str:
         return ""
 
 
+def _service_user_from_systemd(service_name: str) -> str:
+    unit = (service_name or "").strip()
+    if not unit:
+        return ""
+    try:
+        out = subprocess.check_output(
+            ["systemctl", "show", unit, "--property=User", "--value"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return ""
+    if not out or out in ("", "root"):
+        return ""
+    return out
+
+
 def _candidate_script_paths(script_name: str) -> list[Path]:
     return [
         DEPLOY_NET_SCRIPTS / script_name,
@@ -490,6 +507,8 @@ def storage_format(selector_type: str, selector_value: str, filesystem: str = "v
         "device": parsed.get("device", ""),
         "filesystem": parsed.get("filesystem", fs_type),
         "label": parsed.get("label", fs_label),
+        "uuid": parsed.get("uuid", ""),
+        "part_uuid": parsed.get("partuuid", ""),
     }
 
 
@@ -569,8 +588,8 @@ def disable_tailscale_dns_override() -> dict:
 
 def portal_update(service_name: str = "device-portal.service") -> dict:
     repo_dir = str(REPO_ROOT.resolve())
-    service_user = getpass.getuser()
     service_name = (service_name or "device-portal.service").strip() or "device-portal.service"
+    service_user = _service_user_from_systemd(service_name) or getpass.getuser()
     update_dir = str(_update_dir())
     rc, out, err = _run_script(
         "portal_update.sh",

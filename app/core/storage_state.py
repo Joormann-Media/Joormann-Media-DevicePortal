@@ -589,8 +589,16 @@ def mount_storage_device(device_id: str) -> dict[str, Any]:
     mount_path = str(target.get("mount_path") or "").strip()
     if not mount_path:
         raise NetControlError(code="storage_mount_path_missing", message="Storage device has no mount path configured")
+    mount_options = str(target.get("mount_options") or "defaults,noatime,nofail")
+    fallback_type = "partuuid" if selector_type == "uuid" else "uuid"
+    fallback_value = str(target.get("part_uuid") if fallback_type == "partuuid" else target.get("uuid") or "").strip()
     try:
-        result = storage_mount(selector_type=selector_type, selector_value=selector_value, mount_path=mount_path, mount_options=str(target.get("mount_options") or "defaults,noatime,nofail"))
+        result = storage_mount(
+            selector_type=selector_type,
+            selector_value=selector_value,
+            mount_path=mount_path,
+            mount_options=mount_options,
+        )
         target["last_error"] = ""
         target["last_known_present"] = True
         target["last_seen_at"] = utc_now()
@@ -598,6 +606,26 @@ def mount_storage_device(device_id: str) -> dict[str, Any]:
         log_event("storage", "Storage device mounted", data={"id": device_id, "mount_path": mount_path})
         return {"device_id": device_id, "mount_path": mount_path, "mounted": bool(result.get("mounted", True))}
     except NetControlError as exc:
+        if fallback_value:
+            try:
+                result = storage_mount(
+                    selector_type=fallback_type,
+                    selector_value=fallback_value,
+                    mount_path=mount_path,
+                    mount_options=mount_options,
+                )
+                target["last_error"] = ""
+                target["last_known_present"] = True
+                target["last_seen_at"] = utc_now()
+                save_storage_config(cfg)
+                log_event(
+                    "storage",
+                    "Storage device mounted via fallback identity",
+                    data={"id": device_id, "mount_path": mount_path, "selector_type": fallback_type},
+                )
+                return {"device_id": device_id, "mount_path": mount_path, "mounted": bool(result.get("mounted", True))}
+            except NetControlError:
+                pass
         target["last_error"] = exc.detail or exc.message
         save_storage_config(cfg)
         raise
@@ -650,6 +678,13 @@ def format_storage_device(device_id: str, filesystem: str = "vfat", label: str =
             pass
 
     result = storage_format(selector_type=selector_type, selector_value=selector_value, filesystem=filesystem, label=label)
+    new_uuid = str(result.get("uuid") or "").strip()
+    new_part_uuid = str(result.get("part_uuid") or "").strip()
+    if new_uuid:
+        target["uuid"] = new_uuid
+    if new_part_uuid:
+        target["part_uuid"] = new_part_uuid
+    target["id"] = storage_device_id(str(target.get("uuid") or ""), str(target.get("part_uuid") or ""))
     target["filesystem"] = result.get("filesystem", filesystem)
     if result.get("label"):
         target["label"] = result.get("label", "")
@@ -659,11 +694,18 @@ def format_storage_device(device_id: str, filesystem: str = "vfat", label: str =
     target["last_known_present"] = True
 
     remounted = False
+    remount_selector_type = "uuid" if str(target.get("uuid") or "").strip() else "partuuid"
+    remount_selector_value = str(
+        target.get("uuid") if remount_selector_type == "uuid" else target.get("part_uuid") or ""
+    ).strip()
+    if not remount_selector_value:
+        remount_selector_type = selector_type
+        remount_selector_value = selector_value
     if bool(target.get("is_enabled", True)) and bool(target.get("auto_mount", True)) and mount_path:
         try:
             storage_mount(
-                selector_type=selector_type,
-                selector_value=selector_value,
+                selector_type=remount_selector_type,
+                selector_value=remount_selector_value,
                 mount_path=mount_path,
                 mount_options=str(target.get("mount_options") or "defaults,noatime,nofail"),
             )
