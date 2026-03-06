@@ -1300,6 +1300,12 @@
               status === "done" ? "Portal-Update abgeschlossen." : "Portal-Update fehlgeschlagen.",
               status === "done" ? "success" : "danger",
             );
+            if (status === "done") {
+              toast("Seite wird neu geladen…", "secondary");
+              window.setTimeout(() => {
+                window.location.reload();
+              }, 1400);
+            }
           }
           await run(refreshStatus);
         }
