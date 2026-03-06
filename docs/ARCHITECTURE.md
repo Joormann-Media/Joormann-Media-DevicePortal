@@ -60,7 +60,7 @@ ENV-overridable Pfade (mit Defaults):
 - `FINGERPRINT_PATH`: `/etc/device/fingerprint.json`
 - `STATE_PATH`: `/etc/device/state.json`
 - `PLAN_PATH`: `/etc/device/plan.json`
-- `ASSET_DIR`: `/var/lib/deviceportal/assets`
+- `ASSET_DIR`: `<PORTAL_DIR>/var/assets`
 
 Quelle: [app/core/paths.py:5](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/core/paths.py:5)
 

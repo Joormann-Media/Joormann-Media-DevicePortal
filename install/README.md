@@ -3,11 +3,12 @@
 ## 1) Portal Basis einrichten
 
 ```bash
-sudo ./install/setup_portal.sh /opt/jm-deviceportal
+sudo ./install/setup_portal.sh /opt/jm-deviceportal www-data
 ```
 
 - installiert Python-Prereqs
-- legt `/etc/device` und `/var/lib/deviceportal/assets` an
+- legt `/etc/device` und `<REPO_DIR>/var/assets` an
+- setzt `<REPO_DIR>/var/assets` auf den Service-User (Standard: `www-data`) damit Event-/WPS-State-Dateien schreibbar sind
 - installiert/aktiviert `device-portal.service` aus `docs/systemd/device-portal.service`
 
 ## 2) Netzwerk-Steuerung einrichten
@@ -28,3 +29,4 @@ sudo ./install/setup_netcontrol.sh /opt/jm-deviceportal www-data
 - Das Flask-Backend ruft nur vordefinierte Wrapper-Skripte auf.
 - Standard-Skriptverzeichnis im Code: `/opt/deviceportal/bin`, Fallback im Repo: `scripts/net`.
 - Optional kann `NETCONTROL_BIN_DIR` gesetzt werden, um den Pfad zu überschreiben.
+- Standard-Assetpfad im Code: `<Portal-Ordner>/var/assets` (über `ASSET_DIR` überschreibbar).

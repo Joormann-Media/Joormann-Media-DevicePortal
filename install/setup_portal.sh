@@ -7,6 +7,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 REPO_DIR="${1:-/opt/jm-deviceportal}"
+SERVICE_USER="${2:-www-data}"
 SERVICE_FILE_SRC="$REPO_DIR/docs/systemd/device-portal.service"
 SERVICE_FILE_DST="/etc/systemd/system/device-portal.service"
 
@@ -14,7 +15,8 @@ apt-get update
 apt-get install -y python3 python3-venv python3-pip
 
 install -d -m 0755 /etc/device
-install -d -m 0755 /var/lib/deviceportal/assets
+install -d -m 0755 "$REPO_DIR/var"
+install -d -m 0775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/var/assets"
 
 if [[ -f "$SERVICE_FILE_SRC" ]]; then
   cp "$SERVICE_FILE_SRC" "$SERVICE_FILE_DST"
