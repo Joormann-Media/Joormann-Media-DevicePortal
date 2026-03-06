@@ -533,6 +533,7 @@
     const percent = Math.max(0, Math.min(100, Number(info.used_percent || 0)));
     q("storage-internal-name").textContent = info.drive_name || "Interner Medienspeicher";
     q("storage-internal-image").textContent = info.image_path || "-";
+    q("storage-internal-source").textContent = info.mounted_source || "-";
     q("storage-internal-mount").textContent = info.mount_path || "-";
     q("storage-internal-fs").textContent = info.filesystem || info.expected_filesystem || "-";
     q("storage-internal-size").textContent = formatBytes(info.total_bytes || info.image_size_bytes || 0);
@@ -593,7 +594,8 @@
       const meta = document.createElement("div");
       meta.className = "small text-secondary mb-1";
       const kind = d.is_internal ? "intern" : (d.drive_type || "extern");
-      meta.textContent = `${kind} | FS: ${fs} | Mount: ${mp}`;
+      const src = d.source_device || "";
+      meta.textContent = `${kind} | FS: ${fs} | Mount: ${mp}${src ? ` | Device: ${src}` : ""}`;
 
       const progressWrap = document.createElement("div");
       progressWrap.className = "progress mb-1";

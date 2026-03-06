@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from app.core.netcontrol import NetControlError, storage_mount, storage_probe, storage_unmount
+from app.core.netcontrol import NetControlError, storage_internal_mount, storage_mount, storage_probe, storage_unmount
 from app.core.network_events import log_event
 from app.core.storage_config import ensure_storage_config, save_storage_config
 from app.core.storage_identity import find_best_match, safe_mount_slug, storage_device_id
@@ -228,9 +228,31 @@ def get_storage_state() -> dict[str, Any]:
     cfg_devices = cfg.get("devices") if isinstance(cfg.get("devices"), list) else []
     ignored = set(cfg.get("ignored") if isinstance(cfg.get("ignored"), list) else [])
     discovered = _read_probe_devices()
+    changed = False
     internal = _internal_summary(cfg)
 
-    changed = False
+    if (
+        internal.get("present")
+        and not internal.get("mounted")
+        and bool(internal.get("enabled", True))
+        and bool(internal.get("auto_mount", True))
+    ):
+        try:
+            mount_result = storage_internal_mount()
+            cfg_internal = cfg.get("internal") if isinstance(cfg.get("internal"), dict) else {}
+            cfg_internal["last_error"] = ""
+            cfg["internal"] = cfg_internal
+            changed = True
+            if mount_result.get("mounted"):
+                log_event("storage", "Internal media loop mounted automatically", data={"mount_path": internal.get("mount_path", "")})
+        except NetControlError as exc:
+            cfg_internal = cfg.get("internal") if isinstance(cfg.get("internal"), dict) else {}
+            cfg_internal["last_error"] = exc.detail or exc.message
+            cfg["internal"] = cfg_internal
+            changed = True
+
+        internal = _internal_summary(cfg)
+
     known: list[dict[str, Any]] = []
     matched_ids: set[str] = set()
 
@@ -359,6 +381,7 @@ def get_storage_state() -> dict[str, Any]:
             "mounted": internal.get("mounted", False),
             "uuid": "",
             "part_uuid": "",
+            "source_device": internal.get("mounted_source", ""),
             "is_internal": True,
         }
     ]
@@ -379,6 +402,7 @@ def get_storage_state() -> dict[str, Any]:
                 "mounted": item.get("mounted", False),
                 "uuid": item.get("uuid", ""),
                 "part_uuid": item.get("part_uuid", ""),
+                "source_device": item.get("current_mount_path", "") or item.get("last_seen_device_path", ""),
                 "is_internal": False,
             }
         )

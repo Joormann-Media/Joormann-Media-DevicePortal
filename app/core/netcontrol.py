@@ -457,6 +457,19 @@ def storage_mount(selector_type: str, selector_value: str, mount_path: str, moun
     }
 
 
+def storage_internal_mount() -> dict:
+    rc, out, err = _run_script("storage_internal_mount.sh", [], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="storage_internal_mount_failed", message="Failed to mount internal media loop", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {
+        "mounted": parsed.get("mounted", "false").lower() == "true",
+        "mount_path": parsed.get("mount_path", "/mnt/deviceportal/media"),
+        "device": parsed.get("device", ""),
+        "filesystem": parsed.get("filesystem", ""),
+    }
+
+
 def storage_unmount(mount_path: str) -> dict:
     mnt_path = (mount_path or "").strip()
     if not mnt_path:
