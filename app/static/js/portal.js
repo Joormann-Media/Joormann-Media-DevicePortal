@@ -831,6 +831,7 @@
     q("net-gateway").textContent = routes.gateway || "-";
     q("net-dns").textContent = (routes.dns || []).join(", ") || "-";
     q("net-tailscale").textContent = tailscale.present ? (tailscale.ip ? `connected (${tailscale.ip})` : "installed (no IP)") : "not present";
+    q("radio-tailscale").textContent = tailscale.present ? (tailscale.ip ? `connected (${tailscale.ip})` : "installed (no IP)") : "not present";
 
     q("lan-ifname").textContent = lan.ifname || "eth0";
     q("lan-enabled").textContent = yn(!!lan.enabled);
@@ -852,6 +853,12 @@
     q("wifi-mac").textContent = wifi.mac || "-";
 
     q("bt-enabled").textContent = yn(!!bt.enabled);
+    const btBadge = q("bt-enabled-badge");
+    if (btBadge) {
+      btBadge.classList.remove("text-bg-success", "text-bg-secondary");
+      btBadge.classList.add(bt.enabled ? "text-bg-success" : "text-bg-secondary");
+      btBadge.textContent = bt.enabled ? "aktiv" : "inaktiv";
+    }
 
     els.btnWifiToggle.textContent = wifi.enabled ? "Disable Wi-Fi" : "Enable Wi-Fi";
     els.btnBtToggle.textContent = bt.enabled ? "Disable Bluetooth" : "Enable Bluetooth";
@@ -2988,6 +2995,7 @@
     }
     q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
     q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
+    q("btn-system-refresh-network-radio").addEventListener("click", () => run(refreshNetwork));
 
     q("btn-confirm-unlink").addEventListener("click", async () => {
       const modal = bootstrap.Modal.getOrCreateInstance(q("unlinkModal"));

@@ -7,11 +7,14 @@ from flask import Blueprint, jsonify, request
 from app.core.config import _panel_url, _safe_base_url, ensure_config
 from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint
+from app.core.gitinfo import get_update_info
 from app.core.httpclient import http_get_json, http_get_text, http_post_json
 from app.core.jsonio import write_json
+from app.core.netcontrol import NetControlError, get_ap_clients, get_ap_status, get_network_info, get_wifi_status
 from app.core.paths import CONFIG_PATH
 from app.core.state import update_state
-from app.core.systeminfo import get_hostname, get_ip
+from app.core.storage_state import get_storage_state
+from app.core.systeminfo import get_hostname, get_ip, parse_load_stats, parse_mem_stats_kb
 from app.core.timeutil import utc_now
 
 bp_panel = Blueprint('panel', __name__)
@@ -64,7 +67,204 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
     )
     payload['piSerial'] = pi_serial
     payload['machineId'] = machine_id
+    snapshots = _collect_runtime_snapshots(cfg, dev, fp, host, ip)
+    payload.update(snapshots)
     return payload
+
+
+def _safe_call(default: object, fn):
+    try:
+        value = fn()
+        if value is None:
+            return default
+        return value
+    except Exception:
+        return default
+
+
+def _software_snapshot(update_info: dict, network_info: dict, storage_info: dict) -> list[dict]:
+    tailscale = (network_info.get('tailscale') if isinstance(network_info, dict) else {}) or {}
+    tailscale_present = bool(tailscale.get('present'))
+    tailscale_ip = str(tailscale.get('ip') or '').strip()
+    items = [
+        {
+            'name': 'DevicePortal',
+            'component': 'deviceportal',
+            'category': 'portal',
+            'type': 'git',
+            'status': 'installed',
+            'version': str(update_info.get('local_commit') or '').strip()[:12],
+            'source': 'portal',
+            'notes': 'local branch: ' + str(update_info.get('local_branch') or '').strip(),
+        },
+        {
+            'name': 'Portal Update',
+            'component': 'portal-update',
+            'category': 'update',
+            'type': 'git',
+            'status': 'update_available' if bool(update_info.get('available')) else ('unknown' if str(update_info.get('error') or '').strip() else 'up_to_date'),
+            'version': str(update_info.get('remote_commit') or '').strip()[:12] or str(update_info.get('local_commit') or '').strip()[:12],
+            'source': 'origin',
+            'notes': str(update_info.get('error') or '').strip(),
+        },
+        {
+            'name': 'Tailscale',
+            'component': 'tailscale',
+            'category': 'network',
+            'type': 'apt',
+            'status': 'connected' if tailscale_present and tailscale_ip else ('installed' if tailscale_present else 'missing'),
+            'version': tailscale_ip or '',
+            'source': 'network_info',
+            'notes': '',
+        },
+        {
+            'name': 'Storage Service',
+            'component': 'storage',
+            'category': 'storage',
+            'type': 'managed',
+            'status': 'active' if int(storage_info.get('known_count') or 0) > 0 else 'idle',
+            'version': str(storage_info.get('known_count') or 0),
+            'source': 'portal',
+            'notes': '',
+        },
+    ]
+    return items
+
+
+def _storage_snapshot(storage_info: dict) -> dict:
+    drives = storage_info.get('drives')
+    internal = storage_info.get('internal')
+    out_devices: list[dict] = []
+
+    if isinstance(drives, list):
+        for item in drives:
+            if not isinstance(item, dict):
+                continue
+            out_devices.append(
+                {
+                    'name': item.get('drive_name') or item.get('name') or item.get('label') or item.get('id') or '',
+                    'driveName': item.get('drive_name') or '',
+                    'uuid': item.get('uuid') or '',
+                    'partUuid': item.get('part_uuid') or '',
+                    'label': item.get('label') or '',
+                    'filesystem': item.get('filesystem') or '',
+                    'sizeBytes': int(item.get('size_bytes') or item.get('total_bytes') or 0),
+                    'total_bytes': int(item.get('total_bytes') or 0),
+                    'used_bytes': int(item.get('used_bytes') or 0),
+                    'free_bytes': int(item.get('free_bytes') or 0),
+                    'used_percent': int(item.get('used_percent') or 0),
+                    'devicePath': item.get('current_device_path') or item.get('last_seen_device_path') or '',
+                    'mountPath': item.get('mount_path') or item.get('current_mount_path') or '',
+                    'mountOptions': item.get('mount_options') or '',
+                    'isMounted': bool(item.get('mounted')),
+                    'isPresent': bool(item.get('present')),
+                    'isEnabled': bool(item.get('is_enabled', True)),
+                    'allowMediaStorage': bool(item.get('allow_media_storage', False)),
+                    'allowPortalStorage': bool(item.get('allow_portal_storage', False)),
+                    'vendor': item.get('vendor') or '',
+                    'model': item.get('model') or '',
+                    'serial': item.get('serial') or '',
+                    'transport': item.get('transport') or '',
+                    'state': item.get('state') or '',
+                    'is_internal': bool(item.get('is_internal', False)),
+                }
+            )
+
+    if isinstance(internal, dict):
+        out_devices.append(
+            {
+                'name': internal.get('drive_name') or internal.get('id') or 'internal-media',
+                'driveName': internal.get('drive_name') or 'internal-media',
+                'uuid': '',
+                'partUuid': '',
+                'label': internal.get('drive_name') or 'internal-media',
+                'filesystem': internal.get('filesystem') or internal.get('expected_filesystem') or '',
+                'sizeBytes': int(internal.get('loop_total_bytes') or internal.get('total_bytes') or 0),
+                'total_bytes': int(internal.get('loop_total_bytes') or internal.get('total_bytes') or 0),
+                'used_bytes': int(internal.get('loop_used_bytes') or internal.get('used_bytes') or 0),
+                'free_bytes': int(internal.get('loop_free_bytes') or internal.get('free_bytes') or 0),
+                'used_percent': int(internal.get('loop_used_percent') or internal.get('used_percent') or 0),
+                'devicePath': internal.get('mounted_source') or internal.get('image_path') or '',
+                'mountPath': internal.get('mount_path') or '',
+                'mountOptions': '',
+                'isMounted': bool(internal.get('mounted')),
+                'isPresent': bool(internal.get('present')),
+                'isEnabled': bool(internal.get('enabled', True)),
+                'allowMediaStorage': bool(internal.get('allow_media_storage', True)),
+                'allowPortalStorage': bool(internal.get('allow_portal_storage', True)),
+                'vendor': '',
+                'model': '',
+                'serial': '',
+                'transport': 'internal_loop',
+                'state': internal.get('state') or '',
+                'is_internal': True,
+            }
+        )
+
+    return {
+        'known_count': int(storage_info.get('known_count') or 0),
+        'present_count': int(storage_info.get('present_count') or 0),
+        'mounted_count': int(storage_info.get('mounted_count') or 0),
+        'drives': drives if isinstance(drives, list) else [],
+        'internal': internal if isinstance(internal, dict) else {},
+        'devices': out_devices,
+    }
+
+
+def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: str) -> dict:
+    net_info = _safe_call({}, get_network_info)
+    wifi_status = _safe_call({}, lambda: get_wifi_status(ifname='wlan0'))
+    ap_status = _safe_call({}, lambda: get_ap_status(ifname='wlan0', profile='jm-hotspot'))
+    ap_clients = _safe_call({'clients': []}, lambda: get_ap_clients(ifname='wlan0'))
+    storage_info = _safe_call({}, get_storage_state)
+    update_info = _safe_call({}, get_update_info)
+    memory = _safe_call({}, parse_mem_stats_kb)
+    load = _safe_call({}, parse_load_stats)
+
+    identity = {
+        'deviceUuid': dev.get('device_uuid') or '',
+        'machineId': dev.get('machine_id') or fp.get('machine_id') or '',
+        'piSerial': dev.get('pi_serial') or ((fp.get('cpu') or {}).get('serial') if isinstance(fp.get('cpu'), dict) else ''),
+        'hostname': host,
+        'ipAddress': ip,
+        'os': fp.get('os') if isinstance(fp.get('os'), dict) else {},
+        'kernel': fp.get('kernel') or '',
+        'cpuModel': ((fp.get('cpu') or {}).get('model') if isinstance(fp.get('cpu'), dict) else '') or '',
+        'fingerprint': fp,
+    }
+
+    network = {
+        'network_info': net_info if isinstance(net_info, dict) else {},
+        'wifi': wifi_status if isinstance(wifi_status, dict) else {},
+        'ap': {
+            'status': ap_status if isinstance(ap_status, dict) else {},
+            'clients': ap_clients.get('clients') if isinstance(ap_clients, dict) and isinstance(ap_clients.get('clients'), list) else [],
+            'clients_count': len(ap_clients.get('clients') or []) if isinstance(ap_clients, dict) and isinstance(ap_clients.get('clients'), list) else 0,
+        },
+        'tailscale': ((net_info.get('tailscale') if isinstance(net_info, dict) else {}) or {}),
+    }
+
+    storage = _storage_snapshot(storage_info if isinstance(storage_info, dict) else {})
+    software = _software_snapshot(update_info if isinstance(update_info, dict) else {}, net_info if isinstance(net_info, dict) else {}, storage_info if isinstance(storage_info, dict) else {})
+
+    return {
+        'panelBaseUrl': _safe_base_url(cfg.get('admin_base_url', '')),
+        'identity': identity,
+        'health': {
+            'memory': memory if isinstance(memory, dict) else {},
+            'load': load if isinstance(load, dict) else {},
+            'observedAt': utc_now(),
+        },
+        'network': network,
+        'storage': storage,
+        'software': software,
+        'portal': {
+            'update': update_info if isinstance(update_info, dict) else {},
+            'linkState': cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {},
+            'registerPath': cfg.get('panel_register_path') or '',
+            'pingPath': cfg.get('panel_ping_path') or '',
+        },
+    }
 
 
 def _is_truthy(value: object) -> bool:
@@ -470,11 +670,12 @@ def _search_proxy(target: str):
         'q': q,
         'query': q,
         'deviceUuid': dev.get('device_uuid') or '',
+        'authKey': dev.get('auth_key') or '',
     }
     code, resp, err = http_post_json(search_url, payload, timeout=8)
     if code is not None and code >= 400:
         # Backward compatible fallback if panel endpoint expects GET query params.
-        fallback_url = f"{search_url}?{urlencode({'q': q, 'registrationToken': token, 'deviceUuid': dev.get('device_uuid') or ''})}"
+        fallback_url = f"{search_url}?{urlencode({'q': q, 'token': token, 'registrationToken': token, 'deviceUuid': dev.get('device_uuid') or '', 'authKey': dev.get('auth_key') or ''})}"
         get_code, get_resp, get_err = http_get_json(fallback_url, timeout=8)
         if get_code is not None and 200 <= get_code < 300:
             code, resp, err = get_code, get_resp, ''
@@ -535,6 +736,8 @@ def api_panel_assign():
         'target_id': target_id,
         'deviceUuid': dev.get('device_uuid') or '',
         'device_uuid': dev.get('device_uuid') or '',
+        'authKey': dev.get('auth_key') or '',
+        'auth_key': dev.get('auth_key') or '',
     }
     code, resp, err = http_post_json(assign_url, payload, timeout=8)
     if code is None:

@@ -15,3 +15,7 @@ build/
 var/data/*.json
 var/assets/*
 !var/assets/.gitkeep
+var/data/config.json
+var/data/device.json
+var/data/link.json
+var/data/runtime/*

@@ -47,6 +47,11 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link" id="radio-tab" data-bs-toggle="tab" data-bs-target="#radio-pane" type="button" role="tab">
+          <i class="bi bi-broadcast-pin me-1"></i>Funk & AP
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link" id="storage-tab" data-bs-toggle="tab" data-bs-target="#storage-pane" type="button" role="tab">
           <i class="bi bi-device-hdd me-1"></i>Storage
         </button>
@@ -257,7 +262,6 @@
                   <button id="btn-refresh-network" class="btn btn-dark btn-sm">Refresh Network Info</button>
                   <button id="btn-wps" class="btn btn-outline-primary btn-sm">WPS starten</button>
                   <button id="btn-wifi-toggle" class="btn btn-outline-secondary btn-sm">Wi-Fi Toggle</button>
-                  <button id="btn-bt-toggle" class="btn btn-outline-secondary btn-sm">Bluetooth Toggle</button>
                   <button id="btn-lan-toggle" class="btn btn-outline-secondary btn-sm">LAN Toggle</button>
                 </div>
               </div>
@@ -313,12 +317,56 @@
                 <dt>Hostname</dt><dd id="net-hostname">-</dd>
                 <dt>Gateway</dt><dd id="net-gateway">-</dd>
                 <dt>DNS</dt><dd id="net-dns">-</dd>
-                <dt>Bluetooth Enabled</dt><dd id="bt-enabled">-</dd>
                 <dt>Tailscale</dt><dd id="net-tailscale">-</dd>
               </dl>
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="radio-pane" role="tabpanel" aria-labelledby="radio-tab">
+        <div class="row g-3">
+          <div class="col-12 col-xl-6">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">Bluetooth</h2>
+                <span id="bt-enabled-badge" class="badge text-bg-secondary">-</span>
+              </div>
+              <dl class="portal-kv mb-3">
+                <dt>Bluetooth Enabled</dt><dd id="bt-enabled">-</dd>
+                <dt>Tailscale</dt><dd id="radio-tailscale">-</dd>
+              </dl>
+              <div class="d-flex flex-wrap gap-2">
+                <button id="btn-bt-toggle" class="btn btn-outline-secondary btn-sm">Bluetooth Toggle</button>
+                <button id="btn-system-refresh-network-radio" class="btn btn-outline-secondary btn-sm">Netzwerkdaten aktualisieren</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-6">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">AP / Hotspot</h2>
+                <span id="ap-active-badge" class="badge text-bg-secondary">inaktiv</span>
+              </div>
+              <dl class="portal-kv mb-2">
+                <dt>SSID</dt><dd id="ap-ssid">-</dd>
+                <dt>AP-IP</dt><dd id="ap-ip">-</dd>
+                <dt>Portal URL</dt><dd id="ap-portal-url">-</dd>
+                <dt>Clients</dt><dd id="ap-clients-count">0</dd>
+                <dt>Profil</dt><dd id="ap-profile">jm-hotspot</dd>
+              </dl>
+              <div class="d-flex gap-2 mb-2">
+                <button id="btn-ap-enable" class="btn btn-outline-success btn-sm">AP einschalten</button>
+                <button id="btn-ap-disable" class="btn btn-outline-danger btn-sm">AP ausschalten</button>
+                <button id="btn-ap-refresh" class="btn btn-outline-secondary btn-sm">Refresh AP</button>
+              </div>
+              <div id="ap-clients-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Keine verbundenen AP-Clients.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -569,38 +617,6 @@
                 </div>
               </div>
 
-              <div class="col-12 col-xl-4">
-                <div class="portal-card p-3 h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h3 class="h6 mb-0">AP / Hotspot</h3>
-                    <span id="ap-active-badge" class="badge text-bg-secondary">inaktiv</span>
-                  </div>
-                  <dl class="portal-kv mb-2">
-                    <dt>SSID</dt><dd id="ap-ssid">-</dd>
-                    <dt>AP-IP</dt><dd id="ap-ip">-</dd>
-                    <dt>Portal URL</dt><dd id="ap-portal-url">-</dd>
-                    <dt>Clients</dt><dd id="ap-clients-count">0</dd>
-                    <dt>Profil</dt><dd id="ap-profile">jm-hotspot</dd>
-                  </dl>
-                  <div class="d-flex gap-2">
-                    <button id="btn-ap-enable" class="btn btn-outline-success btn-sm">AP einschalten</button>
-                    <button id="btn-ap-disable" class="btn btn-outline-danger btn-sm">AP ausschalten</button>
-                  </div>
-                  <small class="text-secondary d-block mt-2">Mit dem Hotspot verbinden und danach im Browser <code>http://192.168.4.1</code> öffnen.</small>
-                </div>
-              </div>
-
-              <div class="col-12 col-xl-8">
-                <div class="portal-card p-3 h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h3 class="h6 mb-0">AP Clients</h3>
-                    <button id="btn-ap-refresh" class="btn btn-outline-secondary btn-sm">Refresh AP</button>
-                  </div>
-                  <div id="ap-clients-list" class="list-group list-group-flush small">
-                    <div class="text-secondary">Keine verbundenen AP-Clients.</div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
