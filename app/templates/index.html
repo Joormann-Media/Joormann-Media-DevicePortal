@@ -42,6 +42,16 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link" id="software-tab" data-bs-toggle="tab" data-bs-target="#software-pane" type="button" role="tab">
+          <i class="bi bi-box-seam me-1"></i>Software Übersicht
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="displays-tab" data-bs-toggle="tab" data-bs-target="#displays-pane" type="button" role="tab">
+          <i class="bi bi-display me-1"></i>Displays
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link" id="network-tab" data-bs-toggle="tab" data-bs-target="#network-pane" type="button" role="tab">
           <i class="bi bi-router me-1"></i>Netzwerk & WLAN
         </button>
@@ -143,6 +153,10 @@
                   <div class="status-kpi-label">Last Error</div>
                   <div id="status-last-error" class="status-kpi-value">{{ panel.last_error or '—' }}</div>
                 </div>
+                <div class="status-kpi-item">
+                  <div class="status-kpi-label">Displays</div>
+                  <div id="status-display-quick" class="status-kpi-value">0 | -</div>
+                </div>
               </div>
               <div class="d-none">
                 <span id="status-linked">{{ panel.linked and 'yes' or 'no' }}</span>
@@ -234,6 +248,11 @@
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="software-pane" role="tabpanel" aria-labelledby="software-tab">
+        <div class="row g-3">
           <div class="col-12">
             <div class="portal-card p-3 status-card">
               <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
@@ -249,7 +268,11 @@
               <div id="status-software-list" class="status-software-list"></div>
             </div>
           </div>
+        </div>
+      </div>
 
+      <div class="tab-pane fade" id="displays-pane" role="tabpanel" aria-labelledby="displays-tab">
+        <div class="row g-3">
           <div class="col-12">
             <div class="portal-card p-3 status-card">
               <div class="d-flex align-items-center justify-content-between gap-2 mb-2">

@@ -439,6 +439,28 @@
     return "Unknown";
   }
 
+  function renderStatusDisplayQuickSummary() {
+    const status = statusDashboardState.status || {};
+    const display = status.display || {};
+    const displays = Array.isArray(display.displays) ? display.displays : [];
+    const quick = q("status-display-quick");
+    if (!quick) return;
+
+    if (displays.length === 0) {
+      quick.textContent = "0 | -";
+      return;
+    }
+
+    const primary =
+      displays.find((item) => !!item.connected) ||
+      displays.find((item) => String(item.status || "").toLowerCase() === "connected") ||
+      displays[0];
+    const displayName = String(primary?.display_name || primary?.model || "Display").trim();
+    const connector = String(primary?.connector || "-").trim();
+    const state = String(primary?.status || (primary?.connected ? "connected" : "unknown")).trim();
+    quick.textContent = `${displays.length} | ${displayName} ${connector} | ${state}`;
+  }
+
   function renderStatusDisplaySection() {
     const status = statusDashboardState.status || {};
     const display = status.display || {};
@@ -451,6 +473,7 @@
     if (countBadge) {
       countBadge.textContent = `${displays.length} erkannt`;
     }
+    renderStatusDisplayQuickSummary();
 
     if (displays.length === 0) {
       const empty = document.createElement("div");
