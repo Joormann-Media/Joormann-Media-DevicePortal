@@ -93,6 +93,23 @@ EOF
     echo "[git] before=${BEFORE_COMMIT}"
   fi
 
+  RUNTIME_STASH_REF=""
+  RUNTIME_STASH_MSG="portal-update-runtime-${JOB_ID}"
+  RUNTIME_CHANGED="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git diff --name-only -- 'var/data/*.json'" 2>/dev/null || true)"
+  if [[ -n "${RUNTIME_CHANGED}" ]]; then
+    echo "[runtime] local runtime config changes detected"
+    echo "${RUNTIME_CHANGED}"
+    STASH_TOP_BEFORE="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
+    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash push -m \"${RUNTIME_STASH_MSG}\" -- 'var/data/*.json'" >/dev/null 2>&1
+    STASH_TOP_AFTER="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
+    if [[ "${STASH_TOP_AFTER}" != "${STASH_TOP_BEFORE}" && "${STASH_TOP_AFTER}" == *"${RUNTIME_STASH_MSG}"* ]]; then
+      RUNTIME_STASH_REF="${STASH_TOP_AFTER%% *}"
+      echo "[runtime] stashed local runtime config into ${RUNTIME_STASH_REF}"
+    else
+      echo "[runtime] stash requested but no new stash entry created"
+    fi
+  fi
+
   GIT_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git pull --ff-only" 2>&1)"
   GIT_RC=$?
   AFTER_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
@@ -104,6 +121,32 @@ EOF
     echo "[git] failed"
   fi
   echo "${GIT_OUT}"
+
+  if [[ -n "${RUNTIME_STASH_REF}" ]]; then
+    echo "[runtime] restoring stashed runtime config ${RUNTIME_STASH_REF}"
+    POP_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash pop --index \"${RUNTIME_STASH_REF}\"" 2>&1)"
+    POP_RC=$?
+    echo "${POP_OUT}"
+    if [[ ${POP_RC} -ne 0 ]]; then
+      echo "[runtime] failed to restore runtime config"
+      cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=failed
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
+EOF
+      exit 0
+    fi
+    echo "[runtime] runtime config restored"
+  fi
 
   if [[ ${GIT_RC} -ne 0 ]]; then
     cat > "${STATE_FILE}" <<EOF
