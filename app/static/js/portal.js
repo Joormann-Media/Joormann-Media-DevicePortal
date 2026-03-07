@@ -313,6 +313,20 @@
       ramText = `${formatBytes(usedKb * 1024)} / ${formatBytes(totalKb * 1024)} (${usedPct}%)`;
     }
     q("status-health-ram").textContent = ramText;
+    const cpuTemp = Number(((system.cpu || {}).temperature_c) || NaN);
+    q("status-health-temp").textContent = Number.isFinite(cpuTemp) ? `${cpuTemp.toFixed(1)} °C` : "unavailable";
+
+    let uptimeText = String(system.uptime_human || "").trim();
+    if (!uptimeText) {
+      const uptimeSeconds = Number(system.uptime_seconds || 0);
+      if (Number.isFinite(uptimeSeconds) && uptimeSeconds > 0) {
+        const days = Math.floor(uptimeSeconds / 86400);
+        const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+        const mins = Math.floor((uptimeSeconds % 3600) / 60);
+        uptimeText = `${days ? `${days}d ` : ""}${hours}h ${mins}m`.trim();
+      }
+    }
+    q("status-health-uptime").textContent = uptimeText || "unavailable";
 
     const internal = storage.internal || {};
     const internalTotalBytes = Number(internal.loop_total_bytes || internal.total_bytes || 0);

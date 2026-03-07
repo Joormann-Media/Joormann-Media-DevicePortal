@@ -133,3 +133,38 @@ def parse_load_stats() -> dict[str, float | int | None]:
     except Exception:
         return stats
     return stats
+
+
+def parse_cpu_temp_c() -> float | None:
+    try:
+        with open('/sys/class/thermal/thermal_zone0/temp', 'r', encoding='utf-8') as f:
+            raw = (f.read() or '').strip()
+        if raw and raw.lstrip('-').isdigit():
+            return round(int(raw) / 1000.0, 1)
+    except Exception:
+        return None
+    return None
+
+
+def parse_uptime_seconds() -> int | None:
+    try:
+        with open('/proc/uptime', 'r', encoding='utf-8') as f:
+            first = (f.read() or '').split()[0]
+        return int(float(first))
+    except Exception:
+        return None
+
+
+def format_uptime_human(seconds: int | None) -> str:
+    if seconds is None or seconds < 0:
+        return ''
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f'{days}d')
+    if hours or days:
+        parts.append(f'{hours}h')
+    parts.append(f'{minutes}m')
+    return ' '.join(parts)
