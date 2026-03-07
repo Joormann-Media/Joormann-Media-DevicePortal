@@ -106,6 +106,9 @@ def _response_indicates_success(code: int | None, resp: dict | None) -> bool:
                 return _is_truthy(data.get(key))
         if data.get('deviceId') or data.get('deviceSlug'):
             return True
+    # If backend returned non-JSON fallback payload, do not treat it as success.
+    if isinstance(resp, dict) and isinstance(resp.get('raw'), str):
+        return False
     if resp.get('deviceId') or resp.get('deviceSlug'):
         return True
     return True
@@ -128,6 +131,15 @@ def _extract_response_message(resp: dict | None) -> str:
     for value in candidates:
         if isinstance(value, str) and value.strip():
             return value.strip()
+    raw = resp.get('raw') if isinstance(resp, dict) else ''
+    if isinstance(raw, str) and raw.strip():
+        lowered = raw.lower()
+        marker = 'no route found for'
+        if marker in lowered:
+            idx = lowered.find(marker)
+            excerpt = raw[idx:idx + 220].replace('\n', ' ').replace('\r', ' ')
+            return excerpt.strip()
+        return raw[:220].replace('\n', ' ').replace('\r', ' ').strip()
     return ''
 
 
