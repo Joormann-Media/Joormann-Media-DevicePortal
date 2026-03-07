@@ -916,6 +916,8 @@ def api_panel_sync_status():
     if code is None:
         return jsonify(ok=False, error='sync_status_failed', detail=str(err), sync_url=sync_url), 502
     if code < 200 or code >= 300:
+        detail_msg = _extract_response_message(resp) or (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
+        err_code = str((resp.get('error_code') if isinstance(resp, dict) else '') or (resp.get('error') if isinstance(resp, dict) else '')).strip().lower()
         st = _update_panel_link_state(
             cfg,
             linked=_sticky_linked(cfg, False, code, resp),
@@ -923,7 +925,37 @@ def api_panel_sync_status():
             last_response=resp,
             last_error=(resp.get('error') if isinstance(resp, dict) else '') or f'http {code}',
         )
-        return jsonify(ok=False, error='sync_status_failed', http=code, sync_url=sync_url, response=resp, panel_link_state=st), 400
+        if err_code in ('device_not_found', 'not_found'):
+            return jsonify(
+                ok=False,
+                error='device_not_registered',
+                detail=detail_msg or 'Gerät im Panel nicht gefunden. Bitte Setup-Assistent (URL + Token) erneut ausführen.',
+                hint='setup_required',
+                http=code,
+                sync_url=sync_url,
+                response=resp,
+                panel_link_state=st,
+            ), 400
+        if err_code in ('auth_invalid', 'invalid_auth'):
+            return jsonify(
+                ok=False,
+                error='device_auth_invalid',
+                detail=detail_msg or 'Device-Credentials im Panel nicht gültig.',
+                hint='relink_required',
+                http=code,
+                sync_url=sync_url,
+                response=resp,
+                panel_link_state=st,
+            ), 400
+        return jsonify(
+            ok=False,
+            error='sync_status_failed',
+            detail=detail_msg,
+            http=code,
+            sync_url=sync_url,
+            response=resp,
+            panel_link_state=st,
+        ), 400
 
     ping_http = None
     ping_error = ''
@@ -997,6 +1029,31 @@ def api_panel_sync_now():
             panel_register_path=cfg.get('panel_register_path'),
         ), 400
 
+    # First try ping without token. If device already exists in panel, this is enough
+    # and avoids unnecessary token errors.
+    ping_url = _panel_url(cfg, 'panel_ping_path')
+    ping_code = None
+    ping_resp = None
+    if ping_url and (ping_url.startswith('http://') or ping_url.startswith('https://')):
+        ping_payload = _panel_ping_payload(dev, fp, host, ip)
+        ping_code, ping_resp, _ping_err = http_post_json(ping_url, ping_payload, timeout=8)
+        if ping_code is not None and 200 <= ping_code < 300:
+            flags = _extract_panel_device_flags(ping_resp if isinstance(ping_resp, dict) else None)
+            if isinstance(flags, dict):
+                cfg['panel_device_flags'] = flags
+                cfg['updated_at'] = utc_now()
+                write_json(CONFIG_PATH, cfg, mode=0o600)
+            _update_panel_link_state(cfg, linked=True, last_http=ping_code, last_response=ping_resp, last_error='')
+            return jsonify(
+                ok=True,
+                synced=True,
+                mode='ping',
+                http=ping_code,
+                panel_ping_url=ping_url,
+                response=ping_resp,
+                panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+            ), 200
+
     payload = _panel_sync_payload(cfg, dev, fp, host, ip)
     code, resp, err = http_post_json(url, payload, timeout=10)
 
@@ -1013,6 +1070,20 @@ def api_panel_sync_now():
             last_error=(resp.get('error') if isinstance(resp, dict) else '') or f'http {code}',
         )
         panel_msg = _extract_response_message(resp) or f'http {code}'
+        err_code = str((resp.get('error_code') if isinstance(resp, dict) else '') or (resp.get('error') if isinstance(resp, dict) else '')).strip().lower()
+        if err_code in ('token_missing', 'token_invalid'):
+            return jsonify(
+                ok=False,
+                error='setup_token_required',
+                detail='Gerät ist im Panel noch nicht registriert. Bitte Setup-Assistent mit Token ausführen.',
+                hint='open_setup_wizard',
+                http=code,
+                panel_register_url=url,
+                panel_ping_http=ping_code,
+                panel_ping_response=ping_resp,
+                response=resp,
+                panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+            ), 400
         return jsonify(
             ok=False,
             error='sync_now_failed',
@@ -1020,6 +1091,8 @@ def api_panel_sync_now():
             http=code,
             panel_register_url=url,
             response=resp,
+            panel_ping_http=ping_code,
+            panel_ping_response=ping_resp,
             panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
         ), 400
 
@@ -1040,9 +1113,12 @@ def api_panel_sync_now():
     return jsonify(
         ok=True,
         synced=True,
+        mode='register',
         http=code,
         panel_register_url=url,
         response=resp,
+        panel_ping_http=ping_code,
+        panel_ping_response=ping_resp,
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
     ), 200
 
