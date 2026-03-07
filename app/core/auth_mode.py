@@ -11,18 +11,45 @@ def _normalize_int(value: Any) -> int:
 
 
 def linked_user_ids_from_config(cfg: dict) -> list[int]:
-    raw = cfg.get("panel_linked_users") if isinstance(cfg.get("panel_linked_users"), list) else []
     ids: list[int] = []
     seen: set[int] = set()
-    for item in raw:
-        user_id = 0
-        if isinstance(item, dict):
-            user_id = _normalize_int(item.get("id"))
-        else:
-            user_id = _normalize_int(item)
+
+    def _push(value: Any) -> None:
+        user_id = _normalize_int(value)
         if user_id > 0 and user_id not in seen:
             seen.add(user_id)
             ids.append(user_id)
+
+    def _consume_list(value: Any) -> None:
+        if not isinstance(value, list):
+            return
+        for item in value:
+            if isinstance(item, dict):
+                _push(item.get("id"))
+                _push(item.get("user_id"))
+            else:
+                _push(item)
+
+    _consume_list(cfg.get("panel_linked_users"))
+
+    panel_state = cfg.get("panel_link_state") if isinstance(cfg.get("panel_link_state"), dict) else {}
+    last_response = panel_state.get("last_response") if isinstance(panel_state.get("last_response"), dict) else {}
+    candidates: list[dict] = []
+    if isinstance(last_response, dict):
+        candidates.append(last_response)
+        nested = last_response.get("data")
+        if isinstance(nested, dict):
+            candidates.append(nested)
+
+    for source in candidates:
+        _push(source.get("linkedUserId"))
+        _push(source.get("linked_user_id"))
+        _push(source.get("userId"))
+        _push(source.get("user_id"))
+        _consume_list(source.get("linkedUsers"))
+        _consume_list(source.get("linked_users"))
+        _consume_list(source.get("users"))
+
     return ids
 
 
