@@ -769,23 +769,29 @@ def _search_proxy(target: str):
         return jsonify(ok=False, error='admin_base_url missing'), 400
     if len(q) < 2:
         return jsonify(ok=False, error='query_too_short', detail='Search query must be at least 2 chars'), 400
-    if not token:
-        return jsonify(ok=False, error='registration_token missing'), 400
-
     search_path = 'users' if target == 'users' else 'customers'
     search_url = f"{base_url}/api/device/link/search/{search_path}"
     payload = {
-        'registrationToken': token,
-        'token': token,
         'q': q,
         'query': q,
         'deviceUuid': dev.get('device_uuid') or '',
         'authKey': dev.get('auth_key') or '',
     }
+    if token:
+        payload['registrationToken'] = token
+        payload['token'] = token
     code, resp, err = http_post_json(search_url, payload, timeout=8)
     if code is not None and code >= 400:
         # Backward compatible fallback if panel endpoint expects GET query params.
-        fallback_url = f"{search_url}?{urlencode({'q': q, 'token': token, 'registrationToken': token, 'deviceUuid': dev.get('device_uuid') or '', 'authKey': dev.get('auth_key') or ''})}"
+        query_payload = {
+            'q': q,
+            'deviceUuid': dev.get('device_uuid') or '',
+            'authKey': dev.get('auth_key') or '',
+        }
+        if token:
+            query_payload['token'] = token
+            query_payload['registrationToken'] = token
+        fallback_url = f"{search_url}?{urlencode(query_payload)}"
         get_code, get_resp, get_err = http_get_json(fallback_url, timeout=8)
         if get_code is not None and 200 <= get_code < 300:
             code, resp, err = get_code, get_resp, ''
@@ -826,8 +832,6 @@ def api_panel_assign():
         return jsonify(ok=False, error='admin_base_url missing'), 400
 
     token = (data.get('registration_token') or data.get('token') or '').strip()
-    if not token:
-        return jsonify(ok=False, error='registration_token missing'), 400
 
     target_type = (data.get('target_type') or data.get('link_target_type') or '').strip().lower()
     target_id = str(data.get('target_id') or data.get('link_target_id') or '').strip()
@@ -838,8 +842,6 @@ def api_panel_assign():
 
     assign_url = _panel_assign_url(base_url)
     payload = {
-        'registrationToken': token,
-        'token': token,
         'targetType': target_type,
         'targetId': target_id,
         'target_type': target_type,
@@ -849,6 +851,9 @@ def api_panel_assign():
         'authKey': dev.get('auth_key') or '',
         'auth_key': dev.get('auth_key') or '',
     }
+    if token:
+        payload['registrationToken'] = token
+        payload['token'] = token
     code, resp, err = http_post_json(assign_url, payload, timeout=8)
     if code is None:
         return jsonify(ok=False, error='assign_failed', detail=str(err), assign_url=assign_url), 502

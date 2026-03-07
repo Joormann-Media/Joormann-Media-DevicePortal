@@ -43,6 +43,7 @@
   };
   const setupWizardState = {
     step: 1,
+    mode: "setup",
     panelUrl: "",
     token: "",
     verifiedUrl: false,
@@ -553,13 +554,14 @@
     }
   }
 
-  function resetSetupWizard() {
+  function resetSetupWizard(assignOnly = false) {
     const cfg = (statusDashboardState.status || {}).config || {};
-    setupWizardState.step = 1;
+    setupWizardState.mode = assignOnly ? "assign" : "setup";
+    setupWizardState.step = assignOnly ? 3 : 1;
     setupWizardState.panelUrl = String(cfg.admin_base_url || "").trim();
     setupWizardState.token = String(cfg.registration_token || "").trim();
-    setupWizardState.verifiedUrl = false;
-    setupWizardState.registered = false;
+    setupWizardState.verifiedUrl = assignOnly;
+    setupWizardState.registered = assignOnly;
     setupWizardState.linkType = "skip";
     setupWizardState.selectedLinkItem = null;
     setupWizardState.searchSeq = 0;
@@ -570,7 +572,7 @@
     q("setup-panel-url").value = setupWizardState.panelUrl;
     q("setup-registration-token").value = setupWizardState.token;
     q("setup-step-1-result").textContent = "Noch nicht geprüft.";
-    q("setup-step-2-result").textContent = "Noch nicht verknüpft.";
+    q("setup-step-2-result").textContent = assignOnly ? "Bereits verknüpft. Optionale Zuordnung möglich." : "Noch nicht verknüpft.";
     q("setup-link-search").value = "";
     q("setup-link-search-status").textContent = "Mindestens 2 Zeichen eingeben.";
     q("setup-link-selection").textContent = "Keine Auswahl.";
@@ -583,8 +585,8 @@
     updateSetupFooterButtons();
   }
 
-  function openSetupWizard() {
-    resetSetupWizard();
+  function openSetupWizard(mode = "setup") {
+    resetSetupWizard(mode === "assign");
     const modal = bootstrap.Modal.getOrCreateInstance(q("setupWizardModal"));
     modal.show();
   }
@@ -700,7 +702,11 @@
     modal.hide();
     await refreshStatus();
     if (!closeOnly) {
-      toast("Gerät erfolgreich mit dem Panel verknüpft.", "success");
+      if (setupWizardState.mode === "assign") {
+        toast("Zuordnung erfolgreich gespeichert.", "success");
+      } else {
+        toast("Gerät erfolgreich mit dem Panel verknüpft.", "success");
+      }
     }
   }
 
@@ -814,9 +820,13 @@
 
   function updateLinkActionButtons(linked) {
     const btnRegister = q("btn-link-register");
+    const btnAssign = q("btn-link-assign");
     const btnUnlink = q("btn-link-unlink");
     if (btnRegister) {
       btnRegister.classList.toggle("d-none", !!linked);
+    }
+    if (btnAssign) {
+      btnAssign.classList.toggle("d-none", !linked);
     }
     if (btnUnlink) {
       btnUnlink.classList.toggle("d-none", !linked);
@@ -2954,6 +2964,7 @@
     });
     q("btn-link-refresh-status").addEventListener("click", () => run(refreshState));
     q("btn-link-register").addEventListener("click", () => run(panelRegister));
+    q("btn-link-assign").addEventListener("click", () => openSetupWizard("assign"));
     q("btn-pull-plan").addEventListener("click", () => run(pullPlan));
     q("btn-panel-sync-check").addEventListener("click", () => run(panelSyncCheck));
     q("btn-panel-sync-now").addEventListener("click", () => run(panelSyncNow));
