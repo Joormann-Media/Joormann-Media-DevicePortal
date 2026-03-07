@@ -43,6 +43,7 @@
   };
   const maintainerState = {
     hydrating: false,
+    hydratedOnce: false,
   };
   const hostnameRenameState = {
     preview: null,
@@ -1207,12 +1208,13 @@
   function ensureLinkedMaintainersHydrated(usersRaw, linked) {
     if (!linked || maintainerState.hydrating) return;
     const users = Array.isArray(usersRaw) ? usersRaw : [];
-    if (!users.length) return;
+    const isEmpty = users.length === 0;
     const needsHydration = users.some((row) => {
       if (!row || typeof row !== "object") return false;
       return !String(row.username || row.email || row.displayName || row.display_name || "").trim();
     });
-    if (!needsHydration) return;
+    if (!isEmpty && !needsHydration) return;
+    if (isEmpty && maintainerState.hydratedOnce) return;
 
     maintainerState.hydrating = true;
     fetchJson("/api/panel/link-status", { cache: "no-store" })
@@ -1222,6 +1224,7 @@
           statusDashboardState.status.config.panel_linked_users = rows;
         }
         renderLinkedMaintainers(rows);
+        maintainerState.hydratedOnce = true;
       })
       .catch(() => {
         // Keep UI stable when admin panel is temporarily unavailable.
