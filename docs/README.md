@@ -14,6 +14,11 @@ Defaults (overridable by env vars):
 - `ASSET_DIR`: `<PORTAL_DIR>/var/assets`
 
 ## Main endpoints
+- `GET /login`
+- `POST /login`
+- `POST /logout`
+- `GET /api/auth/mode`
+- `GET /api/auth/status`
 - `GET /health`
 - `GET /api/status`
 - `GET /api/fingerprint`
@@ -31,6 +36,20 @@ Defaults (overridable by env vars):
 - `POST /api/plan/pull`
 - `GET /api/plan/current`
 - `GET /` local UI
+
+## Login / Auth
+- Das Portal ist session-geschützt.
+- Auth-Modus wird dynamisch entschieden:
+  - `local_system`: wenn nicht gelinkt oder keine User-Verknüpfung vorhanden.
+  - `panel_remote`: wenn gelinkt und mindestens ein verknüpfter User bekannt ist.
+- Lokaler Login:
+  - prüft echte interaktive Linux-Systembenutzer via `pamtester` (Script: `scripts/net/local_auth.sh`).
+  - keine Passwortspeicherung im Portal.
+- Panel-Login:
+  - prüft gegen das Adminpanel-Login (`/login`) inkl. CSRF-Flow.
+  - nur User, die mit dem Device verknüpft sind (`panel_linked_users`), werden zugelassen.
+- Machine-to-Machine Ausnahme:
+  - `POST /api/panel/admin-sync-payload` bleibt ohne Portal-Session erreichbar (auth via `deviceUuid` + `authKey`).
 
 ## Setup wizard (Startseite)
 - `Status Dashboard` Badge `SETUP` oeffnet den 3‑Step Link-Assistenten im Modal.

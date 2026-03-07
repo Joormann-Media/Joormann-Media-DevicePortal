@@ -24,6 +24,13 @@
           <p class="portal-subtitle mb-0">SaaS-artige Steuerzentrale für Status, Panel-Linking und Netzwerkkontrolle auf Raspberry Pi Geräten.</p>
         </div>
         <div class="col-lg-4 text-lg-end">
+          <div class="d-flex justify-content-lg-end justify-content-start align-items-center gap-2 mb-2">
+            <span class="badge text-bg-light border text-dark">{{ auth_mode.mode == 'panel_remote' and 'Panel Login' or 'Lokaler Login' }}</span>
+            <span class="badge text-bg-secondary">{{ auth_state.username or 'user' }}</span>
+            <form method="post" action="{{ url_for('auth.logout_submit') }}" class="d-inline">
+              <button type="submit" class="btn btn-outline-secondary btn-sm">Logout</button>
+            </form>
+          </div>
           <div class="small text-secondary mb-2">Runtime Health</div>
           <span id="hero-status" class="badge fs-6 text-bg-warning">ONLINE / UNLINKED</span>
           <div class="mt-2">
@@ -703,6 +710,25 @@
                 <div class="portal-card p-3">
                   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <div>
+                      <h3 class="h6 mb-1">Hostname ändern</h3>
+                      <div class="small text-secondary">
+                        Konsistenter Rename wie beim Provisioning: Hostname, AP-SSID (<code>-ap</code>) und Bluetooth-Name (<code>-bt</code>).
+                      </div>
+                      <div id="system-hostname-last-result" class="small text-secondary mt-1">
+                        Aktuell: <strong id="system-hostname-current">-</strong>
+                      </div>
+                    </div>
+                    <button id="btn-system-hostname-modal" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#hostnameRenameModal">
+                      Hostname ändern
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12">
+                <div class="portal-card p-3">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
                       <h3 class="h6 mb-1">Storage Sicherheitsmodus</h3>
                       <div class="small text-secondary">Wenn aktiv, ist beim Löschen im File-Manager die Eingabe <code>DELETE</code> zwingend.</div>
                     </div>
@@ -1067,6 +1093,73 @@
             <button id="setup-wizard-complete" type="button" class="btn btn-success btn-sm d-none">Zuordnung speichern</button>
             <button id="setup-wizard-skip-complete" type="button" class="btn btn-outline-success btn-sm d-none">Ohne Zuordnung beenden</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="hostnameRenameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title d-flex align-items-center gap-2 mb-1">
+              <i class="bi bi-pencil-square"></i>
+              Hostname ändern
+            </h5>
+            <div class="small text-secondary">Zeigt aktuelle Verbindungen und die abgeleiteten Namen für AP/Bluetooth vor dem Speichern.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="hostname-rename-alert" class="alert alert-danger py-2 d-none mb-3"></div>
+
+          <div class="row g-3">
+            <div class="col-12 col-lg-6">
+              <div class="portal-card p-3 h-100">
+                <h3 class="h6 mb-2">Aktueller Zustand</h3>
+                <dl class="portal-kv mb-0">
+                  <dt>Hostname</dt><dd id="hostname-rename-current-host">-</dd>
+                  <dt>LAN</dt><dd id="hostname-rename-current-lan">-</dd>
+                  <dt>WLAN</dt><dd id="hostname-rename-current-wifi">-</dd>
+                  <dt>Bluetooth</dt><dd id="hostname-rename-current-bt">-</dd>
+                  <dt>AP / Hotspot</dt><dd id="hostname-rename-current-ap">-</dd>
+                </dl>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="portal-card p-3 h-100">
+                <h3 class="h6 mb-2">Vorschau</h3>
+                <dl class="portal-kv mb-3">
+                  <dt>Neuer Hostname</dt><dd id="hostname-rename-preview-host">-</dd>
+                  <dt>AP SSID</dt><dd id="hostname-rename-preview-ap">-</dd>
+                  <dt>Bluetooth Name</dt><dd id="hostname-rename-preview-bt">-</dd>
+                </dl>
+                <label for="hostname-rename-input" class="form-label">Neuer Hostname</label>
+                <input id="hostname-rename-input" type="text" class="form-control" placeholder="z. B. display-wesel-01" autocomplete="off" spellcheck="false">
+                <div class="form-text">Erlaubt sind Buchstaben, Zahlen und Bindestriche. Der Name wird automatisch bereinigt.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="portal-card p-3 mt-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="hostname-rename-hardcore">
+              <label class="form-check-label" for="hostname-rename-hardcore">
+                Hardcore Rename aktivieren (nur mit Bestätigungstext)
+              </label>
+            </div>
+            <div class="mt-2">
+              <label for="hostname-rename-confirm" class="form-label small mb-1">
+                Tippe exakt <code>Hostname Ändern</code> zur Freigabe:
+              </label>
+              <input id="hostname-rename-confirm" type="text" class="form-control" placeholder="Hostname Ändern" autocomplete="off" spellcheck="false">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button id="btn-hostname-rename-save" type="button" class="btn btn-primary" disabled>OK Speichern</button>
         </div>
       </div>
     </div>

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from flask import Blueprint, render_template
 
+from app.core.auth_mode import resolve_auth_mode
+from app.core.auth_session import current_session
 from app.core.config import ensure_config
 from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint, short_fingerprint
@@ -24,6 +26,8 @@ def index():
     dev = ensure_device()
     fp = ensure_fingerprint()
     state = get_state()
+    auth_mode = resolve_auth_mode(cfg)
+    auth_state = current_session()
 
     return render_template(
         'index.html',
@@ -34,4 +38,6 @@ def index():
         panel=(cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}),
         fp=short_fingerprint(fp),
         state=state,
+        auth_mode=auth_mode,
+        auth_state=auth_state,
     )

@@ -41,6 +41,10 @@
   const panelSyncState = {
     lastCheckAt: "",
   };
+  const hostnameRenameState = {
+    preview: null,
+    previewTimer: null,
+  };
   const setupWizardState = {
     step: 1,
     mode: "setup",
@@ -1078,6 +1082,7 @@
     }
 
     q("status-hostname").textContent = state.hostname || "-";
+    q("system-hostname-current").textContent = state.hostname || "-";
     q("status-ip").textContent = state.ip || "-";
     q("status-linked").textContent = yn(linked);
     q("status-panel-url").textContent = cfg.admin_base_url || "-";
@@ -3059,6 +3064,137 @@
     toast("Storage-Sicherheitseinstellung gespeichert.", "success");
   }
 
+  function setHostnameRenameError(message = "") {
+    const alertEl = q("hostname-rename-alert");
+    if (!alertEl) return;
+    const text = String(message || "").trim();
+    if (!text) {
+      alertEl.classList.add("d-none");
+      alertEl.textContent = "";
+      return;
+    }
+    alertEl.textContent = text;
+    alertEl.classList.remove("d-none");
+  }
+
+  function renderHostnameCurrentInfo() {
+    const status = statusDashboardState.status || {};
+    const state = status.state || {};
+    const net = networkState || {};
+    const wifi = ((net.interfaces || {}).wifi || {});
+    const lan = ((net.interfaces || {}).lan || {});
+    const bt = ((net.interfaces || {}).bluetooth || {});
+    const apActive = String(q("ap-active-badge")?.textContent || "-").trim();
+    const apSsid = String(q("ap-ssid")?.textContent || "-").trim();
+
+    q("hostname-rename-current-host").textContent = state.hostname || net.hostname || "-";
+    q("hostname-rename-current-lan").textContent = `${lan.ifname || "eth0"} | ${lan.ip || "-"} | carrier: ${lan.carrier ? "yes" : "no"}`;
+    q("hostname-rename-current-wifi").textContent = `${wifi.ifname || "wlan0"} | ${wifi.ssid || "-"} | ${wifi.ip || "-"} | connected: ${wifi.connected ? "yes" : "no"}`;
+    q("hostname-rename-current-bt").textContent = bt.enabled ? "enabled" : "disabled";
+    q("hostname-rename-current-ap").textContent = `${apSsid || "-"} | ${apActive || "-"}`;
+  }
+
+  function renderHostnamePreview(preview) {
+    const data = preview || {};
+    const nextHost = String(data.next_hostname || "").trim();
+    const derived = data.derived || {};
+    q("hostname-rename-preview-host").textContent = nextHost || "-";
+    q("hostname-rename-preview-ap").textContent = derived.ap_ssid || "-";
+    q("hostname-rename-preview-bt").textContent = derived.bt_name || "-";
+  }
+
+  function updateHostnameRenameSaveButton() {
+    const btn = q("btn-hostname-rename-save");
+    if (!btn) return;
+    const hardcore = !!q("hostname-rename-hardcore")?.checked;
+    const confirmText = String(q("hostname-rename-confirm")?.value || "").trim();
+    const hasPreview = !!(hostnameRenameState.preview && hostnameRenameState.preview.next_hostname);
+    btn.disabled = !(hasPreview && (!hardcore || confirmText === "Hostname Ändern"));
+  }
+
+  async function refreshHostnameRenamePreview() {
+    const inputEl = q("hostname-rename-input");
+    const hostname = String(inputEl?.value || "").trim();
+    setHostnameRenameError("");
+    if (!hostname) {
+      hostnameRenameState.preview = null;
+      renderHostnamePreview(null);
+      updateHostnameRenameSaveButton();
+      return;
+    }
+    try {
+      const payload = await fetchJson("/api/system/hostname/preview", {
+        method: "POST",
+        body: {
+          hostname,
+          ap_profile: "jm-hotspot",
+        },
+        timeoutMs: 10000,
+      });
+      const preview = payload.data || {};
+      hostnameRenameState.preview = preview;
+      renderHostnamePreview(preview);
+      updateHostnameRenameSaveButton();
+    } catch (err) {
+      hostnameRenameState.preview = null;
+      renderHostnamePreview(null);
+      setHostnameRenameError(err && err.message ? err.message : String(err || "Preview fehlgeschlagen"));
+      updateHostnameRenameSaveButton();
+    }
+  }
+
+  function openHostnameRenameModal() {
+    const status = statusDashboardState.status || {};
+    const state = status.state || {};
+    const currentHost = String(state.hostname || (networkState || {}).hostname || "").trim();
+    q("hostname-rename-input").value = currentHost || "";
+    q("hostname-rename-confirm").value = "";
+    q("hostname-rename-hardcore").checked = true;
+    hostnameRenameState.preview = null;
+    renderHostnameCurrentInfo();
+    setHostnameRenameError("");
+    updateHostnameRenameSaveButton();
+    run(refreshHostnameRenamePreview);
+  }
+
+  async function saveHostnameRename() {
+    const preview = hostnameRenameState.preview || {};
+    const nextHost = String(preview.next_hostname || "").trim();
+    if (!nextHost) {
+      throw new Error("Bitte zuerst gültigen Hostname prüfen.");
+    }
+    const hardcore = !!q("hostname-rename-hardcore")?.checked;
+    const confirmText = String(q("hostname-rename-confirm")?.value || "").trim();
+    if (hardcore && confirmText !== "Hostname Ändern") {
+      throw new Error('Bitte exakt "Hostname Ändern" eingeben.');
+    }
+
+    const payload = await fetchJson("/api/system/hostname/rename", {
+      method: "POST",
+      body: {
+        hostname: nextHost,
+        confirm_phrase: hardcore ? confirmText : "Hostname Ändern",
+        ap_profile: "jm-hotspot",
+      },
+      timeoutMs: 30000,
+    });
+
+    const modalEl = q("hostnameRenameModal");
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.hide();
+
+    await refreshStatus();
+    await refreshNetwork();
+    await refreshApStatus();
+    try {
+      await panelSyncNow();
+    } catch (syncErr) {
+      toast(`Hostname geändert, Admin-Sync fehlgeschlagen: ${syncErr.message || syncErr}`, "warning");
+    }
+    const updated = ((payload.data || {}).new_hostname || nextHost);
+    toast(`Hostname aktualisiert: ${updated}`, "success");
+  }
+
   async function requestSystemPower(action) {
     const target = String(action || "").toLowerCase();
     if (target !== "shutdown" && target !== "reboot") {
@@ -3370,6 +3506,28 @@
     q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
     q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
     q("btn-system-storage-security-save").addEventListener("click", () => run(saveStorageSecuritySettings));
+    q("btn-hostname-rename-save").addEventListener("click", () => run(saveHostnameRename));
+    q("hostname-rename-input").addEventListener("input", () => {
+      if (hostnameRenameState.previewTimer) {
+        window.clearTimeout(hostnameRenameState.previewTimer);
+      }
+      hostnameRenameState.previewTimer = window.setTimeout(() => {
+        run(refreshHostnameRenamePreview);
+      }, 250);
+      updateHostnameRenameSaveButton();
+    });
+    q("hostname-rename-hardcore").addEventListener("change", updateHostnameRenameSaveButton);
+    q("hostname-rename-confirm").addEventListener("input", updateHostnameRenameSaveButton);
+    q("hostnameRenameModal").addEventListener("shown.bs.modal", () => {
+      openHostnameRenameModal();
+    });
+    q("hostnameRenameModal").addEventListener("hidden.bs.modal", () => {
+      setHostnameRenameError("");
+      hostnameRenameState.preview = null;
+      q("hostname-rename-confirm").value = "";
+      q("hostname-rename-hardcore").checked = true;
+      updateHostnameRenameSaveButton();
+    });
     const uploadDropZone = q("storage-fm-upload-dropzone");
     const uploadPicker = q("storage-fm-upload-picker");
     uploadDropZone.addEventListener("click", () => uploadPicker.click());

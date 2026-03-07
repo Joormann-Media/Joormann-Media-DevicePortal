@@ -155,6 +155,28 @@ def _split_nmcli_escaped(line: str) -> list[str]:
     return fields
 
 
+def _sanitize_hostname(value: str) -> str:
+    raw = (value or "").strip().lower()
+    raw = re.sub(r"[\s_]+", "-", raw)
+    raw = re.sub(r"[^a-z0-9-]", "-", raw)
+    raw = re.sub(r"-{2,}", "-", raw).strip("-")
+    if not raw:
+        raise NetControlError(code="invalid_hostname", message="Hostname must contain letters or numbers")
+    if len(raw) > 63:
+        raw = raw[:63].rstrip("-")
+    if not raw:
+        raise NetControlError(code="invalid_hostname", message="Hostname is invalid after sanitizing")
+    return raw
+
+
+def _derive_ap_ssid(hostname: str) -> str:
+    return f"{hostname}-ap"[:32]
+
+
+def _derive_bt_name(hostname: str) -> str:
+    return f"{hostname}-bt"[:64]
+
+
 def get_network_info() -> dict:
     rc, out, err = _run_script("network_info.sh", [], timeout=8, use_sudo=False)
     if rc != 0:
@@ -166,6 +188,81 @@ def get_network_info() -> dict:
     if not isinstance(payload, dict):
         raise NetControlError(code="network_info_invalid", message="Network status payload must be a JSON object")
     return payload
+
+
+def hostname_rename_preview(new_hostname: str, ap_profile: str = DEFAULT_AP_PROFILE) -> dict:
+    next_hostname = _sanitize_hostname(new_hostname)
+    current = get_network_info()
+    current_hostname = str(current.get("hostname") or "").strip()
+    if not current_hostname:
+        current_hostname = os.uname().nodename.strip()
+
+    ap_info: dict = {}
+    try:
+        ap_info = get_ap_status(ifname=DEFAULT_WIFI_IFACE, profile=(ap_profile or DEFAULT_AP_PROFILE))
+    except Exception:
+        ap_info = {}
+
+    interfaces = current.get("interfaces") if isinstance(current.get("interfaces"), dict) else {}
+    wifi = interfaces.get("wifi") if isinstance(interfaces.get("wifi"), dict) else {}
+    lan = interfaces.get("lan") if isinstance(interfaces.get("lan"), dict) else {}
+    bt = interfaces.get("bluetooth") if isinstance(interfaces.get("bluetooth"), dict) else {}
+
+    return {
+        "current_hostname": current_hostname or "-",
+        "next_hostname": next_hostname,
+        "derived": {
+            "ap_ssid": _derive_ap_ssid(next_hostname),
+            "bt_name": _derive_bt_name(next_hostname),
+        },
+        "connections": {
+            "lan": {
+                "ifname": lan.get("ifname") or "eth0",
+                "ip": lan.get("ip") or "",
+                "carrier": bool(lan.get("carrier")),
+            },
+            "wifi": {
+                "ifname": wifi.get("ifname") or DEFAULT_WIFI_IFACE,
+                "connected": bool(wifi.get("connected")),
+                "ssid": wifi.get("ssid") or "",
+                "ip": wifi.get("ip") or "",
+            },
+            "bluetooth": {
+                "enabled": bool(bt.get("enabled")),
+            },
+            "ap": {
+                "profile": ap_info.get("profile") or (ap_profile or DEFAULT_AP_PROFILE),
+                "active": bool(ap_info.get("active")),
+                "ssid": ap_info.get("ssid") or "",
+                "ip": ap_info.get("ip") or "",
+            },
+        },
+    }
+
+
+def apply_hostname_rename(new_hostname: str, ap_profile: str = DEFAULT_AP_PROFILE) -> dict:
+    safe_hostname = _sanitize_hostname(new_hostname)
+    profile = (ap_profile or DEFAULT_AP_PROFILE).strip() or DEFAULT_AP_PROFILE
+    rc, out, err = _run_script("hostname_rename.sh", [safe_hostname, profile], timeout=35, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "hostname_rename_failed"),
+            message=parsed.get("message", "Hostname rename failed"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "old_hostname": parsed.get("old_hostname", ""),
+        "new_hostname": parsed.get("new_hostname", safe_hostname),
+        "ap_profile": parsed.get("ap_profile", profile),
+        "ap_ssid": parsed.get("ap_ssid", _derive_ap_ssid(safe_hostname)),
+        "bt_name": parsed.get("bt_name", _derive_bt_name(safe_hostname)),
+        "message": parsed.get("message", "Hostname updated"),
+        "details": detail,
+        "requires_reconnect": parsed.get("requires_reconnect", "true").lower() == "true",
+    }
 
 
 def set_wifi_enabled(enabled: bool) -> dict:

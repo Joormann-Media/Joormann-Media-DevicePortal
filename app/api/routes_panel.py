@@ -415,6 +415,56 @@ def _is_truthy(value: object) -> bool:
     return False
 
 
+def _extract_link_ids(resp: dict | None) -> tuple[list[int], list[int]]:
+    if not isinstance(resp, dict):
+        return [], []
+    candidates: list[dict] = [resp]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        candidates.append(data)
+
+    user_ids: set[int] = set()
+    customer_ids: set[int] = set()
+
+    def _add_int(value: object, bucket: set[int]) -> None:
+        try:
+            iv = int(value)
+        except Exception:
+            return
+        if iv > 0:
+            bucket.add(iv)
+
+    for source in candidates:
+        _add_int(source.get('linkedUserId'), user_ids)
+        _add_int(source.get('linked_user_id'), user_ids)
+        _add_int(source.get('linkedCustomerId'), customer_ids)
+        _add_int(source.get('linked_customer_id'), customer_ids)
+
+        users = source.get('linkedUsers')
+        if isinstance(users, list):
+            for row in users:
+                if isinstance(row, dict):
+                    _add_int(row.get('id'), user_ids)
+                else:
+                    _add_int(row, user_ids)
+        customers = source.get('linkedCustomers')
+        if isinstance(customers, list):
+            for row in customers:
+                if isinstance(row, dict):
+                    _add_int(row.get('id'), customer_ids)
+                else:
+                    _add_int(row, customer_ids)
+
+    return sorted(user_ids), sorted(customer_ids)
+
+
+def _persist_link_targets(cfg: dict, user_ids: list[int], customer_ids: list[int]) -> None:
+    cfg['panel_linked_users'] = [{'id': uid} for uid in sorted(set(user_ids)) if int(uid) > 0]
+    cfg['panel_linked_customers'] = [{'id': cid} for cid in sorted(set(customer_ids)) if int(cid) > 0]
+    cfg['updated_at'] = utc_now()
+    write_json(CONFIG_PATH, cfg, mode=0o600)
+
+
 def _panel_handshake_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/handshake"
 
@@ -859,6 +909,12 @@ def api_panel_register():
 
     if _response_indicates_success(code, resp):
         cfg['registration_token'] = token
+        linked_user_ids, linked_customer_ids = _extract_link_ids(resp if isinstance(resp, dict) else None)
+        if link_target_type == 'user' and link_target_id.isdigit():
+            linked_user_ids = sorted(set(linked_user_ids + [int(link_target_id)]))
+        if link_target_type == 'customer' and link_target_id.isdigit():
+            linked_customer_ids = sorted(set(linked_customer_ids + [int(link_target_id)]))
+        _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
     if isinstance(resp, dict):
         slug = (resp.get('deviceSlug') or resp.get('slug') or '').strip()
         if slug:
@@ -980,6 +1036,9 @@ def api_panel_sync_status():
         last_response=resp,
         last_error='',
     )
+    linked_user_ids, linked_customer_ids = _extract_link_ids(resp if isinstance(resp, dict) else None)
+    if linked_user_ids or linked_customer_ids:
+        _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
 
     if request_base:
         cfg['admin_base_url'] = request_base
@@ -1043,6 +1102,9 @@ def api_panel_sync_now():
                 cfg['panel_device_flags'] = flags
                 cfg['updated_at'] = utc_now()
                 write_json(CONFIG_PATH, cfg, mode=0o600)
+            linked_user_ids, linked_customer_ids = _extract_link_ids(ping_resp if isinstance(ping_resp, dict) else None)
+            if linked_user_ids or linked_customer_ids:
+                _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
             _update_panel_link_state(cfg, linked=True, last_http=ping_code, last_response=ping_resp, last_error='')
             return jsonify(
                 ok=True,
@@ -1107,6 +1169,9 @@ def api_panel_sync_now():
             cfg['panel_device_flags'] = flags
             cfg['updated_at'] = utc_now()
             write_json(CONFIG_PATH, cfg, mode=0o600)
+        linked_user_ids, linked_customer_ids = _extract_link_ids(resp)
+        if linked_user_ids or linked_customer_ids:
+            _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
 
     _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
 
@@ -1402,6 +1467,31 @@ def api_panel_assign():
 
     if request_base:
         cfg['admin_base_url'] = request_base
+    current_users: list[int] = []
+    for row in cfg.get('panel_linked_users', []):
+        if not isinstance(row, dict):
+            continue
+        try:
+            uid = int(row.get('id') or 0)
+        except Exception:
+            uid = 0
+        if uid > 0:
+            current_users.append(uid)
+    current_customers: list[int] = []
+    for row in cfg.get('panel_linked_customers', []):
+        if not isinstance(row, dict):
+            continue
+        try:
+            cid = int(row.get('id') or 0)
+        except Exception:
+            cid = 0
+        if cid > 0:
+            current_customers.append(cid)
+    if target_type == 'user' and target_id.isdigit():
+        current_users = sorted(set(current_users + [int(target_id)]))
+    if target_type == 'customer' and target_id.isdigit():
+        current_customers = sorted(set(current_customers + [int(target_id)]))
+    _persist_link_targets(cfg, current_users, current_customers)
     cfg['updated_at'] = utc_now()
     write_json(CONFIG_PATH, cfg, mode=0o600)
     return jsonify(ok=True, assigned=True, http=code, assign_url=assign_url, response=resp)
@@ -1419,6 +1509,8 @@ def api_panel_link_status():
         panel_ping_path=cfg.get('panel_ping_path'),
         panel_link_state=st,
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+        panel_linked_users=(cfg.get('panel_linked_users') if isinstance(cfg.get('panel_linked_users'), list) else []),
+        panel_linked_customers=(cfg.get('panel_linked_customers') if isinstance(cfg.get('panel_linked_customers'), list) else []),
         device_slug=cfg.get('device_slug') or '',
     )
 
@@ -1442,6 +1534,8 @@ def api_panel_unlink():
         'is_locked': None,
         'updated_at': utc_now(),
     }
+    cfg['panel_linked_users'] = []
+    cfg['panel_linked_customers'] = []
     cfg['updated_at'] = utc_now()
     write_json(CONFIG_PATH, cfg, mode=0o600)
 

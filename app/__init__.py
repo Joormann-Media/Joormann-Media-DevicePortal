@@ -1,30 +1,80 @@
 from __future__ import annotations
 
-from flask import Flask, jsonify
+import os
+
+from flask import Flask, jsonify, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
 
 from app.api.routes_network import bp_network
 from app.api.routes_panel import bp_panel
 from app.api.routes_plan import bp_plan
 from app.api.routes_status import bp_status
+from app.core.auth_mode import resolve_auth_mode
+from app.core.auth_session import is_authenticated
 from app.core.config import ensure_config
 from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint
+from app.web.routes_auth import bp_auth
 from app.web.routes_ui import bp_ui
 
 
 def create_app() -> Flask:
     app = Flask(__name__, template_folder='templates', static_folder='static')
 
-    ensure_config()
+    cfg = ensure_config()
     ensure_device()
     ensure_fingerprint()
+    app.config["SECRET_KEY"] = (cfg.get("session_secret") or "").strip()
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = os.getenv("PORTAL_SESSION_COOKIE_SECURE", "0").strip().lower() in {"1", "true", "yes", "on"}
 
     app.register_blueprint(bp_status)
     app.register_blueprint(bp_panel)
     app.register_blueprint(bp_plan)
     app.register_blueprint(bp_network)
+    app.register_blueprint(bp_auth)
     app.register_blueprint(bp_ui)
+
+    @app.before_request
+    def require_portal_login():
+        path = request.path or "/"
+        if request.method == "OPTIONS":
+            return None
+
+        public_exact = {
+            "/health",
+            "/login",
+            "/login/2fa",
+            "/logout",
+            "/api/auth/mode",
+            "/api/auth/status",
+            "/api/auth/local-users",
+            "/api/panel/admin-sync-payload",
+        }
+        if path in public_exact or path.startswith("/static/"):
+            return None
+
+        if is_authenticated():
+            return None
+
+        mode_info = resolve_auth_mode(ensure_config())
+        if path.startswith("/api/"):
+            return (
+                jsonify(
+                    ok=False,
+                    error="login_required",
+                    detail="Bitte zuerst im DevicePortal einloggen.",
+                    auth_mode=mode_info.get("mode", "local_system"),
+                    auth_reason=mode_info.get("reason", ""),
+                ),
+                401,
+            )
+
+        next_url = request.full_path if request.query_string else request.path
+        if next_url.endswith("?"):
+            next_url = next_url[:-1]
+        return redirect(url_for("auth.login_page", next=next_url))
 
     @app.errorhandler(Exception)
     def handle_exception(exc: Exception):

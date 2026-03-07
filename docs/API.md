@@ -3,8 +3,20 @@
 ## Abstract
 Vollständige Endpoint-Inventarisierung auf Basis der aktuellen Flask-Blueprints (`routes_status`, `routes_panel`, `routes_plan`, `routes_network`, `routes_ui`).
 
-## Auth-Modell (Ist)
-Aktuell ist **keine** Endpoint-Authentisierung implementiert.
+## Auth-Modell
+- Session-Login ist aktiv.
+- Login-Endpoints:
+  - `GET /login`
+  - `POST /login`
+  - `POST /logout`
+  - `GET /api/auth/mode`
+  - `GET /api/auth/status`
+- Modus-Resolver:
+  - `local_system` wenn kein Panel-Link mit User-Verknüpfung existiert.
+  - `panel_remote` wenn Panel-Link + verknüpfte User vorhanden sind.
+- Ausnahme ohne Session:
+  - `GET /health`
+  - `POST /api/panel/admin-sync-payload` (weiterhin Device-Credentials-basiert)
 
 ## Error-Format
 Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
@@ -16,6 +28,12 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 
 | Group | Method | Path | Handler |
 |---|---|---|---|
+| auth | GET | `/login` | `routes_auth.login_page` |
+| auth | POST | `/login` | `routes_auth.login_submit` |
+| auth | POST | `/logout` | `routes_auth.logout_submit` |
+| auth | GET | `/api/auth/mode` | `routes_auth.api_auth_mode` |
+| auth | GET | `/api/auth/status` | `routes_auth.api_auth_status` |
+| auth | GET | `/api/auth/local-users` | `routes_auth.api_auth_local_users` |
 | public/ui | GET | `/` | `routes_ui.index` |
 | status | GET | `/health` | `routes_status.health` |
 | status | GET | `/api/status` | `routes_status.api_status` |

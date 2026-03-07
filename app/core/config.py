@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from app.core.jsonio import read_json, write_json
 from app.core.paths import CONFIG_PATH
 from app.core.timeutil import utc_now
@@ -34,6 +36,9 @@ DEFAULT_CONFIG: dict = {
         'connectors': {},
         'updated_at': None,
     },
+    'session_secret': '',
+    'panel_linked_users': [],
+    'panel_linked_customers': [],
 }
 
 
@@ -125,6 +130,18 @@ def ensure_config() -> dict:
 
     if 'created_at' not in cfg:
         cfg['created_at'] = utc_now()
+        changed = True
+    if not isinstance(cfg.get('session_secret'), str):
+        cfg['session_secret'] = ''
+        changed = True
+    if cfg.get('session_secret', '').strip() == '':
+        cfg['session_secret'] = secrets.token_urlsafe(48)
+        changed = True
+    if not isinstance(cfg.get('panel_linked_users'), list):
+        cfg['panel_linked_users'] = []
+        changed = True
+    if not isinstance(cfg.get('panel_linked_customers'), list):
+        cfg['panel_linked_customers'] = []
         changed = True
     if changed:
         cfg['updated_at'] = utc_now()

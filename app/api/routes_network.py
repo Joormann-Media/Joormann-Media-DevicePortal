@@ -5,12 +5,16 @@ import time
 from flask import Blueprint, jsonify, request, send_file
 
 from app.core.config import ensure_config
+from app.core.device import ensure_device
 from app.core.display import DISPLAY_MOUNT_ORIENTATIONS, get_display_snapshot, normalize_mount_orientation, update_display_config
+from app.core.fingerprint import collect_fingerprint
 from app.core.jsonio import write_json
 from app.core.network_events import get_wps_state, log_event, read_events, set_wps_state
 from app.core.netcontrol import (
     NONPREFERRED_WIFI_PRIORITY,
     PREFERRED_WIFI_PRIORITY,
+    apply_hostname_rename,
+    hostname_rename_preview,
     NetControlError,
     disable_tailscale_dns_override,
     get_ap_clients,
@@ -50,6 +54,7 @@ from app.core.storage_state import (
     unignore_storage_device,
 )
 from app.core.timeutil import utc_now
+from app.core.state import update_state
 
 bp_network = Blueprint("network", __name__)
 storage_fm = StorageFileManagerService()
@@ -1132,6 +1137,61 @@ def api_system_settings_update():
             "message": "System settings updated",
         }
     )
+
+
+@bp_network.post("/api/system/hostname/preview")
+def api_system_hostname_preview():
+    data = request.get_json(force=True, silent=True) or {}
+    new_hostname = str(data.get("hostname") or "").strip()
+    if not new_hostname:
+        return _error("invalid_payload", "Field 'hostname' is required", status=400)
+    ap_profile = str(data.get("ap_profile") or "jm-hotspot").strip() or "jm-hotspot"
+    try:
+        preview = hostname_rename_preview(new_hostname=new_hostname, ap_profile=ap_profile)
+        return _ok(preview)
+    except NetControlError as exc:
+        return _error(exc.code, exc.message, status=400, detail=exc.detail)
+
+
+@bp_network.post("/api/system/hostname/rename")
+def api_system_hostname_rename():
+    data = request.get_json(force=True, silent=True) or {}
+    new_hostname = str(data.get("hostname") or "").strip()
+    if not new_hostname:
+        return _error("invalid_payload", "Field 'hostname' is required", status=400)
+    confirm_phrase = str(data.get("confirm_phrase") or "").strip()
+    if confirm_phrase != "Hostname Ändern":
+        return _error("invalid_confirmation", "Confirmation phrase mismatch", status=400)
+    ap_profile = str(data.get("ap_profile") or "jm-hotspot").strip() or "jm-hotspot"
+
+    try:
+        result = apply_hostname_rename(new_hostname=new_hostname, ap_profile=ap_profile)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "hostname_rename_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+    cfg = ensure_config()
+    dev = ensure_device()
+    fp = collect_fingerprint()
+    mode = "play" if (cfg.get("selected_stream_slug") or "").strip() else "setup"
+    state, _ = update_state(cfg, dev, fp, mode=mode, message="hostname renamed")
+    result["state"] = state
+    result["fingerprint"] = {
+        "hostname": fp.get("hostname"),
+        "machine_id": fp.get("machine_id"),
+        "pi_serial": ((fp.get("cpu") or {}).get("serial") if isinstance(fp.get("cpu"), dict) else ""),
+    }
+    log_event(
+        "system",
+        "Hostname updated",
+        data={
+            "old_hostname": result.get("old_hostname", ""),
+            "new_hostname": result.get("new_hostname", ""),
+            "ap_ssid": result.get("ap_ssid", ""),
+            "bt_name": result.get("bt_name", ""),
+        },
+    )
+    return _ok(result)
 
 
 @bp_network.post("/api/system/portal/update")

@@ -456,3 +456,11 @@ body.portal-body {
   color: #64748b;
   cursor: not-allowed;
 }
+
+.portal-login-shell {
+  max-width: 560px;
+}
+
+.portal-login-card {
+  background: linear-gradient(160deg, #ffffff 0%, #f7fbff 100%);
+}
