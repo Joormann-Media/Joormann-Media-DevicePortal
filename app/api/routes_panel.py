@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request
 from app.core.config import _panel_url, _safe_base_url, ensure_config
 from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
-from app.core.fingerprint import ensure_fingerprint
+from app.core.fingerprint import collect_fingerprint, ensure_fingerprint
 from app.core.gitinfo import get_update_info
 from app.core.httpclient import http_get_json, http_get_text, http_post_json
 from app.core.jsonio import write_json
@@ -594,7 +594,7 @@ def api_panel_ping():
 def api_panel_register():
     cfg = ensure_config()
     dev = ensure_device()
-    fp = ensure_fingerprint()
+    fp = collect_fingerprint()
     host = get_hostname()
     ip = get_ip()
 
@@ -735,7 +735,7 @@ def api_panel_sync_status():
 def api_panel_sync_now():
     cfg = ensure_config()
     dev = ensure_device()
-    fp = ensure_fingerprint()
+    fp = collect_fingerprint()
     host = get_hostname()
     ip = get_ip()
 
@@ -791,6 +791,94 @@ def api_panel_sync_now():
     _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
 
     return jsonify(ok=True, synced=True, http=code, panel_register_url=url, response=resp), 200
+
+
+@bp_panel.post('/api/panel/rebuild-fingerprint')
+def api_panel_rebuild_fingerprint():
+    cfg = ensure_config()
+    dev = ensure_device()
+    host = get_hostname()
+    ip = get_ip()
+
+    fp = collect_fingerprint()
+    update_state(
+        cfg,
+        dev,
+        fp,
+        mode='play' if cfg.get('selected_stream_slug') else 'setup',
+        message='fingerprint rebuilt',
+    )
+
+    st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
+    linked = bool(st.get('linked'))
+    base = _safe_base_url(cfg.get('admin_base_url', ''))
+    if not linked or not base:
+        return jsonify(
+            ok=True,
+            rebuilt=True,
+            synced=False,
+            reason='not_linked',
+            fingerprint=fp,
+            panel_link_state=st,
+        ), 200
+
+    url = _panel_url(cfg, 'panel_register_path')
+    if not url or not (url.startswith('http://') or url.startswith('https://')):
+        return jsonify(
+            ok=True,
+            rebuilt=True,
+            synced=False,
+            reason='invalid_panel_url',
+            resolved_url=url or '',
+            fingerprint=fp,
+            panel_link_state=st,
+        ), 200
+
+    payload = _panel_sync_payload(cfg, dev, fp, host, ip)
+    code, resp, err = http_post_json(url, payload, timeout=10)
+    if code is None:
+        st = _update_panel_link_state(cfg, linked=_sticky_linked(cfg, False, None, None), last_http=None, last_response=None, last_error=str(err))
+        return jsonify(
+            ok=False,
+            rebuilt=True,
+            synced=False,
+            error='sync_failed',
+            detail=str(err),
+            fingerprint=fp,
+            panel_link_state=st,
+        ), 502
+
+    success = _response_indicates_success(code, resp)
+    st = _update_panel_link_state(
+        cfg,
+        linked=_sticky_linked(cfg, success, code, resp),
+        last_http=code,
+        last_response=resp,
+        last_error='' if success else ((resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'),
+    )
+    if not success:
+        panel_msg = _extract_response_message(resp) or f'http {code}'
+        return jsonify(
+            ok=False,
+            rebuilt=True,
+            synced=False,
+            error='sync_failed',
+            detail=panel_msg,
+            http=code,
+            response=resp,
+            fingerprint=fp,
+            panel_link_state=st,
+        ), 400
+
+    return jsonify(
+        ok=True,
+        rebuilt=True,
+        synced=True,
+        http=code,
+        response=resp,
+        fingerprint=fp,
+        panel_link_state=st,
+    ), 200
 
 
 @bp_panel.post('/api/panel/validate-token')

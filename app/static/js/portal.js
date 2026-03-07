@@ -2790,6 +2790,23 @@
     toast("Fingerprint refreshed", "success");
   }
 
+  async function rebuildFingerprintAndSync() {
+    const payload = await fetchJson("/api/panel/rebuild-fingerprint", { method: "POST" });
+    await refreshStatus();
+    try {
+      await panelSyncCheck();
+    } catch (_) {
+      // Keep action usable even when admin sync check is not reachable.
+    }
+    if (payload && payload.synced) {
+      toast("Fingerprint neu erstellt und an Admin gemeldet", "success");
+    } else if (payload && payload.rebuilt) {
+      toast("Fingerprint neu erstellt (Device aktuell nicht verlinkt)", "secondary");
+    } else {
+      toast("Fingerprint-Aktualisierung abgeschlossen", "success");
+    }
+  }
+
   async function toggleWifi() {
     const wifiEnabled = !!(((networkState || {}).interfaces || {}).wifi || {}).enabled;
     await fetchJson("/api/network/wifi/toggle", { method: "POST", body: { enabled: !wifiEnabled } });
@@ -3207,6 +3224,7 @@
     q("btn-display-refresh").addEventListener("click", () => run(refreshStatus));
     q("btn-link-register").addEventListener("click", () => run(panelRegister));
     q("btn-link-assign").addEventListener("click", () => openSetupWizard("assign"));
+    q("btn-link-rebuild-fingerprint").addEventListener("click", () => run(rebuildFingerprintAndSync));
     q("btn-pull-plan").addEventListener("click", () => run(pullPlan));
     q("btn-panel-sync-check").addEventListener("click", () => run(panelSyncCheck));
     q("btn-panel-sync-now").addEventListener("click", () => run(panelSyncNow));
