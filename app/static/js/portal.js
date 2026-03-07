@@ -199,6 +199,22 @@
     return shortCommit || "-";
   }
 
+  function getResolvedAdminBaseUrl() {
+    const fromInput = String(els.adminBase?.value || "").trim();
+    if (fromInput) return fromInput;
+    const fromStatus = String(((statusDashboardState.status || {}).config || {}).admin_base_url || "").trim();
+    if (fromStatus) return fromStatus;
+    return "";
+  }
+
+  function requireAdminBaseUrl() {
+    const base = getResolvedAdminBaseUrl();
+    if (!base) {
+      throw new Error("Panel URL fehlt. Bitte zuerst im Setup-Assistenten verknüpfen.");
+    }
+    return base;
+  }
+
   function setProgressBar(barId, pct, variant = "success") {
     const el = q(barId);
     if (!el) return;
@@ -2671,19 +2687,21 @@
   }
 
   async function panelPing() {
+    const adminBaseUrl = requireAdminBaseUrl();
     await fetchJson("/api/panel/ping", {
       method: "POST",
-      body: { admin_base_url: els.adminBase.value || "" },
+      body: { admin_base_url: adminBaseUrl },
     });
     await refreshStatus();
     toast("Panel ping completed", "success");
   }
 
   async function panelRegister() {
+    const adminBaseUrl = requireAdminBaseUrl();
     await fetchJson("/api/panel/register", {
       method: "POST",
       body: {
-        admin_base_url: els.adminBase.value || "",
+        admin_base_url: adminBaseUrl,
         registration_token: els.regToken.value || "",
       },
     });
@@ -2692,10 +2710,11 @@
   }
 
   async function panelSyncCheck() {
+    const adminBaseUrl = requireAdminBaseUrl();
     try {
       const payload = await fetchJson("/api/panel/sync-status", {
         method: "POST",
-        body: { admin_base_url: els.adminBase.value || "" },
+        body: { admin_base_url: adminBaseUrl },
       });
       panelSyncState.lastCheckAt = new Date().toLocaleString();
       const adminResponse = payload.response || {};
@@ -2710,9 +2729,10 @@
   }
 
   async function panelSyncNow() {
+    const adminBaseUrl = requireAdminBaseUrl();
     await fetchJson("/api/panel/sync-now", {
       method: "POST",
-      body: { admin_base_url: els.adminBase.value || "" },
+      body: { admin_base_url: adminBaseUrl },
     });
     await refreshStatus();
     await panelSyncCheck();
@@ -2720,18 +2740,20 @@
   }
 
   async function panelTestUrl() {
+    const adminBaseUrl = requireAdminBaseUrl();
     await fetchJson("/api/panel/test-url", {
       method: "POST",
-      body: { url: els.adminBase.value || "" },
+      body: { url: adminBaseUrl },
     });
     toast("Panel URL saved", "success");
   }
 
   async function pullPlan() {
+    const adminBaseUrl = requireAdminBaseUrl();
     await fetchJson("/api/plan/pull", {
       method: "POST",
       body: {
-        admin_base_url: els.adminBase.value || "",
+        admin_base_url: adminBaseUrl,
         deviceSlug: els.deviceSlug.value || "",
         streamSlug: els.streamSlug.value || "",
       },
