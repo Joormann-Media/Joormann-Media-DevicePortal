@@ -45,6 +45,7 @@ iface_ip() {
 HOSTNAME_VAL="$(hostname 2>/dev/null || echo "unknown")"
 NMCLI_PRESENT="$(cmd_present nmcli)"
 RFKILL_PRESENT="$(cmd_present rfkill)"
+BLUETOOTHCTL_PRESENT="$(cmd_present bluetoothctl)"
 TAILSCALE_PRESENT="$(cmd_present tailscale)"
 
 LAN_EXISTS="$(iface_exists "$LAN_IF")"
@@ -114,6 +115,10 @@ if [[ "$WIFI_CONNECTED" != "1" && "$WPA_CLI_PRESENT" == "1" ]]; then
 fi
 
 BT_ENABLED="0"
+BT_DISCOVERABLE=""
+BT_PAIRABLE=""
+BT_DISCOVERABLE_TIMEOUT=""
+BT_PAIRABLE_TIMEOUT=""
 if [[ "$RFKILL_PRESENT" == "1" ]]; then
   BT_LINES="$(safe_cmd rfkill list bluetooth)"
   if [[ -n "$BT_LINES" ]]; then
@@ -122,6 +127,29 @@ if [[ "$RFKILL_PRESENT" == "1" ]]; then
     if [[ "$SOFT_BLOCKED" == "no" && "$HARD_BLOCKED" == "no" ]]; then
       BT_ENABLED="1"
     fi
+  fi
+fi
+
+if [[ "$BLUETOOTHCTL_PRESENT" == "1" ]]; then
+  BT_SHOW="$(safe_cmd bluetoothctl show)"
+  if [[ -n "$BT_SHOW" ]]; then
+    BT_DISCOVERABLE_RAW="$(echo "$BT_SHOW" | awk -F': ' '/^[[:space:]]*Discoverable:/{print $2; exit}')"
+    BT_PAIRABLE_RAW="$(echo "$BT_SHOW" | awk -F': ' '/^[[:space:]]*Pairable:/{print $2; exit}')"
+    BT_DISCOVERABLE_TIMEOUT_RAW="$(echo "$BT_SHOW" | awk -F': ' '/^[[:space:]]*DiscoverableTimeout:/{print $2; exit}')"
+    BT_PAIRABLE_TIMEOUT_RAW="$(echo "$BT_SHOW" | awk -F': ' '/^[[:space:]]*PairableTimeout:/{print $2; exit}')"
+
+    case "$(echo "${BT_DISCOVERABLE_RAW}" | tr '[:upper:]' '[:lower:]' | xargs)" in
+      yes|true|on|1|enabled) BT_DISCOVERABLE="1" ;;
+      no|false|off|0|disabled) BT_DISCOVERABLE="0" ;;
+      *) BT_DISCOVERABLE="" ;;
+    esac
+    case "$(echo "${BT_PAIRABLE_RAW}" | tr '[:upper:]' '[:lower:]' | xargs)" in
+      yes|true|on|1|enabled) BT_PAIRABLE="1" ;;
+      no|false|off|0|disabled) BT_PAIRABLE="0" ;;
+      *) BT_PAIRABLE="" ;;
+    esac
+    BT_DISCOVERABLE_TIMEOUT="$(echo "${BT_DISCOVERABLE_TIMEOUT_RAW}" | xargs)"
+    BT_PAIRABLE_TIMEOUT="$(echo "${BT_PAIRABLE_TIMEOUT_RAW}" | xargs)"
   fi
 fi
 
@@ -137,8 +165,9 @@ export LAN_ENABLED LAN_CARRIER LAN_IP LAN_MAC LAN_EXISTS
 export WIFI_ENABLED WIFI_CONNECTED WIFI_SSID WIFI_BSSID WIFI_SIGNAL WIFI_FREQ WIFI_RATE WIFI_SECURITY WIFI_CONN_NAME WIFI_IP WIFI_MAC WIFI_EXISTS WIFI_RADIO
 export WIFI_WPA_STATE
 export BT_ENABLED
+export BT_DISCOVERABLE BT_PAIRABLE BT_DISCOVERABLE_TIMEOUT BT_PAIRABLE_TIMEOUT
 export GATEWAY DNS_RAW
-export NMCLI_PRESENT RFKILL_PRESENT TAILSCALE_PRESENT TAILSCALE_IP
+export NMCLI_PRESENT RFKILL_PRESENT BLUETOOTHCTL_PRESENT TAILSCALE_PRESENT TAILSCALE_IP
 
 python3 - <<'PY'
 import json
@@ -158,7 +187,7 @@ def maybe_int(value: str):
     if not value:
         return None
     try:
-        return int(value)
+        return int(value, 0)
     except Exception:
         return None
 
@@ -196,6 +225,10 @@ payload = {
         "bluetooth": {
             "present": b("RFKILL_PRESENT"),
             "enabled": b("BT_ENABLED"),
+            "discoverable": b("BT_DISCOVERABLE") if s("BT_DISCOVERABLE") else None,
+            "pairable": b("BT_PAIRABLE") if s("BT_PAIRABLE") else None,
+            "discoverable_timeout": maybe_int(s("BT_DISCOVERABLE_TIMEOUT")),
+            "pairable_timeout": maybe_int(s("BT_PAIRABLE_TIMEOUT")),
         },
     },
     "routes": {
@@ -209,6 +242,7 @@ payload = {
     "tools": {
         "nmcli": b("NMCLI_PRESENT"),
         "rfkill": b("RFKILL_PRESENT"),
+        "bluetoothctl": b("BLUETOOTHCTL_PRESENT"),
         "tailscale": b("TAILSCALE_PRESENT"),
     },
 }

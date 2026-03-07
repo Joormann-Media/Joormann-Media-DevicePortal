@@ -281,6 +281,77 @@ def set_bluetooth_enabled(enabled: bool) -> dict:
     return {"enabled": enabled, "stdout": out}
 
 
+def _parse_bool_flag(value: str | None) -> bool | None:
+    raw = (value or "").strip().lower()
+    if raw in ("1", "true", "yes", "on", "enabled"):
+        return True
+    if raw in ("0", "false", "no", "off", "disabled"):
+        return False
+    return None
+
+
+def _parse_int_flag(value: str | None) -> int | None:
+    raw = (value or "").strip()
+    if raw == "":
+        return None
+    try:
+        return int(raw, 0)
+    except Exception:
+        return None
+
+
+def get_bluetooth_status() -> dict:
+    rc, out, err = _run_script("bluetooth_ctl.sh", ["status"], timeout=10, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="bluetooth_status_failed", message="Failed to read Bluetooth status", detail=err or out)
+    parsed = _parse_kv_output(out)
+    return {
+        "enabled": _parse_bool_flag(parsed.get("powered")),
+        "discoverable": _parse_bool_flag(parsed.get("discoverable")),
+        "pairable": _parse_bool_flag(parsed.get("pairable")),
+        "discoverable_timeout": _parse_int_flag(parsed.get("discoverable_timeout")),
+        "pairable_timeout": _parse_int_flag(parsed.get("pairable_timeout")),
+        "stdout": out,
+    }
+
+
+def set_bluetooth_runtime_settings(
+    *,
+    discoverable: bool | None = None,
+    discoverable_timeout: int | None = None,
+    pairable: bool | None = None,
+    pairable_timeout: int | None = None,
+) -> dict:
+    if discoverable_timeout is not None and (discoverable_timeout < 0 or discoverable_timeout > 86400):
+        raise NetControlError(code="invalid_payload", message="discoverable_timeout must be between 0 and 86400 seconds")
+    if pairable_timeout is not None and (pairable_timeout < 0 or pairable_timeout > 86400):
+        raise NetControlError(code="invalid_payload", message="pairable_timeout must be between 0 and 86400 seconds")
+
+    discoverable_arg = "keep" if discoverable is None else ("on" if discoverable else "off")
+    discoverable_timeout_arg = "keep" if discoverable_timeout is None else str(int(discoverable_timeout))
+    pairable_arg = "keep" if pairable is None else ("on" if pairable else "off")
+    pairable_timeout_arg = "keep" if pairable_timeout is None else str(int(pairable_timeout))
+
+    rc, out, err = _run_script(
+        "bluetooth_ctl.sh",
+        ["config", discoverable_arg, discoverable_timeout_arg, pairable_arg, pairable_timeout_arg],
+        timeout=12,
+        use_sudo=True,
+    )
+    if rc != 0:
+        raise NetControlError(code="bluetooth_config_failed", message="Failed to configure Bluetooth runtime settings", detail=err or out)
+
+    parsed = _parse_kv_output(out)
+    return {
+        "enabled": _parse_bool_flag(parsed.get("powered")),
+        "discoverable": _parse_bool_flag(parsed.get("discoverable")),
+        "pairable": _parse_bool_flag(parsed.get("pairable")),
+        "discoverable_timeout": _parse_int_flag(parsed.get("discoverable_timeout")),
+        "pairable_timeout": _parse_int_flag(parsed.get("pairable_timeout")),
+        "stdout": out,
+    }
+
+
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     iface = (ifname or "eth0").strip()
     if iface not in ALLOWED_LAN_INTERFACES:

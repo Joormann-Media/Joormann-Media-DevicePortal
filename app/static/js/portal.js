@@ -169,6 +169,12 @@
     return v ? "yes" : "no";
   }
 
+  function formatSeconds(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) return "-";
+    return `${Math.round(num)} s`;
+  }
+
   function normalizeOptionalBoolean(value) {
     if (typeof value === "boolean") return value;
     if (typeof value === "number") return value === 1 ? true : value === 0 ? false : null;
@@ -1330,6 +1336,24 @@
     q("wifi-mac").textContent = wifi.mac || "-";
 
     q("bt-enabled").textContent = yn(!!bt.enabled);
+    q("bt-discoverable").textContent = bt.discoverable === null || bt.discoverable === undefined ? "-" : yn(!!bt.discoverable);
+    q("bt-pairable").textContent = bt.pairable === null || bt.pairable === undefined ? "-" : yn(!!bt.pairable);
+    q("bt-discoverable-timeout").textContent = formatSeconds(bt.discoverable_timeout);
+    q("bt-pairable-timeout").textContent = formatSeconds(bt.pairable_timeout);
+
+    if (q("bt-discoverable-target")) {
+      q("bt-discoverable-target").checked = !!bt.discoverable;
+    }
+    if (q("bt-pairable-target")) {
+      q("bt-pairable-target").checked = !!bt.pairable;
+    }
+    if (q("bt-discoverable-timeout-target") && Number.isFinite(Number(bt.discoverable_timeout)) && Number(bt.discoverable_timeout) >= 0) {
+      q("bt-discoverable-timeout-target").value = String(Number(bt.discoverable_timeout));
+    }
+    if (q("bt-pairable-timeout-target") && Number.isFinite(Number(bt.pairable_timeout)) && Number(bt.pairable_timeout) >= 0) {
+      q("bt-pairable-timeout-target").value = String(Number(bt.pairable_timeout));
+    }
+
     const btBadge = q("bt-enabled-badge");
     if (btBadge) {
       btBadge.classList.remove("text-bg-success", "text-bg-secondary");
@@ -1338,7 +1362,7 @@
     }
 
     els.btnWifiToggle.textContent = wifi.enabled ? "Disable Wi-Fi" : "Enable Wi-Fi";
-    els.btnBtToggle.textContent = bt.enabled ? "Disable Bluetooth" : "Enable Bluetooth";
+    els.btnBtToggle.textContent = bt.enabled ? "Bluetooth ausschalten" : "Bluetooth einschalten";
     els.btnLanToggle.textContent = lan.enabled ? "Disable LAN" : "Enable LAN";
     renderStatusHealthCard();
     renderStatusSoftwareSection();
@@ -3072,7 +3096,33 @@
     const btEnabled = !!(((networkState || {}).interfaces || {}).bluetooth || {}).enabled;
     await fetchJson("/api/network/bluetooth/toggle", { method: "POST", body: { enabled: !btEnabled } });
     await refreshNetwork();
-    toast("Bluetooth updated", "success");
+    toast("Bluetooth aktualisiert", "success");
+  }
+
+  async function applyBluetoothSettings() {
+    const discoverableTarget = !!q("bt-discoverable-target")?.checked;
+    const pairableTarget = !!q("bt-pairable-target")?.checked;
+    const discoverableTimeoutRaw = Number(q("bt-discoverable-timeout-target")?.value || 0);
+    const pairableTimeoutRaw = Number(q("bt-pairable-timeout-target")?.value || 0);
+
+    if (!Number.isInteger(discoverableTimeoutRaw) || discoverableTimeoutRaw < 0 || discoverableTimeoutRaw > 86400) {
+      throw new Error("Sichtbar-Timeout muss zwischen 0 und 86400 Sekunden liegen.");
+    }
+    if (!Number.isInteger(pairableTimeoutRaw) || pairableTimeoutRaw < 0 || pairableTimeoutRaw > 86400) {
+      throw new Error("Pairing-Timeout muss zwischen 0 und 86400 Sekunden liegen.");
+    }
+
+    await fetchJson("/api/network/bluetooth/config", {
+      method: "POST",
+      body: {
+        discoverable: discoverableTarget,
+        discoverable_timeout: discoverableTimeoutRaw,
+        pairable: pairableTarget,
+        pairable_timeout: pairableTimeoutRaw,
+      },
+    });
+    await refreshNetwork();
+    toast("Bluetooth-Sichtbarkeit und Pairing aktualisiert", "success");
   }
 
   async function toggleLan() {
@@ -3625,6 +3675,7 @@
 
     els.btnWifiToggle.addEventListener("click", () => run(toggleWifi));
     els.btnBtToggle.addEventListener("click", () => run(toggleBluetooth));
+    els.btnBtApplySettings.addEventListener("click", () => run(applyBluetoothSettings));
     els.btnLanToggle.addEventListener("click", () => run(toggleLan));
     q("btn-wps").addEventListener("click", () => run(startWps));
     q("btn-refresh-network").addEventListener("click", () => run(refreshNetwork));
@@ -3846,6 +3897,7 @@
     els.streamSlug = q("stream-slug");
     els.btnWifiToggle = q("btn-wifi-toggle");
     els.btnBtToggle = q("btn-bt-toggle");
+    els.btnBtApplySettings = q("btn-bt-apply-settings");
     els.btnLanToggle = q("btn-lan-toggle");
   }
 

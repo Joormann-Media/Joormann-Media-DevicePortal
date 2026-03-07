@@ -25,7 +25,9 @@ from app.core.netcontrol import (
     portal_update_status,
     restart_portal_service,
     set_ap_enabled,
+    get_bluetooth_status,
     set_bluetooth_enabled,
+    set_bluetooth_runtime_settings,
     set_lan_enabled,
     system_power_action,
     set_wifi_enabled,
@@ -294,9 +296,66 @@ def api_network_bluetooth_toggle():
         return _error("invalid_payload", "Field 'enabled' (bool) is required", status=400)
     try:
         result = set_bluetooth_enabled(bool(data["enabled"]))
+        try:
+            status = get_bluetooth_status()
+            for key in ("discoverable", "pairable", "discoverable_timeout", "pairable_timeout"):
+                if key in status:
+                    result[key] = status.get(key)
+        except NetControlError:
+            pass
         return _ok(result)
     except NetControlError as exc:
         status = 500 if exc.code == "script_missing" else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/bluetooth/status")
+def api_network_bluetooth_status():
+    try:
+        result = get_bluetooth_status()
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/bluetooth/config")
+def api_network_bluetooth_config():
+    data = request.get_json(force=True, silent=True) or {}
+
+    discoverable = data.get("discoverable")
+    if discoverable is not None and not isinstance(discoverable, bool):
+        return _error("invalid_payload", "Field 'discoverable' must be bool when provided", status=400)
+
+    pairable = data.get("pairable")
+    if pairable is not None and not isinstance(pairable, bool):
+        return _error("invalid_payload", "Field 'pairable' must be bool when provided", status=400)
+
+    discoverable_timeout = data.get("discoverable_timeout")
+    if discoverable_timeout is not None and not isinstance(discoverable_timeout, int):
+        return _error("invalid_payload", "Field 'discoverable_timeout' must be int when provided", status=400)
+
+    pairable_timeout = data.get("pairable_timeout")
+    if pairable_timeout is not None and not isinstance(pairable_timeout, int):
+        return _error("invalid_payload", "Field 'pairable_timeout' must be int when provided", status=400)
+
+    if discoverable is None and pairable is None and discoverable_timeout is None and pairable_timeout is None:
+        return _error(
+            "invalid_payload",
+            "At least one field is required: discoverable, pairable, discoverable_timeout, pairable_timeout",
+            status=400,
+        )
+
+    try:
+        result = set_bluetooth_runtime_settings(
+            discoverable=discoverable,
+            discoverable_timeout=discoverable_timeout,
+            pairable=pairable,
+            pairable_timeout=pairable_timeout,
+        )
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
