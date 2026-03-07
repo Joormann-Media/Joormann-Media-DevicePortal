@@ -81,8 +81,8 @@ def _sticky_linked(cfg: dict, next_linked: bool, code: int | None = None, resp: 
     return _current_linked(cfg)
 
 
-def _panel_ping_payload(dev: dict, fp: dict, host: str, ip: str) -> dict:
-    return {
+def _panel_ping_payload(dev: dict, fp: dict, host: str, ip: str, cfg: dict | None = None) -> dict:
+    payload = {
         'deviceUuid': dev.get('device_uuid') or '',
         'authKey': dev.get('auth_key') or '',
         'hostname': host,
@@ -94,10 +94,17 @@ def _panel_ping_payload(dev: dict, fp: dict, host: str, ip: str) -> dict:
             'kernel': fp.get('kernel') or '',
         },
     }
+    if isinstance(cfg, dict):
+        keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+        portal_key = str((keys.get('raspi_to_admin') if isinstance(keys, dict) else '') or '').strip()
+        if portal_key:
+            payload['apiKey'] = portal_key
+            payload['portalApiKey'] = portal_key
+    return payload
 
 
 def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, token: str) -> dict:
-    payload = _panel_ping_payload(dev, fp, host, ip)
+    payload = _panel_ping_payload(dev, fp, host, ip, cfg)
     payload['registrationToken'] = token
     payload['panelRegisterPath'] = cfg.get('panel_register_path')
     # Panel register DTO expects these fields at top-level (not only nested in fingerprint).
@@ -119,7 +126,7 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
 
 
 def _panel_sync_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str) -> dict:
-    payload = _panel_ping_payload(dev, fp, host, ip)
+    payload = _panel_ping_payload(dev, fp, host, ip, cfg)
     payload['panelRegisterPath'] = cfg.get('panel_register_path')
     pi_serial = (
         (dev.get('pi_serial') or '').strip()
@@ -572,6 +579,160 @@ def _panel_auth_context_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/auth-context"
 
 
+def _panel_bootstrap_pull_url(base_url: str) -> str:
+    return f"{base_url}/api/device/link/bootstrap-keys/pull"
+
+
+def _panel_bootstrap_ack_url(base_url: str) -> str:
+    return f"{base_url}/api/device/link/bootstrap-keys/ack"
+
+
+def _extract_api_key_bootstrap(resp: dict | None) -> dict:
+    if not isinstance(resp, dict):
+        return {'mode': 'none', 'items': []}
+
+    direct = resp.get('apiKeyBootstrap')
+    if isinstance(direct, dict):
+        return direct
+
+    data = resp.get('data')
+    if isinstance(data, dict):
+        nested = data.get('apiKeyBootstrap')
+        if isinstance(nested, dict):
+            return nested
+
+    return {'mode': 'none', 'items': []}
+
+
+def _apply_api_key_bootstrap(cfg: dict, bootstrap: dict | None) -> dict:
+    result = {
+        'updated': False,
+        'mode': 'none',
+        'ids': [],
+        'activated_directions': [],
+    }
+    if not isinstance(bootstrap, dict):
+        return result
+
+    mode = str(bootstrap.get('mode') or 'none').strip().lower() or 'none'
+    items = bootstrap.get('items') if isinstance(bootstrap.get('items'), list) else []
+    if mode == 'none' or not items:
+        return result
+
+    keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+    if not isinstance(keys, dict):
+        keys = {}
+    activated_directions: list[str] = []
+    ids: list[int] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        direction = str(item.get('direction') or '').strip().lower()
+        api_key = str(item.get('api_key') or '').strip()
+        bootstrap_id = item.get('id')
+        if isinstance(bootstrap_id, int) and bootstrap_id > 0:
+            ids.append(bootstrap_id)
+        elif isinstance(bootstrap_id, str) and bootstrap_id.isdigit():
+            ids.append(int(bootstrap_id))
+        if direction in ('raspi_to_admin', 'admin_to_raspi') and api_key:
+            keys[direction] = api_key
+            if direction not in activated_directions:
+                activated_directions.append(direction)
+
+    if not activated_directions:
+        return result
+
+    keys['updated_at'] = utc_now()
+    cfg['panel_api_keys'] = keys
+    state = cfg.get('panel_api_key_bootstrap') if isinstance(cfg.get('panel_api_key_bootstrap'), dict) else {}
+    state.update({
+        'mode': mode,
+        'status': 'exchanged',
+        'last_pull_at': utc_now(),
+        'last_error': '',
+    })
+    cfg['panel_api_key_bootstrap'] = state
+    cfg['updated_at'] = utc_now()
+    write_json(CONFIG_PATH, cfg, mode=0o600)
+
+    result['updated'] = True
+    result['mode'] = mode
+    result['ids'] = sorted(set(ids))
+    result['activated_directions'] = activated_directions
+    return result
+
+
+def _ack_api_key_bootstrap(cfg: dict, dev: dict, ids: list[int], activated_directions: list[str]) -> tuple[bool, str]:
+    base = _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base:
+        return False, 'admin_base_url missing'
+    if not ids:
+        return True, ''
+
+    payload = {
+        'deviceUuid': dev.get('device_uuid') or '',
+        'authKey': dev.get('auth_key') or '',
+        'bootstrapIds': ids,
+        'activatedDirections': activated_directions,
+    }
+    keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+    portal_key = str((keys.get('raspi_to_admin') if isinstance(keys, dict) else '') or '').strip()
+    if portal_key:
+        payload['apiKey'] = portal_key
+
+    code, resp, err = http_post_json(_panel_bootstrap_ack_url(base), payload, timeout=8)
+    if code is None:
+        return False, str(err or 'ack failed')
+    if not (200 <= code < 300):
+        return False, _extract_response_message(resp if isinstance(resp, dict) else None) or f'http {code}'
+
+    st = cfg.get('panel_api_key_bootstrap') if isinstance(cfg.get('panel_api_key_bootstrap'), dict) else {}
+    st.update({
+        'status': 'active',
+        'last_ack_at': utc_now(),
+        'last_error': '',
+    })
+    cfg['panel_api_key_bootstrap'] = st
+    cfg['updated_at'] = utc_now()
+    write_json(CONFIG_PATH, cfg, mode=0o600)
+    return True, ''
+
+
+def _pull_and_apply_bootstrap_keys(cfg: dict, dev: dict) -> dict:
+    base = _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base:
+        return {'ok': False, 'error': 'admin_base_url missing'}
+
+    payload = {
+        'deviceUuid': dev.get('device_uuid') or '',
+        'authKey': dev.get('auth_key') or '',
+    }
+    keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+    portal_key = str((keys.get('raspi_to_admin') if isinstance(keys, dict) else '') or '').strip()
+    if portal_key:
+        payload['apiKey'] = portal_key
+
+    code, resp, err = http_post_json(_panel_bootstrap_pull_url(base), payload, timeout=8)
+    if code is None:
+        return {'ok': False, 'error': str(err or 'pull failed')}
+    if not (200 <= code < 300):
+        return {'ok': False, 'error': _extract_response_message(resp if isinstance(resp, dict) else None) or f'http {code}'}
+
+    bootstrap = _extract_api_key_bootstrap(resp if isinstance(resp, dict) else None)
+    applied = _apply_api_key_bootstrap(cfg, bootstrap)
+    if not applied.get('updated'):
+        return {'ok': True, 'updated': False}
+
+    ack_ok, ack_error = _ack_api_key_bootstrap(cfg, dev, applied.get('ids') or [], applied.get('activated_directions') or [])
+    return {
+        'ok': ack_ok,
+        'updated': True,
+        'mode': applied.get('mode') or 'none',
+        'error': ack_error,
+    }
+
+
 def _refresh_link_targets_from_admin_context(cfg: dict, dev: dict) -> None:
     base = _safe_base_url(cfg.get('admin_base_url', ''))
     device_uuid = str(dev.get('device_uuid') or '').strip()
@@ -732,21 +893,33 @@ def _extract_panel_device_flags(resp: dict | None) -> dict | None:
     return None
 
 
-def _portal_auth_valid(data: dict, dev: dict) -> tuple[bool, str]:
+def _portal_auth_valid(data: dict, dev: dict, cfg: dict | None = None) -> tuple[bool, str]:
     uuid_in = str(data.get('deviceUuid') or data.get('device_uuid') or '').strip()
     auth_in = str(data.get('authKey') or data.get('auth_key') or '').strip()
+    inbound_api_key = str(data.get('apiKey') or data.get('api_key') or data.get('adminApiKey') or '').strip()
     uuid_ref = str(dev.get('device_uuid') or '').strip()
     auth_ref = str(dev.get('auth_key') or '').strip()
 
-    if not uuid_in or not auth_in:
+    if not uuid_in:
         return False, 'device_auth_missing'
     if not uuid_ref or not auth_ref:
         return False, 'device_auth_unavailable'
     if not hmac.compare_digest(uuid_in, uuid_ref):
         return False, 'device_uuid_invalid'
-    if not hmac.compare_digest(auth_in, auth_ref):
+    if auth_in and hmac.compare_digest(auth_in, auth_ref):
+        return True, ''
+
+    keys = cfg.get('panel_api_keys') if isinstance(cfg, dict) and isinstance(cfg.get('panel_api_keys'), dict) else {}
+    admin_api_key = str((keys.get('admin_to_raspi') if isinstance(keys, dict) else '') or '').strip()
+    if admin_api_key and inbound_api_key and hmac.compare_digest(inbound_api_key, admin_api_key):
+        return True, ''
+
+    if not auth_in and not inbound_api_key:
+        return False, 'device_auth_missing'
+    if auth_in and not hmac.compare_digest(auth_in, auth_ref):
         return False, 'auth_key_invalid'
-    return True, ''
+
+    return False, 'auth_key_invalid'
 
 
 def _normalize_search_items(items: list[dict]) -> list[dict]:
@@ -835,7 +1008,7 @@ def api_panel_test_url():
     }
     ping_url = _panel_url(cfg, 'panel_ping_path')
     if ping_url and (ping_url.startswith('http://') or ping_url.startswith('https://')):
-        ping_payload = _panel_ping_payload(dev, fp, host, ip)
+        ping_payload = _panel_ping_payload(dev, fp, host, ip, cfg)
         p_code, p_resp, _p_err = http_post_json(ping_url, ping_payload, timeout=8)
         existing_device['checked'] = True
         existing_device['http'] = p_code
@@ -904,7 +1077,7 @@ def api_panel_ping():
             panel_ping_path=cfg.get('panel_ping_path'),
         ), 400
 
-    payload = _panel_ping_payload(dev, fp, host, ip)
+    payload = _panel_ping_payload(dev, fp, host, ip, cfg)
     code, resp, err = http_post_json(url, payload, timeout=8)
 
     if code is None:
@@ -935,11 +1108,13 @@ def api_panel_ping():
     st = _update_panel_link_state(cfg, linked=linked, last_http=code, last_response=resp, last_error=panel_error)
     mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
     update_state(cfg, dev, fp, mode=mode, message='panel ping', panel_state_overrides=st)
+    bootstrap_refresh = _pull_and_apply_bootstrap_keys(cfg, dev) if linked else {'ok': False, 'updated': False}
 
     return jsonify(
         ok=(code == 200),
         panel_link_state=st,
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+        api_key_bootstrap=bootstrap_refresh,
         response=resp,
         http=code,
         resolved_url=url,
@@ -1030,6 +1205,10 @@ def api_panel_register():
             )
         else:
             _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
+        bootstrap = _extract_api_key_bootstrap(resp if isinstance(resp, dict) else None)
+        applied = _apply_api_key_bootstrap(cfg, bootstrap)
+        if applied.get('updated'):
+            _ack_api_key_bootstrap(cfg, dev, applied.get('ids') or [], applied.get('activated_directions') or [])
     if isinstance(resp, dict):
         slug = (resp.get('deviceSlug') or resp.get('slug') or '').strip()
         if slug:
@@ -1135,7 +1314,7 @@ def api_panel_sync_status():
         fp = ensure_fingerprint()
         host = get_hostname()
         ip = get_ip()
-        ping_payload = _panel_ping_payload(dev, fp, host, ip)
+        ping_payload = _panel_ping_payload(dev, fp, host, ip, cfg)
         ping_http, ping_resp, ping_err = http_post_json(ping_url, ping_payload, timeout=8)
         if ping_http is not None and 200 <= ping_http < 300:
             flags = _extract_panel_device_flags(ping_resp if isinstance(ping_resp, dict) else None)
@@ -1168,6 +1347,7 @@ def api_panel_sync_status():
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
         ping_http=ping_http,
         ping_error=ping_error,
+        api_key_bootstrap=_pull_and_apply_bootstrap_keys(cfg, dev),
     ), 200
 
 
@@ -1209,7 +1389,7 @@ def api_panel_sync_now():
     ping_code = None
     ping_resp = None
     if ping_url and (ping_url.startswith('http://') or ping_url.startswith('https://')):
-        ping_payload = _panel_ping_payload(dev, fp, host, ip)
+        ping_payload = _panel_ping_payload(dev, fp, host, ip, cfg)
         ping_code, ping_resp, _ping_err = http_post_json(ping_url, ping_payload, timeout=8)
         if ping_code is not None and 200 <= ping_code < 300:
             flags = _extract_panel_device_flags(ping_resp if isinstance(ping_resp, dict) else None)
@@ -1221,6 +1401,7 @@ def api_panel_sync_now():
             if linked_user_ids or linked_customer_ids:
                 _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
             _update_panel_link_state(cfg, linked=True, last_http=ping_code, last_response=ping_resp, last_error='')
+            bootstrap_refresh = _pull_and_apply_bootstrap_keys(cfg, dev)
             return jsonify(
                 ok=True,
                 synced=True,
@@ -1229,6 +1410,7 @@ def api_panel_sync_now():
                 panel_ping_url=ping_url,
                 response=ping_resp,
                 panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+                api_key_bootstrap=bootstrap_refresh,
             ), 200
 
     payload = _panel_sync_payload(cfg, dev, fp, host, ip)
@@ -1287,6 +1469,10 @@ def api_panel_sync_now():
         linked_user_ids, linked_customer_ids = _extract_link_ids(resp)
         if linked_user_ids or linked_customer_ids:
             _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
+        bootstrap = _extract_api_key_bootstrap(resp)
+        applied = _apply_api_key_bootstrap(cfg, bootstrap)
+        if applied.get('updated'):
+            _ack_api_key_bootstrap(cfg, dev, applied.get('ids') or [], applied.get('activated_directions') or [])
 
     _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
 
@@ -1300,6 +1486,7 @@ def api_panel_sync_now():
         panel_ping_http=ping_code,
         panel_ping_response=ping_resp,
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+        api_key_bootstrap=_pull_and_apply_bootstrap_keys(cfg, dev),
     ), 200
 
 
@@ -1309,7 +1496,7 @@ def api_panel_admin_sync_payload():
     dev = ensure_device()
     data = request.get_json(force=True, silent=True) or {}
 
-    auth_ok, auth_error = _portal_auth_valid(data, dev)
+    auth_ok, auth_error = _portal_auth_valid(data, dev, cfg)
     if not auth_ok:
         return jsonify(ok=False, error=auth_error), 401
 
@@ -1650,6 +1837,12 @@ def api_panel_link_status():
         panel_ping_path=cfg.get('panel_ping_path'),
         panel_link_state=st,
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+        panel_api_key_bootstrap=(cfg.get('panel_api_key_bootstrap') if isinstance(cfg.get('panel_api_key_bootstrap'), dict) else {}),
+        panel_api_keys={
+            'raspi_to_admin_configured': bool(str(((cfg.get('panel_api_keys') or {}).get('raspi_to_admin') if isinstance(cfg.get('panel_api_keys'), dict) else '') or '').strip()),
+            'admin_to_raspi_configured': bool(str(((cfg.get('panel_api_keys') or {}).get('admin_to_raspi') if isinstance(cfg.get('panel_api_keys'), dict) else '') or '').strip()),
+            'updated_at': ((cfg.get('panel_api_keys') or {}).get('updated_at') if isinstance(cfg.get('panel_api_keys'), dict) else None),
+        },
         panel_linked_users=(cfg.get('panel_linked_users') if isinstance(cfg.get('panel_linked_users'), list) else []),
         panel_linked_customers=(cfg.get('panel_linked_customers') if isinstance(cfg.get('panel_linked_customers'), list) else []),
         device_slug=cfg.get('device_slug') or '',
@@ -1677,6 +1870,18 @@ def api_panel_unlink():
     }
     cfg['panel_linked_users'] = []
     cfg['panel_linked_customers'] = []
+    cfg['panel_api_keys'] = {
+        'raspi_to_admin': '',
+        'admin_to_raspi': '',
+        'updated_at': utc_now(),
+    }
+    cfg['panel_api_key_bootstrap'] = {
+        'mode': 'none',
+        'status': 'none',
+        'last_pull_at': None,
+        'last_ack_at': None,
+        'last_error': '',
+    }
     cfg['updated_at'] = utc_now()
     write_json(CONFIG_PATH, cfg, mode=0o600)
 

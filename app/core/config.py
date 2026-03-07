@@ -39,6 +39,18 @@ DEFAULT_CONFIG: dict = {
     'session_secret': '',
     'panel_linked_users': [],
     'panel_linked_customers': [],
+    'panel_api_keys': {
+        'raspi_to_admin': '',
+        'admin_to_raspi': '',
+        'updated_at': None,
+    },
+    'panel_api_key_bootstrap': {
+        'mode': 'none',
+        'status': 'none',
+        'last_pull_at': None,
+        'last_ack_at': None,
+        'last_error': '',
+    },
 }
 
 
@@ -143,6 +155,22 @@ def ensure_config() -> dict:
     if not isinstance(cfg.get('panel_linked_customers'), list):
         cfg['panel_linked_customers'] = []
         changed = True
+    if not isinstance(cfg.get('panel_api_keys'), dict):
+        cfg['panel_api_keys'] = dict(DEFAULT_CONFIG['panel_api_keys'])
+        changed = True
+    else:
+        for key, value in DEFAULT_CONFIG['panel_api_keys'].items():
+            if key not in cfg['panel_api_keys']:
+                cfg['panel_api_keys'][key] = value
+                changed = True
+    if not isinstance(cfg.get('panel_api_key_bootstrap'), dict):
+        cfg['panel_api_key_bootstrap'] = dict(DEFAULT_CONFIG['panel_api_key_bootstrap'])
+        changed = True
+    else:
+        for key, value in DEFAULT_CONFIG['panel_api_key_bootstrap'].items():
+            if key not in cfg['panel_api_key_bootstrap']:
+                cfg['panel_api_key_bootstrap'][key] = value
+                changed = True
     if changed:
         cfg['updated_at'] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
