@@ -102,6 +102,21 @@ def _response_indicates_success(code: int | None, resp: dict | None) -> bool:
     return True
 
 
+def _extract_response_message(resp: dict | None) -> str:
+    if not isinstance(resp, dict):
+        return ''
+    candidates: list[object] = [
+        resp.get('message'),
+        resp.get('error'),
+        resp.get('detail'),
+        (resp.get('data') or {}).get('message') if isinstance(resp.get('data'), dict) else '',
+    ]
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ''
+
+
 def _extract_items(resp: dict | None) -> list[dict]:
     if not isinstance(resp, dict):
         return []
@@ -331,7 +346,19 @@ def api_panel_register():
     mode = 'play' if linked and cfg.get('selected_stream_slug') else 'setup'
     update_state(cfg, dev, fp, mode=mode, message='panel register', panel_state_overrides=st)
 
-    return jsonify(ok=linked, panel_link_state=st, response=resp, http=code, resolved_url=url), (200 if linked else 400)
+    if linked:
+        return jsonify(ok=True, panel_link_state=st, response=resp, http=code, resolved_url=url), 200
+
+    panel_msg = _extract_response_message(resp) or panel_error or 'Registrierung fehlgeschlagen.'
+    return jsonify(
+        ok=False,
+        error='register_failed',
+        detail=panel_msg,
+        panel_link_state=st,
+        response=resp,
+        http=code,
+        resolved_url=url,
+    ), 400
 
 
 @bp_panel.post('/api/panel/validate-token')
@@ -359,13 +386,35 @@ def api_panel_validate_token():
     code, resp, err = http_post_json(verify_url, payload, timeout=8)
     if code is None:
         return jsonify(ok=False, error='token_verify_failed', detail=str(err), verify_url=verify_url), 502
+    if code in (404, 405):
+        # Backward-compatible fallback: older panels may not expose a dedicated verify endpoint.
+        return jsonify(
+            ok=True,
+            valid=True,
+            skipped=True,
+            message='Token-Prüfung wird beim Registrieren durchgeführt.',
+            http=code,
+            verify_url=verify_url,
+            response=resp,
+        ), 200
 
     valid = _response_indicates_success(code, resp)
     if request_base and valid:
         cfg['admin_base_url'] = request_base
         cfg['updated_at'] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
-    return jsonify(ok=valid, valid=valid, http=code, verify_url=verify_url, response=resp), (200 if valid else 400)
+    if valid:
+        return jsonify(ok=True, valid=True, http=code, verify_url=verify_url, response=resp), 200
+    panel_msg = _extract_response_message(resp) or 'Token ungültig oder abgelaufen.'
+    return jsonify(
+        ok=False,
+        error='token_invalid',
+        detail=panel_msg,
+        valid=False,
+        http=code,
+        verify_url=verify_url,
+        response=resp,
+    ), 400
 
 
 def _search_proxy(target: str):
