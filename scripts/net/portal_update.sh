@@ -106,6 +106,15 @@ EOF
     echo "[git] previous cherry-pick detected, aborting cherry-pick state"
     runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git cherry-pick --abort" >/dev/null 2>&1 || true
   fi
+  # If index still contains unresolved paths (e.g. from a previous stash pop conflict),
+  # reset to HEAD so ff-only pull can continue deterministically.
+  UNMERGED_PATHS="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git diff --name-only --diff-filter=U" 2>/dev/null || true)"
+  if [[ -n "${UNMERGED_PATHS}" ]]; then
+    echo "[git] unresolved index conflicts detected, resetting working tree to HEAD"
+    echo "${UNMERGED_PATHS}" | sed 's/^/[git] conflict: /'
+    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git reset --hard HEAD" >/dev/null 2>&1 || true
+    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git clean -fd" >/dev/null 2>&1 || true
+  fi
 
   RUNTIME_STASH_REF=""
   RUNTIME_STASH_MSG="portal-update-runtime-${JOB_ID}"
