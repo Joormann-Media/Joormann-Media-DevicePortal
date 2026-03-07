@@ -88,7 +88,10 @@ run_config() {
   fi
 
   {
-    echo "agent off"
+    # Keep an active agent during pairing, otherwise many phones fail with
+    # "pairing not accepted" because no local confirmation handler exists.
+    echo "agent KeyboardDisplay"
+    echo "default-agent"
     if [[ "${needs_power}" -eq 1 ]]; then
       echo "power on"
     fi
@@ -124,4 +127,3 @@ case "${MODE}" in
     exit 2
     ;;
 esac
-
