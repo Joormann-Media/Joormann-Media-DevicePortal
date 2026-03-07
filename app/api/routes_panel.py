@@ -550,9 +550,6 @@ def _panel_auth_context_url(base_url: str) -> str:
 
 
 def _refresh_link_targets_from_admin_context(cfg: dict, dev: dict) -> None:
-    st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
-    if not bool(st.get('linked')):
-        return
     base = _safe_base_url(cfg.get('admin_base_url', ''))
     device_uuid = str(dev.get('device_uuid') or '').strip()
     auth_key = str(dev.get('auth_key') or '').strip()
