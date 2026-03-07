@@ -214,6 +214,10 @@ def api_panel_test_url():
 
     cfg = ensure_config()
     cfg['admin_base_url'] = base
+    if isinstance(hs_resp, dict):
+        register_path = str(hs_resp.get('registerPath') or '').strip()
+        if register_path:
+            cfg['panel_register_path'] = register_path
     cfg['updated_at'] = utc_now()
     ok_write, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok_write:
