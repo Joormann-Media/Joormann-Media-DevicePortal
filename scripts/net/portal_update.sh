@@ -95,19 +95,14 @@ EOF
 
   RUNTIME_STASH_REF=""
   RUNTIME_STASH_MSG="portal-update-runtime-${JOB_ID}"
-  RUNTIME_CHANGED="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git diff --name-only -- 'var/data/*.json'" 2>/dev/null || true)"
-  if [[ -n "${RUNTIME_CHANGED}" ]]; then
-    echo "[runtime] local runtime config changes detected"
-    echo "${RUNTIME_CHANGED}"
-    STASH_TOP_BEFORE="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
-    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash push -m \"${RUNTIME_STASH_MSG}\" -- 'var/data/*.json'" >/dev/null 2>&1
-    STASH_TOP_AFTER="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
-    if [[ "${STASH_TOP_AFTER}" != "${STASH_TOP_BEFORE}" && "${STASH_TOP_AFTER}" == *"${RUNTIME_STASH_MSG}"* ]]; then
-      RUNTIME_STASH_REF="${STASH_TOP_AFTER%% *}"
-      echo "[runtime] stashed local runtime config into ${RUNTIME_STASH_REF}"
-    else
-      echo "[runtime] stash requested but no new stash entry created"
-    fi
+  STASH_TOP_BEFORE="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
+  runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash push -m \"${RUNTIME_STASH_MSG}\" -- 'var/data/config.json' 'var/data/*.json'" >/dev/null 2>&1 || true
+  STASH_TOP_AFTER="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
+  if [[ "${STASH_TOP_AFTER}" != "${STASH_TOP_BEFORE}" && "${STASH_TOP_AFTER}" == *"${RUNTIME_STASH_MSG}"* ]]; then
+    RUNTIME_STASH_REF="${STASH_TOP_AFTER%% *}"
+    echo "[runtime] stashed local runtime config into ${RUNTIME_STASH_REF}"
+  else
+    echo "[runtime] no local runtime stash needed"
   fi
 
   GIT_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git pull --ff-only" 2>&1)"
