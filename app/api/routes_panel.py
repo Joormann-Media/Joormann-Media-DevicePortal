@@ -36,6 +36,50 @@ def _update_panel_link_state(cfg: dict, **kwargs) -> dict:
     return st
 
 
+def _current_linked(cfg: dict) -> bool:
+    st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
+    return bool(st.get('linked'))
+
+
+def _response_indicates_unlinked(code: int | None, resp: object) -> bool:
+    if code in (401, 403, 404, 410):
+        return True
+    if not isinstance(resp, dict):
+        return False
+
+    parts: list[str] = []
+    for key in ('error', 'code', 'status', 'message', 'detail', 'reason'):
+        value = resp.get(key)
+        if value is not None:
+            parts.append(str(value).strip().lower())
+
+    text = ' '.join(parts)
+    markers = (
+        'unlinked',
+        'not_linked',
+        'not linked',
+        'device_not_found',
+        'unknown_device',
+        'unknown device',
+        'device missing',
+        'auth_invalid',
+        'invalid_auth',
+        'invalid auth',
+        'auth key invalid',
+        'authkey invalid',
+        'revoked',
+    )
+    return any(marker in text for marker in markers)
+
+
+def _sticky_linked(cfg: dict, next_linked: bool, code: int | None = None, resp: object = None) -> bool:
+    if next_linked:
+        return True
+    if _response_indicates_unlinked(code, resp):
+        return False
+    return _current_linked(cfg)
+
+
 def _panel_ping_payload(dev: dict, fp: dict, host: str, ip: str) -> dict:
     return {
         'deviceUuid': dev.get('device_uuid') or '',
@@ -518,11 +562,18 @@ def api_panel_ping():
     code, resp, err = http_post_json(url, payload, timeout=8)
 
     if code is None:
-        st = _update_panel_link_state(cfg, linked=False, last_http=None, last_response=None, last_error=str(err))
-        update_state(cfg, dev, fp, mode='setup', message='panel ping failed', panel_state_overrides=st)
+        st = _update_panel_link_state(
+            cfg,
+            linked=_sticky_linked(cfg, False, None, None),
+            last_http=None,
+            last_response=None,
+            last_error=str(err),
+        )
+        fail_mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
+        update_state(cfg, dev, fp, mode=fail_mode, message='panel ping failed', panel_state_overrides=st)
         return jsonify(ok=False, error=str(err), panel_link_state=st), 502
 
-    linked = _response_indicates_success(code, resp)
+    linked = _sticky_linked(cfg, _response_indicates_success(code, resp), code, resp)
     panel_error = '' if linked else (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
 
     if isinstance(resp, dict):
@@ -533,7 +584,7 @@ def api_panel_ping():
             write_json(CONFIG_PATH, cfg, mode=0o600)
 
     st = _update_panel_link_state(cfg, linked=linked, last_http=code, last_response=resp, last_error=panel_error)
-    mode = 'play' if linked and cfg.get('selected_stream_slug') else 'setup'
+    mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
     update_state(cfg, dev, fp, mode=mode, message='panel ping', panel_state_overrides=st)
 
     return jsonify(ok=(code == 200), panel_link_state=st, response=resp, http=code, resolved_url=url)
@@ -590,14 +641,21 @@ def api_panel_register():
     code, resp, err = http_post_json(url, payload, timeout=8)
 
     if code is None:
-        st = _update_panel_link_state(cfg, linked=False, last_http=None, last_response=None, last_error=str(err))
-        update_state(cfg, dev, fp, mode='setup', message='register failed', panel_state_overrides=st)
+        st = _update_panel_link_state(
+            cfg,
+            linked=_sticky_linked(cfg, False, None, None),
+            last_http=None,
+            last_response=None,
+            last_error=str(err),
+        )
+        fail_mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
+        update_state(cfg, dev, fp, mode=fail_mode, message='register failed', panel_state_overrides=st)
         return jsonify(ok=False, error=str(err), panel_link_state=st), 502
 
-    linked = _response_indicates_success(code, resp)
+    linked = _sticky_linked(cfg, _response_indicates_success(code, resp), code, resp)
     panel_error = '' if linked else (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
 
-    if linked:
+    if _response_indicates_success(code, resp):
         cfg['registration_token'] = token
     if isinstance(resp, dict):
         slug = (resp.get('deviceSlug') or resp.get('slug') or '').strip()
@@ -607,10 +665,10 @@ def api_panel_register():
     write_json(CONFIG_PATH, cfg, mode=0o600)
 
     st = _update_panel_link_state(cfg, linked=linked, last_http=code, last_response=resp, last_error=panel_error)
-    mode = 'play' if linked and cfg.get('selected_stream_slug') else 'setup'
+    mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
     update_state(cfg, dev, fp, mode=mode, message='panel register', panel_state_overrides=st)
 
-    if linked:
+    if _response_indicates_success(code, resp):
         return jsonify(ok=True, panel_link_state=st, response=resp, http=code, resolved_url=url), 200
 
     panel_msg = _extract_response_message(resp) or panel_error or 'Registrierung fehlgeschlagen.'
@@ -648,7 +706,22 @@ def api_panel_sync_status():
     if code is None:
         return jsonify(ok=False, error='sync_status_failed', detail=str(err), sync_url=sync_url), 502
     if code < 200 or code >= 300:
-        return jsonify(ok=False, error='sync_status_failed', http=code, sync_url=sync_url, response=resp), 400
+        st = _update_panel_link_state(
+            cfg,
+            linked=_sticky_linked(cfg, False, code, resp),
+            last_http=code,
+            last_response=resp,
+            last_error=(resp.get('error') if isinstance(resp, dict) else '') or f'http {code}',
+        )
+        return jsonify(ok=False, error='sync_status_failed', http=code, sync_url=sync_url, response=resp, panel_link_state=st), 400
+
+    _update_panel_link_state(
+        cfg,
+        linked=_sticky_linked(cfg, _response_indicates_success(code, resp), code, resp),
+        last_http=code,
+        last_response=resp,
+        last_error='',
+    )
 
     if request_base:
         cfg['admin_base_url'] = request_base
@@ -698,6 +771,13 @@ def api_panel_sync_now():
 
     success = _response_indicates_success(code, resp)
     if not success:
+        _update_panel_link_state(
+            cfg,
+            linked=_sticky_linked(cfg, False, code, resp),
+            last_http=code,
+            last_response=resp,
+            last_error=(resp.get('error') if isinstance(resp, dict) else '') or f'http {code}',
+        )
         panel_msg = _extract_response_message(resp) or f'http {code}'
         return jsonify(ok=False, error='sync_now_failed', detail=panel_msg, http=code, panel_register_url=url, response=resp), 400
 
@@ -707,6 +787,8 @@ def api_panel_sync_now():
             cfg['device_slug'] = slug
             cfg['updated_at'] = utc_now()
             write_json(CONFIG_PATH, cfg, mode=0o600)
+
+    _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
 
     return jsonify(ok=True, synced=True, http=code, panel_register_url=url, response=resp), 200
 
