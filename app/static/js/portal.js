@@ -187,6 +187,18 @@
     return Math.max(0, Math.min(100, Math.round(num)));
   }
 
+  function updateLocalVersion(update) {
+    const readable = String((update || {}).local_version || "").trim();
+    if (readable) return readable;
+    const shortCommit = String((update || {}).local_commit || "").trim().slice(0, 7);
+    return shortCommit || "-";
+  }
+
+  function updateRemoteShort(update) {
+    const shortCommit = String((update || {}).remote_commit || "").trim().slice(0, 7);
+    return shortCommit || "-";
+  }
+
   function setProgressBar(barId, pct, variant = "success") {
     const el = q(barId);
     if (!el) return;
@@ -342,18 +354,20 @@
 
     const tailscale = network.tailscale || {};
     const tailscaleConnected = !!(tailscale.present && tailscale.ip);
+    const localVersion = updateLocalVersion(update);
+    const remoteShort = updateRemoteShort(update);
     const items = [
       {
         name: "DevicePortal",
         type: "managed",
-        version: (update.local_commit || "").slice(0, 7) || "-",
+        version: localVersion,
         state: update.error ? "unknown" : "installed",
         badge: update.error ? "secondary" : "success",
       },
       {
         name: "Portal Update",
         type: "git",
-        version: update.available ? `${(update.local_commit || "").slice(0, 7)} -> ${(update.remote_commit || "").slice(0, 7)}` : (update.local_commit || "").slice(0, 7) || "-",
+        version: update.available ? `${localVersion} -> ${remoteShort}` : localVersion,
         state: update.available ? "update available" : (update.error ? "check failed" : "up to date"),
         badge: update.available ? "warning" : (update.error ? "secondary" : "success"),
       },
@@ -768,17 +782,17 @@
     const updateBadge = q("hero-update");
     if (updateBadge) {
       updateBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
+      const localVersion = updateLocalVersion(update);
       if (update.available) {
         updateBadge.classList.add("text-bg-warning");
-        const shortLocal = (update.local_commit || "").slice(0, 7);
-        const shortRemote = (update.remote_commit || "").slice(0, 7);
-        updateBadge.textContent = `Update verfügbar (${shortLocal} -> ${shortRemote})`;
+        const shortRemote = updateRemoteShort(update);
+        updateBadge.textContent = `Update verfügbar (${localVersion} -> ${shortRemote})`;
       } else if (update.error) {
         updateBadge.classList.add("text-bg-secondary");
         updateBadge.textContent = "Update-Check nicht verfügbar";
       } else {
         updateBadge.classList.add("text-bg-success");
-        updateBadge.textContent = "Up to date";
+        updateBadge.textContent = `Up to date (${localVersion})`;
       }
     }
 
@@ -2831,6 +2845,25 @@
     }
   }
 
+  async function trySyncUpdateResultToAdmin() {
+    try {
+      const state = (statusDashboardState.status || {}).state || {};
+      const panel = state.panel || {};
+      const linked = !!panel.linked;
+      const adminBase = String(els.adminBase?.value || "").trim();
+      if (!linked || !adminBase) {
+        return false;
+      }
+      await panelSyncNow();
+      await refreshStatus();
+      return true;
+    } catch (syncErr) {
+      const detail = syncErr && syncErr.message ? syncErr.message : String(syncErr || "");
+      toast(`Portal-Update ok, Admin-Sync fehlgeschlagen: ${detail || "unbekannter Fehler"}`, "warning");
+      return false;
+    }
+  }
+
   async function pollPortalUpdateStatus(jobId, announceDone = false) {
     if (updatePollHandle) {
       clearInterval(updatePollHandle);
@@ -2856,6 +2889,7 @@
             if (done) {
               // Force status re-check so Hero update badge reflects the new revision.
               await refreshStatus();
+              await trySyncUpdateResultToAdmin();
               await new Promise((resolve) => window.setTimeout(resolve, 1200));
               await refreshStatus();
               persistUpdateResultFlash("Portal-Update erfolgreich abgeschlossen. Seite wurde neu geladen.", "success");
@@ -2884,6 +2918,8 @@
                 const done = latestStatus === "done";
                 toast(done ? "Portal-Update abgeschlossen." : "Portal-Update fehlgeschlagen.", done ? "success" : "danger");
                 if (done) {
+                  await refreshStatus();
+                  await trySyncUpdateResultToAdmin();
                   persistUpdateResultFlash("Portal-Update erfolgreich abgeschlossen.", "success");
                   window.setTimeout(() => window.location.reload(), 2200);
                 }

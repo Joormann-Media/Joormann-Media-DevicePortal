@@ -106,6 +106,9 @@ def _software_snapshot(update_info: dict, network_info: dict, storage_info: dict
     tailscale = (network_info.get('tailscale') if isinstance(network_info, dict) else {}) or {}
     tailscale_present = bool(tailscale.get('present'))
     tailscale_ip = str(tailscale.get('ip') or '').strip()
+    local_version = str(update_info.get('local_version') or '').strip()
+    local_commit = str(update_info.get('local_commit') or '').strip()
+    remote_commit = str(update_info.get('remote_commit') or '').strip()
     items = [
         {
             'name': 'DevicePortal',
@@ -113,9 +116,9 @@ def _software_snapshot(update_info: dict, network_info: dict, storage_info: dict
             'category': 'portal',
             'type': 'git',
             'status': 'installed',
-            'version': str(update_info.get('local_commit') or '').strip()[:12],
+            'version': local_version or local_commit[:12],
             'source': 'portal',
-            'notes': 'local branch: ' + str(update_info.get('local_branch') or '').strip(),
+            'notes': 'local branch: ' + str(update_info.get('local_branch') or '').strip() + (f' | commit: {local_commit[:12]}' if local_commit else ''),
         },
         {
             'name': 'Portal Update',
@@ -123,7 +126,7 @@ def _software_snapshot(update_info: dict, network_info: dict, storage_info: dict
             'category': 'update',
             'type': 'git',
             'status': 'update_available' if bool(update_info.get('available')) else ('unknown' if str(update_info.get('error') or '').strip() else 'up_to_date'),
-            'version': str(update_info.get('remote_commit') or '').strip()[:12] or str(update_info.get('local_commit') or '').strip()[:12],
+            'version': remote_commit[:12] or local_commit[:12],
             'source': 'origin',
             'notes': str(update_info.get('error') or '').strip(),
         },
