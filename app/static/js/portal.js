@@ -993,6 +993,8 @@
         registration_token: setupWizardState.token,
         target_type: setupWizardState.linkType,
         target_id: setupWizardState.selectedLinkItem.id,
+        selected_user: setupWizardState.linkType === "user" ? setupWizardState.selectedLinkItem : null,
+        selected_customer: setupWizardState.linkType === "customer" ? setupWizardState.selectedLinkItem : null,
       },
       timeoutMs: 10000,
     });

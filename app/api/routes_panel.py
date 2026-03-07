@@ -458,6 +458,29 @@ def _extract_link_ids(resp: dict | None) -> tuple[list[int], list[int]]:
     return sorted(user_ids), sorted(customer_ids)
 
 
+def _extract_link_rows(resp: dict | None) -> tuple[list[object], list[object]]:
+    if not isinstance(resp, dict):
+        return [], []
+
+    candidates: list[dict] = [resp]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        candidates.append(data)
+
+    user_rows: list[object] = []
+    customer_rows: list[object] = []
+
+    for source in candidates:
+        users = source.get('linkedUsers') or source.get('linked_users')
+        if isinstance(users, list):
+            user_rows = users
+        customers = source.get('linkedCustomers') or source.get('linked_customers')
+        if isinstance(customers, list):
+            customer_rows = customers
+
+    return user_rows, customer_rows
+
+
 def _normalize_link_rows(items: list[object], row_type: str) -> list[dict]:
     rows_by_id: dict[int, dict] = {}
     for item in items:
@@ -994,11 +1017,19 @@ def api_panel_register():
     if _response_indicates_success(code, resp):
         cfg['registration_token'] = token
         linked_user_ids, linked_customer_ids = _extract_link_ids(resp if isinstance(resp, dict) else None)
+        linked_user_rows, linked_customer_rows = _extract_link_rows(resp if isinstance(resp, dict) else None)
         if link_target_type == 'user' and link_target_id.isdigit():
             linked_user_ids = sorted(set(linked_user_ids + [int(link_target_id)]))
         if link_target_type == 'customer' and link_target_id.isdigit():
             linked_customer_ids = sorted(set(linked_customer_ids + [int(link_target_id)]))
-        _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
+        if linked_user_rows or linked_customer_rows:
+            _persist_link_targets(
+                cfg,
+                linked_user_rows or linked_user_ids,
+                linked_customer_rows or linked_customer_ids,
+            )
+        else:
+            _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
     if isinstance(resp, dict):
         slug = (resp.get('deviceSlug') or resp.get('slug') or '').strip()
         if slug:
@@ -1551,6 +1582,8 @@ def api_panel_assign():
 
     if request_base:
         cfg['admin_base_url'] = request_base
+    selected_user = data.get('selected_user') if isinstance(data.get('selected_user'), dict) else {}
+    selected_customer = data.get('selected_customer') if isinstance(data.get('selected_customer'), dict) else {}
     current_users: list[int] = []
     for row in cfg.get('panel_linked_users', []):
         if not isinstance(row, dict):
@@ -1575,7 +1608,29 @@ def api_panel_assign():
         current_users = sorted(set(current_users + [int(target_id)]))
     if target_type == 'customer' and target_id.isdigit():
         current_customers = sorted(set(current_customers + [int(target_id)]))
-    _persist_link_targets(cfg, current_users, current_customers)
+
+    linked_user_rows, linked_customer_rows = _extract_link_rows(resp if isinstance(resp, dict) else None)
+    if target_type == 'user' and target_id.isdigit():
+        if linked_user_rows:
+            pass
+        elif selected_user:
+            linked_user_rows = [selected_user]
+    if target_type == 'customer' and target_id.isdigit():
+        if linked_customer_rows:
+            pass
+        elif selected_customer:
+            linked_customer_rows = [selected_customer]
+
+    if linked_user_rows or linked_customer_rows:
+        merged_users: list[object] = []
+        merged_users.extend(cfg.get('panel_linked_users') if isinstance(cfg.get('panel_linked_users'), list) else [])
+        merged_users.extend(linked_user_rows or current_users)
+        merged_customers: list[object] = []
+        merged_customers.extend(cfg.get('panel_linked_customers') if isinstance(cfg.get('panel_linked_customers'), list) else [])
+        merged_customers.extend(linked_customer_rows or current_customers)
+        _persist_link_targets(cfg, merged_users, merged_customers)
+    else:
+        _persist_link_targets(cfg, current_users, current_customers)
     cfg['updated_at'] = utc_now()
     write_json(CONFIG_PATH, cfg, mode=0o600)
     return jsonify(ok=True, assigned=True, http=code, assign_url=assign_url, response=resp)
