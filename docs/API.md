@@ -28,6 +28,7 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | panel | POST | `/api/panel/test-url` | `routes_panel.api_panel_test_url` |
 | panel | POST | `/api/panel/ping` | `routes_panel.api_panel_ping` |
 | panel | POST | `/api/panel/register` | `routes_panel.api_panel_register` |
+| panel | POST | `/api/panel/admin-sync-payload` | `routes_panel.api_panel_admin_sync_payload` |
 | panel | GET | `/api/panel/link-status` | `routes_panel.api_panel_link_status` |
 | panel | POST | `/api/panel/unlink` | `routes_panel.api_panel_unlink` |
 | plan | POST | `/api/plan/pull` | `routes_plan.api_plan_pull` |

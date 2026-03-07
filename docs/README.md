@@ -22,6 +22,7 @@ Defaults (overridable by env vars):
 - `POST /api/panel/validate-token`
 - `POST /api/panel/ping`
 - `POST /api/panel/register`
+- `POST /api/panel/admin-sync-payload` (auth via `deviceUuid` + `authKey`)
 - `GET /api/panel/search-users`
 - `GET /api/panel/search-customers`
 - `POST /api/panel/assign`

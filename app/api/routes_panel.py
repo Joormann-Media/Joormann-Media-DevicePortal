@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from urllib.parse import urlencode
 
 from flask import Blueprint, jsonify, request
@@ -505,6 +506,23 @@ def _extract_items(resp: dict | None) -> list[dict]:
     return []
 
 
+def _portal_auth_valid(data: dict, dev: dict) -> tuple[bool, str]:
+    uuid_in = str(data.get('deviceUuid') or data.get('device_uuid') or '').strip()
+    auth_in = str(data.get('authKey') or data.get('auth_key') or '').strip()
+    uuid_ref = str(dev.get('device_uuid') or '').strip()
+    auth_ref = str(dev.get('auth_key') or '').strip()
+
+    if not uuid_in or not auth_in:
+        return False, 'device_auth_missing'
+    if not uuid_ref or not auth_ref:
+        return False, 'device_auth_unavailable'
+    if not hmac.compare_digest(uuid_in, uuid_ref):
+        return False, 'device_uuid_invalid'
+    if not hmac.compare_digest(auth_in, auth_ref):
+        return False, 'auth_key_invalid'
+    return True, ''
+
+
 def _normalize_search_items(items: list[dict]) -> list[dict]:
     normalized: list[dict] = []
     for item in items:
@@ -854,6 +872,35 @@ def api_panel_sync_now():
     _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
 
     return jsonify(ok=True, synced=True, http=code, panel_register_url=url, response=resp), 200
+
+
+@bp_panel.post('/api/panel/admin-sync-payload')
+def api_panel_admin_sync_payload():
+    cfg = ensure_config()
+    dev = ensure_device()
+    data = request.get_json(force=True, silent=True) or {}
+
+    auth_ok, auth_error = _portal_auth_valid(data, dev)
+    if not auth_ok:
+        return jsonify(ok=False, error=auth_error), 401
+
+    refresh_fingerprint = _is_truthy(data.get('refresh_fingerprint', True))
+    fp = collect_fingerprint() if refresh_fingerprint else ensure_fingerprint()
+    host = get_hostname()
+    ip = get_ip()
+
+    payload = _panel_sync_payload(cfg, dev, fp, host, ip)
+    st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
+
+    mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
+    update_state(cfg, dev, fp, mode=mode, message='admin live payload', panel_state_overrides=st)
+
+    return jsonify(
+        ok=True,
+        payload=payload,
+        panel_link_state=st,
+        collected_at=utc_now(),
+    ), 200
 
 
 @bp_panel.post('/api/panel/rebuild-fingerprint')
