@@ -93,6 +93,20 @@ EOF
     echo "[git] before=${BEFORE_COMMIT}"
   fi
 
+  # Recover from previously interrupted pull/rebase/cherry-pick sessions.
+  if runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && test -f .git/MERGE_HEAD"; then
+    echo "[git] previous merge conflict detected, aborting merge state"
+    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git merge --abort" >/dev/null 2>&1 || true
+  fi
+  if runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && test -d .git/rebase-merge -o -d .git/rebase-apply"; then
+    echo "[git] previous rebase detected, aborting rebase state"
+    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rebase --abort" >/dev/null 2>&1 || true
+  fi
+  if runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && test -f .git/CHERRY_PICK_HEAD"; then
+    echo "[git] previous cherry-pick detected, aborting cherry-pick state"
+    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git cherry-pick --abort" >/dev/null 2>&1 || true
+  fi
+
   RUNTIME_STASH_REF=""
   RUNTIME_STASH_MSG="portal-update-runtime-${JOB_ID}"
   STASH_TOP_BEFORE="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
