@@ -34,6 +34,11 @@ def _mode_human(mode: str) -> str:
     return "Login über Adminpanel" if mode == "panel_remote" else "Lokaler System-Login"
 
 
+def _is_dev_mode() -> bool:
+    raw = (request.args.get("mode") or request.form.get("mode") or request.form.get("dev_mode") or "").strip().lower()
+    return raw in {"dev", "1", "true", "yes", "on"}
+
+
 @bp_auth.get("/login")
 def login_page():
     if is_authenticated():
@@ -43,6 +48,7 @@ def login_page():
     dev = ensure_device()
     refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(cfg)
+    dev_mode = _is_dev_mode()
     pending_2fa = get_pending_panel_2fa() if mode_info["mode"] == "panel_remote" else {}
     return render_template(
         "login.html",
@@ -55,6 +61,7 @@ def login_page():
         next_url=_safe_next(request.args.get("next") or "/"),
         twofa_required=bool(pending_2fa),
         twofa_user=(pending_2fa.get("display_name") or pending_2fa.get("username") or "") if isinstance(pending_2fa, dict) else "",
+        dev_mode=dev_mode,
     )
 
 
@@ -67,10 +74,13 @@ def login_submit():
     dev = ensure_device()
     refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(cfg)
+    dev_mode = _is_dev_mode()
 
     username = (request.form.get("username") or request.form.get("_username") or "").strip()
     password = request.form.get("password") or request.form.get("_password") or ""
     next_url = _safe_next(request.form.get("next") or request.args.get("next") or "/")
+    mode_override = (request.form.get("auth_mode_override") or "").strip()
+    submit_mode = mode_override if mode_override in {"local_system", "panel_remote"} else mode_info["mode"]
 
     if not username or not password:
         return render_template(
@@ -84,10 +94,11 @@ def login_submit():
             next_url=next_url,
             twofa_required=False,
             twofa_user="",
+            dev_mode=dev_mode,
         ), 400
 
     try:
-        if mode_info["mode"] == "panel_remote":
+        if submit_mode == "panel_remote":
             clear_pending_panel_2fa()
             result = authenticate_via_panel(
                 base_url=str(mode_info.get("panel_base_url") or ""),
@@ -114,6 +125,7 @@ def login_submit():
                     next_url=next_url,
                     twofa_required=True,
                     twofa_user=str(pending_2fa.get("display_name") or pending_2fa.get("username") or username),
+                    dev_mode=dev_mode,
                 ), 200
             login_user(
                 username=str(result.get("username") or username),
@@ -141,6 +153,7 @@ def login_submit():
             next_url=next_url,
             twofa_required=has_pending_panel_2fa(),
             twofa_user="",
+            dev_mode=dev_mode,
         ), 401
 
     return redirect(next_url)
@@ -153,8 +166,11 @@ def login_submit_2fa():
 
     cfg = ensure_config()
     mode_info = resolve_auth_mode(cfg)
+    dev_mode = _is_dev_mode()
     next_url = _safe_next(request.form.get("next") or request.args.get("next") or "/")
     if mode_info["mode"] != "panel_remote":
+        if dev_mode:
+            return redirect(url_for("auth.login_page", next=next_url, mode="dev"))
         return redirect(url_for("auth.login_page", next=next_url))
 
     pending_2fa = get_pending_panel_2fa()
@@ -170,6 +186,7 @@ def login_submit_2fa():
             next_url=next_url,
             twofa_required=False,
             twofa_user="",
+            dev_mode=dev_mode,
         ), 401
 
     code = (request.form.get("otp_code") or request.form.get("_auth_code") or "").strip()
@@ -187,6 +204,7 @@ def login_submit_2fa():
             next_url=next_url,
             twofa_required=True,
             twofa_user=str(pending_2fa.get("display_name") or pending_2fa.get("username") or ""),
+            dev_mode=dev_mode,
         ), 401
 
     login_user(

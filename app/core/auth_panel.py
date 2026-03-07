@@ -120,6 +120,25 @@ def _lookup_user_candidate(base_url: str, device_uuid: str, auth_key: str, ident
     return None
 
 
+def _build_identifier_attempts(user_input: str, user_candidate: dict) -> list[str]:
+    attempts: list[str] = []
+    seen: set[str] = set()
+    for raw in (
+        user_input,
+        str(user_candidate.get("username") or ""),
+        str(user_candidate.get("email") or ""),
+    ):
+        value = (raw or "").strip()
+        if not value:
+            continue
+        norm = value.lower()
+        if norm in seen:
+            continue
+        seen.add(norm)
+        attempts.append(value)
+    return attempts
+
+
 def _prepare_two_factor_payload(*, session: requests.Session, base_url: str, location: str, user_candidate: dict) -> dict:
     challenge_url = urljoin(f"{base_url}/", location or "/2fa")
     try:
@@ -178,50 +197,57 @@ def authenticate_via_panel(
         raise PanelAuthError("Benutzer ist nicht mit diesem Gerät verknüpft.", code="login_not_linked")
 
     login_url = f"{base}/login"
-    session = requests.Session()
-    try:
-        login_page = session.get(login_url, timeout=8)
-    except Exception as exc:
-        raise PanelAuthError("Adminpanel Login-Seite nicht erreichbar.", code="panel_unreachable") from exc
+    attempts = _build_identifier_attempts(user_identifier, user_candidate)
+    last_error_code = "invalid_credentials"
+    for login_identifier in attempts:
+        session = requests.Session()
+        try:
+            login_page = session.get(login_url, timeout=8)
+        except Exception as exc:
+            raise PanelAuthError("Adminpanel Login-Seite nicht erreichbar.", code="panel_unreachable") from exc
 
-    if login_page.status_code < 200 or login_page.status_code >= 300:
-        raise PanelAuthError("Adminpanel Login-Seite liefert Fehler.", code="panel_login_unreachable")
+        if login_page.status_code < 200 or login_page.status_code >= 300:
+            raise PanelAuthError("Adminpanel Login-Seite liefert Fehler.", code="panel_login_unreachable")
 
-    csrf = _extract_csrf_token(login_page.text or "")
-    if not csrf:
-        raise PanelAuthError("CSRF-Token im Adminpanel nicht gefunden.", code="panel_login_csrf_missing")
+        csrf = _extract_csrf_token(login_page.text or "")
+        if not csrf:
+            raise PanelAuthError("CSRF-Token im Adminpanel nicht gefunden.", code="panel_login_csrf_missing")
 
-    form = {
-        "_username": user_identifier,
-        "_password": password,
-        "_csrf_token": csrf,
-    }
+        form = {
+            "_username": login_identifier,
+            "_password": password,
+            "_csrf_token": csrf,
+        }
 
-    try:
-        result = session.post(login_url, data=form, timeout=10, allow_redirects=False)
-    except Exception as exc:
-        raise PanelAuthError("Adminpanel Login fehlgeschlagen.", code="panel_unreachable") from exc
+        try:
+            result = session.post(login_url, data=form, timeout=10, allow_redirects=False)
+        except Exception as exc:
+            raise PanelAuthError("Adminpanel Login fehlgeschlagen.", code="panel_unreachable") from exc
 
-    location = str(result.headers.get("Location") or "")
-    if result.status_code in (302, 303):
-        lower_location = location.lower()
-        if "/2fa" in lower_location:
-            return _prepare_two_factor_payload(
-                session=session,
-                base_url=base,
-                location=location,
-                user_candidate=user_candidate,
-            )
-        if "/login" not in lower_location:
-            return {
-                "ok": True,
-                "username": str(user_candidate.get("username") or user_identifier),
-                "display_name": str(user_candidate.get("displayName") or user_candidate.get("username") or user_identifier),
-                "user_id": user_id,
-                "requires_2fa": False,
-            }
+        location = str(result.headers.get("Location") or "")
+        if result.status_code in (302, 303):
+            lower_location = location.lower()
+            if "/2fa" in lower_location:
+                return _prepare_two_factor_payload(
+                    session=session,
+                    base_url=base,
+                    location=location,
+                    user_candidate=user_candidate,
+                )
+            if "/login" not in lower_location:
+                return {
+                    "ok": True,
+                    "username": str(user_candidate.get("username") or login_identifier),
+                    "display_name": str(user_candidate.get("displayName") or user_candidate.get("username") or login_identifier),
+                    "user_id": user_id,
+                    "requires_2fa": False,
+                }
+            last_error_code = "invalid_credentials"
+            continue
 
-    raise PanelAuthError("Benutzername oder Passwort ungültig.", code="invalid_credentials")
+        last_error_code = "invalid_credentials"
+
+    raise PanelAuthError("Benutzername oder Passwort ungültig.", code=last_error_code)
 
 
 def complete_panel_two_factor(*, pending_2fa: dict, code: str) -> dict:

@@ -29,6 +29,9 @@
 
         <div class="d-flex flex-wrap gap-2 mb-3">
           <span class="badge text-bg-primary">{{ auth_mode_label }}</span>
+          {% if dev_mode %}
+            <span class="badge text-bg-warning text-dark">DEV: beide Login-Modi aktiv</span>
+          {% endif %}
           {% if auth_mode == 'panel_remote' %}
             <span class="badge text-bg-light border text-dark">{{ linked_user_count }} verknüpfte User</span>
             {% if panel_base_url %}
@@ -47,6 +50,7 @@
           {% endif %}
           <form method="post" action="{{ url_for('auth.login_submit_2fa') }}" autocomplete="one-time-code">
             <input type="hidden" name="next" value="{{ next_url }}">
+            {% if dev_mode %}<input type="hidden" name="mode" value="dev">{% endif %}
             <div class="mb-3">
               <label for="login-otp" class="form-label">2FA-Code</label>
               <input id="login-otp" name="otp_code" type="text" inputmode="numeric" class="form-control" required autofocus>
@@ -54,21 +58,68 @@
             <button type="submit" class="btn btn-primary w-100">2FA prüfen</button>
           </form>
           <div class="mt-2">
-            <a class="btn btn-outline-secondary w-100" href="{{ url_for('auth.login_page', next=next_url) }}">Zurück zum Login</a>
+            {% if dev_mode %}
+              <a class="btn btn-outline-secondary w-100" href="{{ url_for('auth.login_page', next=next_url, mode='dev') }}">Zurück zum Login</a>
+            {% else %}
+              <a class="btn btn-outline-secondary w-100" href="{{ url_for('auth.login_page', next=next_url) }}">Zurück zum Login</a>
+            {% endif %}
           </div>
         {% else %}
-          <form method="post" action="{{ url_for('auth.login_submit') }}" autocomplete="on">
-            <input type="hidden" name="next" value="{{ next_url }}">
-            <div class="mb-3">
-              <label for="login-username" class="form-label">Benutzername / E-Mail</label>
-              <input id="login-username" name="username" type="text" class="form-control" required autofocus>
+          {% if dev_mode %}
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <div class="border rounded-3 p-3 h-100">
+                  <div class="fw-semibold mb-2">Lokaler System-Login</div>
+                  <form method="post" action="{{ url_for('auth.login_submit') }}" autocomplete="on">
+                    <input type="hidden" name="next" value="{{ next_url }}">
+                    <input type="hidden" name="mode" value="dev">
+                    <input type="hidden" name="auth_mode_override" value="local_system">
+                    <div class="mb-2">
+                      <label for="login-username-local" class="form-label">Benutzername</label>
+                      <input id="login-username-local" name="username" type="text" class="form-control" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                      <label for="login-password-local" class="form-label">Passwort</label>
+                      <input id="login-password-local" name="password" type="password" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary w-100">Lokal einloggen</button>
+                  </form>
+                </div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <div class="border rounded-3 p-3 h-100">
+                  <div class="fw-semibold mb-2">Panel-Login</div>
+                  <form method="post" action="{{ url_for('auth.login_submit') }}" autocomplete="on">
+                    <input type="hidden" name="next" value="{{ next_url }}">
+                    <input type="hidden" name="mode" value="dev">
+                    <input type="hidden" name="auth_mode_override" value="panel_remote">
+                    <div class="mb-2">
+                      <label for="login-username-panel" class="form-label">Benutzername / E-Mail</label>
+                      <input id="login-username-panel" name="username" type="text" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                      <label for="login-password-panel" class="form-label">Passwort</label>
+                      <input id="login-password-panel" name="password" type="password" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Panel einloggen</button>
+                  </form>
+                </div>
+              </div>
             </div>
-            <div class="mb-3">
-              <label for="login-password" class="form-label">Passwort</label>
-              <input id="login-password" name="password" type="password" class="form-control" required>
-            </div>
-            <button type="submit" class="btn btn-primary w-100">Einloggen</button>
-          </form>
+          {% else %}
+            <form method="post" action="{{ url_for('auth.login_submit') }}" autocomplete="on">
+              <input type="hidden" name="next" value="{{ next_url }}">
+              <div class="mb-3">
+                <label for="login-username" class="form-label">Benutzername / E-Mail</label>
+                <input id="login-username" name="username" type="text" class="form-control" required autofocus>
+              </div>
+              <div class="mb-3">
+                <label for="login-password" class="form-label">Passwort</label>
+                <input id="login-password" name="password" type="password" class="form-control" required>
+              </div>
+              <button type="submit" class="btn btn-primary w-100">Einloggen</button>
+            </form>
+          {% endif %}
         {% endif %}
 
         <div class="small text-secondary mt-3">
