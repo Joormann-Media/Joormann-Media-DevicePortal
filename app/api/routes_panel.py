@@ -99,6 +99,15 @@ def _response_indicates_success(code: int | None, resp: dict | None) -> bool:
     for key in ('ok', 'success', 'valid', 'linked', 'registered', 'assigned'):
         if key in resp:
             return _is_truthy(resp.get(key))
+    data = resp.get('data')
+    if isinstance(data, dict):
+        for key in ('ok', 'success', 'valid', 'linked', 'registered', 'assigned'):
+            if key in data:
+                return _is_truthy(data.get(key))
+        if data.get('deviceId') or data.get('deviceSlug'):
+            return True
+    if resp.get('deviceId') or resp.get('deviceSlug'):
+        return True
     return True
 
 
@@ -109,7 +118,12 @@ def _extract_response_message(resp: dict | None) -> str:
         resp.get('message'),
         resp.get('error'),
         resp.get('detail'),
+        resp.get('error_code'),
+        resp.get('raw'),
         (resp.get('data') or {}).get('message') if isinstance(resp.get('data'), dict) else '',
+        (resp.get('data') or {}).get('detail') if isinstance(resp.get('data'), dict) else '',
+        (resp.get('data') or {}).get('error') if isinstance(resp.get('data'), dict) else '',
+        (resp.get('data') or {}).get('error_code') if isinstance(resp.get('data'), dict) else '',
     ]
     for value in candidates:
         if isinstance(value, str) and value.strip():
@@ -258,7 +272,7 @@ def api_panel_ping():
         update_state(cfg, dev, fp, mode='setup', message='panel ping failed', panel_state_overrides=st)
         return jsonify(ok=False, error=str(err), panel_link_state=st), 502
 
-    linked = code == 200 and isinstance(resp, dict) and bool(resp.get('deviceId') or resp.get('linked'))
+    linked = _response_indicates_success(code, resp)
     panel_error = '' if linked else (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
 
     if isinstance(resp, dict):
@@ -330,7 +344,7 @@ def api_panel_register():
         update_state(cfg, dev, fp, mode='setup', message='register failed', panel_state_overrides=st)
         return jsonify(ok=False, error=str(err), panel_link_state=st), 502
 
-    linked = code in (200, 201) and isinstance(resp, dict) and bool(resp.get('deviceId') or resp.get('linked'))
+    linked = _response_indicates_success(code, resp)
     panel_error = '' if linked else (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
 
     if linked:
