@@ -332,3 +332,23 @@ body.portal-body {
   max-height: 220px;
   overflow: auto;
 }
+
+.system-subtabs .nav-link {
+  border: 1px solid var(--portal-border);
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 0.7rem;
+  font-weight: 600;
+}
+
+.system-subtabs .nav-link.active {
+  background: #111827;
+  border-color: #111827;
+  color: #f9fafb;
+}
+
+.link-readonly-fields .form-control:disabled {
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+}

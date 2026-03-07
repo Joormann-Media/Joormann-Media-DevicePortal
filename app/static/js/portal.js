@@ -38,6 +38,9 @@
     network: null,
     storage: null,
   };
+  const panelSyncState = {
+    lastCheckAt: "",
+  };
   const setupWizardState = {
     step: 1,
     panelUrl: "",
@@ -785,18 +788,11 @@
     renderStatusHealthCard();
     renderStatusSoftwareSection();
 
-    if (!els.adminBase.value) {
-      els.adminBase.value = cfg.admin_base_url || "";
-    }
-    if (!els.regToken.value) {
-      els.regToken.value = cfg.registration_token || "";
-    }
-    if (!els.deviceSlug.value) {
-      els.deviceSlug.value = cfg.device_slug || "";
-    }
-    if (!els.streamSlug.value) {
-      els.streamSlug.value = cfg.selected_stream_slug || "";
-    }
+    els.adminBase.value = cfg.admin_base_url || "";
+    els.regToken.value = cfg.registration_token || "";
+    els.deviceSlug.value = cfg.device_slug || "";
+    els.streamSlug.value = cfg.selected_stream_slug || "";
+    updateLinkActionButtons(linked);
 
     portalSecurityState.storageDeleteHardcoreMode = !!cfg.storage_delete_hardcore_mode;
     const hardcoreToggle = q("system-storage-delete-hardcore");
@@ -814,6 +810,55 @@
         hardcoreStatus.textContent = "inaktiv";
       }
     }
+  }
+
+  function updateLinkActionButtons(linked) {
+    const btnRegister = q("btn-link-register");
+    const btnUnlink = q("btn-link-unlink");
+    if (btnRegister) {
+      btnRegister.classList.toggle("d-none", !!linked);
+    }
+    if (btnUnlink) {
+      btnUnlink.classList.toggle("d-none", !linked);
+    }
+  }
+
+  function renderPanelSyncStatus(result, hadError = false) {
+    const badge = q("panel-sync-badge");
+    const missingEl = q("panel-sync-missing");
+    const storageEl = q("panel-sync-storage-count");
+    const softwareEl = q("panel-sync-software-count");
+    const lastCheckEl = q("panel-sync-last-check");
+
+    if (lastCheckEl) {
+      lastCheckEl.textContent = panelSyncState.lastCheckAt || "-";
+    }
+
+    if (hadError || !result) {
+      if (badge) {
+        badge.classList.remove("text-bg-success", "text-bg-warning");
+        badge.classList.add("text-bg-danger");
+        badge.textContent = "fehler";
+      }
+      if (missingEl) missingEl.textContent = "Sync-Check fehlgeschlagen";
+      if (storageEl) storageEl.textContent = "-";
+      if (softwareEl) softwareEl.textContent = "-";
+      return;
+    }
+
+    const missing = Array.isArray(result.missing) ? result.missing : [];
+    const checksOk = !!result.ok;
+    const stats = result.stats || {};
+    if (badge) {
+      badge.classList.remove("text-bg-danger", "text-bg-warning", "text-bg-success", "text-bg-secondary");
+      badge.classList.add(checksOk ? "text-bg-success" : "text-bg-warning");
+      badge.textContent = checksOk ? "vollständig" : "unvollständig";
+    }
+    if (missingEl) {
+      missingEl.textContent = missing.length > 0 ? missing.join(", ") : "Keine";
+    }
+    if (storageEl) storageEl.textContent = String(stats.storageDevices ?? "-");
+    if (softwareEl) softwareEl.textContent = String(stats.softwareRows ?? "-");
   }
 
   function renderNetwork(payload) {
@@ -2462,6 +2507,34 @@
     toast("Panel register completed", "success");
   }
 
+  async function panelSyncCheck() {
+    try {
+      const payload = await fetchJson("/api/panel/sync-status", {
+        method: "POST",
+        body: { admin_base_url: els.adminBase.value || "" },
+      });
+      panelSyncState.lastCheckAt = new Date().toLocaleString();
+      const adminResponse = payload.response || {};
+      const syncData = adminResponse.data || {};
+      renderPanelSyncStatus(syncData, false);
+      toast(syncData.ok ? "Admin-Sync vollständig" : "Admin-Sync unvollständig", syncData.ok ? "success" : "warning");
+    } catch (err) {
+      panelSyncState.lastCheckAt = new Date().toLocaleString();
+      renderPanelSyncStatus(null, true);
+      throw err;
+    }
+  }
+
+  async function panelSyncNow() {
+    await fetchJson("/api/panel/sync-now", {
+      method: "POST",
+      body: { admin_base_url: els.adminBase.value || "" },
+    });
+    await refreshStatus();
+    await panelSyncCheck();
+    toast("Daten an Adminpanel nachgemeldet", "success");
+  }
+
   async function panelTestUrl() {
     await fetchJson("/api/panel/test-url", {
       method: "POST",
@@ -2879,14 +2952,11 @@
         openSetupWizard();
       }
     });
-    q("btn-refresh-status").addEventListener("click", () => run(refreshState));
-    q("btn-refresh-fingerprint").addEventListener("click", () => run(refreshFingerprint));
+    q("btn-link-refresh-status").addEventListener("click", () => run(refreshState));
+    q("btn-link-register").addEventListener("click", () => run(panelRegister));
     q("btn-pull-plan").addEventListener("click", () => run(pullPlan));
-    q("btn-check-link").addEventListener("click", () => run(panelCheckLink));
-
-    q("btn-panel-test").addEventListener("click", () => run(panelTestUrl));
-    q("btn-panel-ping").addEventListener("click", () => run(panelPing));
-    q("btn-panel-register").addEventListener("click", () => run(panelRegister));
+    q("btn-panel-sync-check").addEventListener("click", () => run(panelSyncCheck));
+    q("btn-panel-sync-now").addEventListener("click", () => run(panelSyncNow));
 
     els.btnWifiToggle.addEventListener("click", () => run(toggleWifi));
     els.btnBtToggle.addEventListener("click", () => run(toggleBluetooth));
@@ -3096,6 +3166,7 @@
     initRefs();
     bindButtons();
     await run(refreshStatus);
+    await run(panelSyncCheck);
     await run(refreshNetwork);
     await run(refreshWifiScan);
     await run(refreshWifiProfiles);

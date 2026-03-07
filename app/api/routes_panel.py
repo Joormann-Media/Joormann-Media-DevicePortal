@@ -72,6 +72,26 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
     return payload
 
 
+def _panel_sync_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str) -> dict:
+    payload = _panel_ping_payload(dev, fp, host, ip)
+    payload['panelRegisterPath'] = cfg.get('panel_register_path')
+    pi_serial = (
+        (dev.get('pi_serial') or '').strip()
+        or (((fp.get('cpu') or {}).get('serial') if isinstance(fp.get('cpu'), dict) else '') or '').strip()
+        or f"unknown-{(dev.get('device_uuid') or 'device').replace('-', '')[:8]}"
+    )
+    machine_id = (
+        (dev.get('machine_id') or '').strip()
+        or (fp.get('machine_id') or '').strip()
+        or f"unknown-{(dev.get('device_uuid') or 'device').replace('-', '')[:8]}"
+    )
+    payload['piSerial'] = pi_serial
+    payload['machineId'] = machine_id
+    snapshots = _collect_runtime_snapshots(cfg, dev, fp, host, ip)
+    payload.update(snapshots)
+    return payload
+
+
 def _safe_call(default: object, fn):
     try:
         value = fn()
@@ -287,6 +307,10 @@ def _panel_verify_token_url(base_url: str) -> str:
 
 def _panel_assign_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/assign"
+
+
+def _panel_sync_status_url(base_url: str) -> str:
+    return f"{base_url}/api/device/link/sync-status"
 
 
 def _response_indicates_success(code: int | None, resp: dict | None) -> bool:
@@ -589,6 +613,92 @@ def api_panel_register():
         http=code,
         resolved_url=url,
     ), 400
+
+
+@bp_panel.post('/api/panel/sync-status')
+def api_panel_sync_status():
+    cfg = ensure_config()
+    dev = ensure_device()
+
+    data = request.get_json(force=True, silent=True) or {}
+    request_base = _safe_base_url((data.get('admin_base_url') or ''))
+    base_url = request_base or _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base_url:
+        return jsonify(ok=False, error='admin_base_url missing'), 400
+
+    sync_url = _panel_sync_status_url(base_url)
+    payload = {
+        'deviceUuid': dev.get('device_uuid') or '',
+        'device_uuid': dev.get('device_uuid') or '',
+        'authKey': dev.get('auth_key') or '',
+        'auth_key': dev.get('auth_key') or '',
+    }
+
+    code, resp, err = http_post_json(sync_url, payload, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='sync_status_failed', detail=str(err), sync_url=sync_url), 502
+    if code < 200 or code >= 300:
+        return jsonify(ok=False, error='sync_status_failed', http=code, sync_url=sync_url, response=resp), 400
+
+    if request_base:
+        cfg['admin_base_url'] = request_base
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+
+    return jsonify(ok=True, http=code, sync_url=sync_url, response=resp), 200
+
+
+@bp_panel.post('/api/panel/sync-now')
+def api_panel_sync_now():
+    cfg = ensure_config()
+    dev = ensure_device()
+    fp = ensure_fingerprint()
+    host = get_hostname()
+    ip = get_ip()
+
+    data = request.get_json(force=True, silent=True) or {}
+    request_base = _safe_base_url((data.get('admin_base_url') or ''))
+    if request_base:
+        cfg['admin_base_url'] = request_base
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+
+    url = _panel_url(cfg, 'panel_register_path')
+    if not url:
+        return jsonify(
+            ok=False,
+            error='admin_base_url missing',
+            admin_base_url=_safe_base_url(cfg.get('admin_base_url', '')),
+            panel_register_path=cfg.get('panel_register_path'),
+        ), 400
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return jsonify(
+            ok=False,
+            error='invalid_panel_url',
+            resolved_url=url,
+            admin_base_url=_safe_base_url(cfg.get('admin_base_url', '')),
+            panel_register_path=cfg.get('panel_register_path'),
+        ), 400
+
+    payload = _panel_sync_payload(cfg, dev, fp, host, ip)
+    code, resp, err = http_post_json(url, payload, timeout=10)
+
+    if code is None:
+        return jsonify(ok=False, error='sync_now_failed', detail=str(err), panel_register_url=url), 502
+
+    success = _response_indicates_success(code, resp)
+    if not success:
+        panel_msg = _extract_response_message(resp) or f'http {code}'
+        return jsonify(ok=False, error='sync_now_failed', detail=panel_msg, http=code, panel_register_url=url, response=resp), 400
+
+    if isinstance(resp, dict):
+        slug = (resp.get('deviceSlug') or resp.get('slug') or '').strip()
+        if slug:
+            cfg['device_slug'] = slug
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+
+    return jsonify(ok=True, synced=True, http=code, panel_register_url=url, response=resp), 200
 
 
 @bp_panel.post('/api/panel/validate-token')

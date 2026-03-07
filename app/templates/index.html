@@ -535,29 +535,60 @@
       <div class="tab-pane fade" id="stream-pane" role="tabpanel" aria-labelledby="stream-tab">
         <div class="portal-card p-4">
           <h2 class="h5">Stream Einstellungen</h2>
-          <p class="mb-0 text-secondary">Kommt später – Stream Settings in Arbeit.</p>
+          <p class="text-secondary mb-3">Kommt später – Stream Settings in Arbeit.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <button id="btn-pull-plan" class="btn btn-outline-primary btn-sm">
+              Pull Plan
+            </button>
+          </div>
         </div>
       </div>
 
       <div class="tab-pane fade" id="system-pane" role="tabpanel" aria-labelledby="system-tab">
-        <ul class="nav nav-pills mb-3" id="systemSubTabs" role="tablist">
+        <ul class="nav nav-pills nav-justified gap-2 mb-3 system-subtabs" id="systemSubTabs" role="tablist">
           <li class="nav-item" role="presentation">
             <button class="nav-link active" id="system-sub-general-tab" data-bs-toggle="tab" data-bs-target="#system-sub-general" type="button" role="tab">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                <path d="M12 2v4"></path>
+                <path d="M12 18v4"></path>
+                <path d="m4.93 4.93 2.83 2.83"></path>
+                <path d="m16.24 16.24 2.83 2.83"></path>
+                <path d="M2 12h4"></path>
+                <path d="M18 12h4"></path>
+                <path d="m4.93 19.07 2.83-2.83"></path>
+                <path d="m16.24 7.76 2.83-2.83"></path>
+              </svg>
               Allgemein
             </button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link" id="system-sub-link-tab" data-bs-toggle="tab" data-bs-target="#system-sub-link" type="button" role="tab">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
               Link
             </button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link" id="system-sub-wifi-tab" data-bs-toggle="tab" data-bs-target="#system-sub-wifi" type="button" role="tab">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                <path d="M12 20h.01"></path>
+                <path d="M2 8.82a15 15 0 0 1 20 0"></path>
+                <path d="M5 12.86a10 10 0 0 1 14 0"></path>
+                <path d="M8.5 16.43a5 5 0 0 1 7 0"></path>
+              </svg>
               WLAN Verwaltung
             </button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link" id="system-sub-update-tab" data-bs-toggle="tab" data-bs-target="#system-sub-update" type="button" role="tab">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                <path d="M21 2v6h-6"></path>
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                <path d="M3 22v-6h6"></path>
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+              </svg>
               Update
             </button>
           </li>
@@ -622,38 +653,55 @@
 
           <div class="tab-pane fade" id="system-sub-link" role="tabpanel" aria-labelledby="system-sub-link-tab">
             <div class="row g-3">
-              <div class="col-12">
+              <div class="col-12 col-xl-6">
                 <div class="portal-card p-3 h-100">
                   <h2 class="h5 mb-3">Panel / Link Aktionen</h2>
 
-                  <div class="row g-2 mb-2">
+                  <div class="row g-2 mb-2 link-readonly-fields">
                     <div class="col-12">
                       <label for="admin-base-url" class="form-label">Panel URL</label>
-                      <input id="admin-base-url" class="form-control" value="{{ cfg.admin_base_url }}" placeholder="https://admin.example.com">
+                      <input id="admin-base-url" class="form-control" value="{{ cfg.admin_base_url }}" placeholder="https://admin.example.com" readonly disabled>
                     </div>
                     <div class="col-12">
                       <label for="registration-token" class="form-label">Registration Token</label>
-                      <input id="registration-token" class="form-control" value="{{ cfg.registration_token }}" placeholder="Token">
+                      <input id="registration-token" class="form-control" value="{{ cfg.registration_token }}" placeholder="Token" readonly disabled>
                     </div>
                     <div class="col-md-6">
                       <label for="device-slug" class="form-label">Device Slug</label>
-                      <input id="device-slug" class="form-control" value="{{ cfg.device_slug }}" placeholder="device-slug">
+                      <input id="device-slug" class="form-control" value="{{ cfg.device_slug }}" placeholder="device-slug" readonly disabled>
                     </div>
                     <div class="col-md-6">
                       <label for="stream-slug" class="form-label">Stream Slug</label>
-                      <input id="stream-slug" class="form-control" value="{{ cfg.selected_stream_slug }}" placeholder="stream-slug">
+                      <input id="stream-slug" class="form-control" value="{{ cfg.selected_stream_slug }}" placeholder="stream-slug" readonly disabled>
                     </div>
                   </div>
 
                   <div class="d-flex flex-wrap gap-2">
-                    <button id="btn-refresh-status" class="btn btn-dark btn-sm">Refresh Status</button>
-                    <button id="btn-refresh-fingerprint" class="btn btn-outline-dark btn-sm">Refresh Fingerprint</button>
-                    <button id="btn-pull-plan" class="btn btn-outline-primary btn-sm">Pull Plan</button>
-                    <button id="btn-check-link" class="btn btn-outline-secondary btn-sm">Check Panel Link</button>
-                    <button id="btn-panel-test" class="btn btn-outline-secondary btn-sm">Test/Save URL</button>
-                    <button id="btn-panel-ping" class="btn btn-outline-secondary btn-sm">Panel Ping</button>
-                    <button id="btn-panel-register" class="btn btn-outline-success btn-sm">Panel Register</button>
-                    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#unlinkModal">Unlink</button>
+                    <button id="btn-link-refresh-status" class="btn btn-dark btn-sm">Refresh Status</button>
+                    <button id="btn-link-register" class="btn btn-outline-success btn-sm">Register</button>
+                    <button id="btn-link-unlink" class="btn btn-outline-danger btn-sm d-none" data-bs-toggle="modal" data-bs-target="#unlinkModal">Unlink</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h2 class="h5 mb-0">Sync Kontrolle</h2>
+                    <span id="panel-sync-badge" class="badge text-bg-secondary">unbekannt</span>
+                  </div>
+                  <div class="small text-secondary mb-2">
+                    Prüft gegen das Adminpanel, ob Snapshots (Storage, Laufwerke, Auslastung, Netzwerk, Software) vollständig hinterlegt sind.
+                  </div>
+                  <dl class="portal-kv mb-3">
+                    <dt>Fehlende Bereiche</dt><dd id="panel-sync-missing">-</dd>
+                    <dt>Storage Datensätze</dt><dd id="panel-sync-storage-count">-</dd>
+                    <dt>Software Datensätze</dt><dd id="panel-sync-software-count">-</dd>
+                    <dt>Last Sync Check</dt><dd id="panel-sync-last-check">-</dd>
+                  </dl>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button id="btn-panel-sync-check" class="btn btn-outline-secondary btn-sm">Sync prüfen</button>
+                    <button id="btn-panel-sync-now" class="btn btn-outline-primary btn-sm">Jetzt nachmelden</button>
                   </div>
                 </div>
               </div>
