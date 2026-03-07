@@ -52,6 +52,7 @@
     selectedLinkItem: null,
     searchTimer: null,
     searchSeq: 0,
+    existingDetected: false,
   };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
@@ -677,20 +678,29 @@
       ? config.panel_device_flags
       : {};
 
-    const renderSwitch = (key, wrapId, inputId, valueId, onText, offText) => {
+    const renderSwitch = (key, wrapId, badgeId, valueId, onText, offText, trueClass, falseClass) => {
       const wrap = q(wrapId);
-      const input = q(inputId);
+      const badge = q(badgeId);
       const valueEl = q(valueId);
-      if (!wrap || !input || !valueEl) return;
+      if (!wrap || !badge || !valueEl) return;
       const value = normalizeOptionalBoolean(flags[key]);
-      input.indeterminate = value === null;
-      input.checked = value === true;
       wrap.classList.toggle("is-unknown", value === null);
       valueEl.textContent = value === null ? "unknown" : (value ? onText : offText);
+      badge.classList.remove("text-bg-success", "text-bg-danger", "text-bg-warning", "text-bg-secondary");
+      if (value === null) {
+        badge.classList.add("text-bg-secondary");
+        badge.textContent = "unknown";
+      } else if (value) {
+        badge.classList.add(trueClass);
+        badge.textContent = onText;
+      } else {
+        badge.classList.add(falseClass);
+        badge.textContent = offText;
+      }
     };
 
-    renderSwitch("is_active", "hero-flag-active-wrap", "hero-flag-active", "hero-flag-active-value", "active", "inactive");
-    renderSwitch("is_locked", "hero-flag-locked-wrap", "hero-flag-locked", "hero-flag-locked-value", "locked", "unlocked");
+    renderSwitch("is_active", "hero-flag-active-wrap", "hero-flag-active-badge", "hero-flag-active-value", "active", "inactive", "text-bg-success", "text-bg-warning");
+    renderSwitch("is_locked", "hero-flag-locked-wrap", "hero-flag-locked-badge", "hero-flag-locked-value", "locked", "unlocked", "text-bg-danger", "text-bg-success");
 
     const updatedEl = q("hero-flag-updated");
     if (updatedEl) {
@@ -828,6 +838,7 @@
     setupWizardState.linkType = "skip";
     setupWizardState.selectedLinkItem = null;
     setupWizardState.searchSeq = 0;
+    setupWizardState.existingDetected = false;
     if (setupWizardState.searchTimer) {
       window.clearTimeout(setupWizardState.searchTimer);
       setupWizardState.searchTimer = null;
@@ -869,11 +880,31 @@
     });
     setupWizardState.verifiedUrl = true;
     const result = q("setup-step-1-result");
+    const existing = payload && typeof payload.existing_device === "object" ? payload.existing_device : {};
+    const existingFound = !!existing.found;
+    setupWizardState.existingDetected = existingFound;
     if (result) {
       const h = payload.handshake_http || "-";
       result.textContent = `URL validiert. Handshake erreichbar (HTTP ${h}).`;
     }
     if (els.adminBase) els.adminBase.value = setupWizardState.panelUrl;
+    if (existingFound) {
+      const slug = String(existing.device_slug || "").trim();
+      const question = slug
+        ? `Daten gefunden (Device: ${slug}). Direkt verbinden ohne Token?`
+        : "Daten gefunden. Direkt verbinden ohne Token?";
+      const connectNow = window.confirm(question);
+      if (connectNow) {
+        setupWizardState.registered = true;
+        setupWizardState.step = 3;
+        if (result) result.textContent = "Bestehendes Gerät erkannt und übernommen. Token-Schritt übersprungen.";
+        await refreshStatus();
+        return;
+      }
+      if (result) {
+        result.textContent = "Bestehendes Gerät erkannt, aber nicht übernommen. Weiter mit Token in Schritt 2.";
+      }
+    }
     if (setupWizardState.step < 2) setupWizardState.step = 2;
   }
 

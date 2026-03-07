@@ -665,6 +665,44 @@ def api_panel_test_url():
 
     dev = ensure_device()
     fp = ensure_fingerprint()
+    host = get_hostname()
+    ip = get_ip()
+
+    existing_device = {
+        'checked': False,
+        'found': False,
+        'http': None,
+        'code': '',
+        'message': '',
+        'device_slug': '',
+    }
+    ping_url = _panel_url(cfg, 'panel_ping_path')
+    if ping_url and (ping_url.startswith('http://') or ping_url.startswith('https://')):
+        ping_payload = _panel_ping_payload(dev, fp, host, ip)
+        p_code, p_resp, _p_err = http_post_json(ping_url, ping_payload, timeout=8)
+        existing_device['checked'] = True
+        existing_device['http'] = p_code
+        if p_code is not None and 200 <= p_code < 300:
+            existing_device['found'] = True
+            existing_device['code'] = 'device_found'
+            existing_device['message'] = 'Gerät ist im Panel bereits bekannt.'
+            if isinstance(p_resp, dict):
+                p_data = p_resp.get('data') if isinstance(p_resp.get('data'), dict) else {}
+                existing_device['device_slug'] = str(
+                    p_resp.get('deviceSlug')
+                    or p_data.get('deviceSlug')
+                    or p_resp.get('slug')
+                    or p_data.get('slug')
+                ).strip()
+        elif isinstance(p_resp, dict):
+            err_code = str(p_resp.get('error_code') or p_resp.get('error') or '').strip().lower()
+            if err_code in ('device_not_found', 'not_found'):
+                existing_device['code'] = 'device_not_found'
+                existing_device['message'] = 'Gerät ist im Panel noch nicht registriert.'
+            else:
+                existing_device['code'] = err_code or 'device_check_unknown'
+                existing_device['message'] = str(p_resp.get('message') or p_resp.get('detail') or '').strip()
+
     update_state(cfg, dev, fp, mode='setup', message='panel URL updated')
     return jsonify(
         ok=True,
@@ -673,6 +711,7 @@ def api_panel_test_url():
         handshake_url=handshake_url,
         handshake_http=hs_code,
         handshake_response=hs_resp,
+        existing_device=existing_device,
     )
 
 
