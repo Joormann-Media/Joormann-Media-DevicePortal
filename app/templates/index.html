@@ -418,31 +418,18 @@
                 <dt>Pairing Timeout</dt><dd id="bt-pairable-timeout">-</dd>
                 <dt>Tailscale</dt><dd id="radio-tailscale">-</dd>
               </dl>
-              <div class="row g-2 mb-2">
+              <div class="row g-2 mb-2 align-items-end">
                 <div class="col-12 col-md-6">
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch" id="bt-discoverable-target">
-                    <label class="form-check-label" for="bt-discoverable-target">Sichtbar</label>
-                  </div>
+                  <label class="form-label form-label-sm mb-1" for="bt-pairing-timeout-target">Pairing-Timeout (Sek.)</label>
+                  <input id="bt-pairing-timeout-target" type="number" min="30" max="900" step="1" class="form-control form-control-sm" value="180">
                 </div>
                 <div class="col-12 col-md-6">
-                  <label class="form-label form-label-sm mb-1" for="bt-discoverable-timeout-target">Sichtbar Timeout (Sek.)</label>
-                  <input id="bt-discoverable-timeout-target" type="number" min="0" max="86400" step="1" class="form-control form-control-sm" value="180">
-                </div>
-                <div class="col-12 col-md-6">
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch" id="bt-pairable-target">
-                    <label class="form-check-label" for="bt-pairable-target">Pairing</label>
-                  </div>
-                </div>
-                <div class="col-12 col-md-6">
-                  <label class="form-label form-label-sm mb-1" for="bt-pairable-timeout-target">Pairing Timeout (Sek.)</label>
-                  <input id="bt-pairable-timeout-target" type="number" min="0" max="86400" step="1" class="form-control form-control-sm" value="180">
+                  <div class="small text-secondary">Beim Start wird Bluetooth automatisch aktiviert, sichtbar und pairable gesetzt.</div>
                 </div>
               </div>
               <div class="d-flex flex-wrap gap-2">
                 <button id="btn-bt-toggle" class="btn btn-outline-secondary btn-sm">Bluetooth ein/aus</button>
-                <button id="btn-bt-apply-settings" class="btn btn-outline-primary btn-sm">BT-Sichtbarkeit/Pairing anwenden</button>
+                <button id="btn-bt-pairing-start" class="btn btn-outline-primary btn-sm">Pairing starten</button>
                 <button id="btn-system-refresh-network-radio" class="btn btn-outline-secondary btn-sm">Netzwerkdaten aktualisieren</button>
               </div>
             </div>
@@ -952,6 +939,40 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
           <button id="btn-confirm-unlink" type="button" class="btn btn-danger">Unlink ausführen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="btPairingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-bluetooth"></i>
+            Bluetooth Pairing
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Status</span>
+            <span id="bt-pairing-status-badge" class="badge text-bg-secondary">inaktiv</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Restzeit</span>
+            <span id="bt-pairing-remaining">-</span>
+          </div>
+          <div class="p-3 border rounded text-center mb-2">
+            <div class="small text-secondary mb-1">Pairing-Code</div>
+            <div id="bt-pairing-passkey" class="h3 mb-0 font-monospace">----</div>
+          </div>
+          <div class="small text-secondary">Gerät: <span id="bt-pairing-device">-</span></div>
+          <div class="small text-secondary mt-1" id="bt-pairing-message">Warte auf Pairing-Anfrage...</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btn-bt-pairing-stop" class="btn btn-outline-danger btn-sm">Pairing stoppen</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
         </div>
       </div>
     </div>

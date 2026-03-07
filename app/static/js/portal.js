@@ -5,6 +5,7 @@
   let selectedWpsTarget = null;
   let wpsPollHandle = null;
   let apPollHandle = null;
+  let btPairingPollHandle = null;
   let storagePollHandle = null;
   let updatePollHandle = null;
   let currentUpdateJobId = "";
@@ -1340,19 +1341,6 @@
     q("bt-pairable").textContent = bt.pairable === null || bt.pairable === undefined ? "-" : yn(!!bt.pairable);
     q("bt-discoverable-timeout").textContent = formatSeconds(bt.discoverable_timeout);
     q("bt-pairable-timeout").textContent = formatSeconds(bt.pairable_timeout);
-
-    if (q("bt-discoverable-target")) {
-      q("bt-discoverable-target").checked = !!bt.discoverable;
-    }
-    if (q("bt-pairable-target")) {
-      q("bt-pairable-target").checked = !!bt.pairable;
-    }
-    if (q("bt-discoverable-timeout-target") && Number.isFinite(Number(bt.discoverable_timeout)) && Number(bt.discoverable_timeout) >= 0) {
-      q("bt-discoverable-timeout-target").value = String(Number(bt.discoverable_timeout));
-    }
-    if (q("bt-pairable-timeout-target") && Number.isFinite(Number(bt.pairable_timeout)) && Number(bt.pairable_timeout) >= 0) {
-      q("bt-pairable-timeout-target").value = String(Number(bt.pairable_timeout));
-    }
 
     const btBadge = q("bt-enabled-badge");
     if (btBadge) {
@@ -3099,30 +3087,69 @@
     toast("Bluetooth aktualisiert", "success");
   }
 
-  async function applyBluetoothSettings() {
-    const discoverableTarget = !!q("bt-discoverable-target")?.checked;
-    const pairableTarget = !!q("bt-pairable-target")?.checked;
-    const discoverableTimeoutRaw = Number(q("bt-discoverable-timeout-target")?.value || 0);
-    const pairableTimeoutRaw = Number(q("bt-pairable-timeout-target")?.value || 0);
-
-    if (!Number.isInteger(discoverableTimeoutRaw) || discoverableTimeoutRaw < 0 || discoverableTimeoutRaw > 86400) {
-      throw new Error("Sichtbar-Timeout muss zwischen 0 und 86400 Sekunden liegen.");
+  function renderBtPairingStatus(data) {
+    const active = !!data.active;
+    const badge = q("bt-pairing-status-badge");
+    if (badge) {
+      badge.classList.remove("text-bg-secondary", "text-bg-success", "text-bg-warning");
+      badge.classList.add(active ? "text-bg-success" : "text-bg-secondary");
+      badge.textContent = active ? "aktiv" : "inaktiv";
     }
-    if (!Number.isInteger(pairableTimeoutRaw) || pairableTimeoutRaw < 0 || pairableTimeoutRaw > 86400) {
-      throw new Error("Pairing-Timeout muss zwischen 0 und 86400 Sekunden liegen.");
-    }
+    q("bt-pairing-remaining").textContent = active ? formatSeconds(data.remaining_seconds) : "-";
+    const feedback = data.feedback || {};
+    const passkey = String(feedback.passkey || "").trim();
+    q("bt-pairing-passkey").textContent = passkey || "----";
+    const deviceLabel = [String(feedback.device_name || "").trim(), String(feedback.device_mac || "").trim()].filter(Boolean).join(" ");
+    q("bt-pairing-device").textContent = deviceLabel || "-";
+    q("bt-pairing-message").textContent = String(feedback.passkey_line || feedback.recent_line || "Warte auf Pairing-Anfrage...").trim();
+  }
 
-    await fetchJson("/api/network/bluetooth/config", {
+  async function refreshBtPairingStatus() {
+    const payload = await fetchJson("/api/network/bluetooth/pairing/status", { cache: "no-store" });
+    const data = payload.data || {};
+    renderBtPairingStatus(data);
+    if (!data.active && btPairingPollHandle) {
+      window.clearInterval(btPairingPollHandle);
+      btPairingPollHandle = null;
+    }
+    return data;
+  }
+
+  function startBtPairingPolling() {
+    if (btPairingPollHandle) {
+      window.clearInterval(btPairingPollHandle);
+    }
+    btPairingPollHandle = window.setInterval(async () => {
+      try {
+        await refreshBtPairingStatus();
+      } catch (_) {
+        // ignore transient polling errors
+      }
+    }, 2000);
+  }
+
+  async function startBluetoothPairing() {
+    const timeoutRaw = Number(q("bt-pairing-timeout-target")?.value || 180);
+    if (!Number.isInteger(timeoutRaw) || timeoutRaw < 30 || timeoutRaw > 900) {
+      throw new Error("Pairing-Timeout muss zwischen 30 und 900 Sekunden liegen.");
+    }
+    await fetchJson("/api/network/bluetooth/pairing/start", {
       method: "POST",
-      body: {
-        discoverable: discoverableTarget,
-        discoverable_timeout: discoverableTimeoutRaw,
-        pairable: pairableTarget,
-        pairable_timeout: pairableTimeoutRaw,
-      },
+      body: { timeout_seconds: timeoutRaw },
     });
     await refreshNetwork();
-    toast("Bluetooth-Sichtbarkeit und Pairing aktualisiert", "success");
+    const modal = bootstrap.Modal.getOrCreateInstance(q("btPairingModal"));
+    modal.show();
+    await refreshBtPairingStatus();
+    startBtPairingPolling();
+    toast("Bluetooth Pairing gestartet", "success");
+  }
+
+  async function stopBluetoothPairing() {
+    await fetchJson("/api/network/bluetooth/pairing/stop", { method: "POST" });
+    await refreshNetwork();
+    await refreshBtPairingStatus();
+    toast("Bluetooth Pairing gestoppt", "success");
   }
 
   async function toggleLan() {
@@ -3675,7 +3702,8 @@
 
     els.btnWifiToggle.addEventListener("click", () => run(toggleWifi));
     els.btnBtToggle.addEventListener("click", () => run(toggleBluetooth));
-    els.btnBtApplySettings.addEventListener("click", () => run(applyBluetoothSettings));
+    els.btnBtPairingStart.addEventListener("click", () => run(startBluetoothPairing));
+    q("btn-bt-pairing-stop").addEventListener("click", () => run(stopBluetoothPairing));
     els.btnLanToggle.addEventListener("click", () => run(toggleLan));
     q("btn-wps").addEventListener("click", () => run(startWps));
     q("btn-refresh-network").addEventListener("click", () => run(refreshNetwork));
@@ -3853,6 +3881,12 @@
       }
       setupWizardState.searchSeq += 1;
     });
+    q("btPairingModal").addEventListener("hidden.bs.modal", () => {
+      if (btPairingPollHandle) {
+        window.clearInterval(btPairingPollHandle);
+        btPairingPollHandle = null;
+      }
+    });
     for (const radio of document.querySelectorAll('input[name="setup-link-type"]')) {
       radio.addEventListener("change", () => {
         setupWizardState.linkType = getSetupLinkType();
@@ -3897,7 +3931,7 @@
     els.streamSlug = q("stream-slug");
     els.btnWifiToggle = q("btn-wifi-toggle");
     els.btnBtToggle = q("btn-bt-toggle");
-    els.btnBtApplySettings = q("btn-bt-apply-settings");
+    els.btnBtPairingStart = q("btn-bt-pairing-start");
     els.btnLanToggle = q("btn-lan-toggle");
   }
 

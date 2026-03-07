@@ -24,6 +24,7 @@ Die Netzwerkkontrolle wird über dedizierte Wrapper-Skripte (`scripts/net/*`) um
   - `scripts/net/portal_update.sh`
   - `scripts/net/bluetooth_toggle.sh`
   - `scripts/net/bluetooth_ctl.sh`
+  - `scripts/net/bluetooth_pairing_feedback.sh`
   - `scripts/net/lan_toggle.sh`
   - `scripts/net/wps_start.sh`
   - `scripts/net/tailscale_dns_fix.sh`
@@ -66,6 +67,7 @@ AP-Erreichbarkeit:
 - Keine harte Captive-Portal-Sperre; Fokus auf direkte, robuste Erreichbarkeit
 - `bluetooth_toggle.sh`
 - `bluetooth_ctl.sh`
+- `bluetooth_pairing_feedback.sh`
 - `lan_toggle.sh`
 - `wps_start.sh`
 - `tailscale_dns_fix.sh`
@@ -83,6 +85,9 @@ AP-Erreichbarkeit:
 - `POST /api/network/bluetooth/toggle`
 - `GET /api/network/bluetooth/status`
 - `POST /api/network/bluetooth/config`
+- `POST /api/network/bluetooth/pairing/start`
+- `GET /api/network/bluetooth/pairing/status`
+- `POST /api/network/bluetooth/pairing/stop`
 - `POST /api/network/lan/toggle`
 - `POST /api/network/wps`
 - `POST /api/network/wifi/wps/start`

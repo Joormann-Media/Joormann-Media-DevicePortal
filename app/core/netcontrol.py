@@ -352,6 +352,25 @@ def set_bluetooth_runtime_settings(
     }
 
 
+def get_bluetooth_pairing_feedback(window_seconds: int = 300) -> dict:
+    safe_window = max(30, min(3600, int(window_seconds or 300)))
+    rc, out, err = _run_script("bluetooth_pairing_feedback.sh", [str(safe_window)], timeout=12, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(
+            code="bluetooth_pairing_feedback_failed",
+            message="Failed to read Bluetooth pairing feedback",
+            detail=err or out,
+        )
+    parsed = _parse_kv_output(out)
+    return {
+        "passkey": (parsed.get("passkey") or "").strip(),
+        "device_mac": (parsed.get("device_mac") or "").strip(),
+        "device_name": (parsed.get("device_name") or "").strip(),
+        "passkey_line": (parsed.get("passkey_line") or "").strip(),
+        "recent_line": (parsed.get("recent_line") or "").strip(),
+    }
+
+
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     iface = (ifname or "eth0").strip()
     if iface not in ALLOWED_LAN_INTERFACES:

@@ -46,6 +46,13 @@ def _wps_state_path() -> str | None:
     return os.path.join(asset_dir, "wps-state.json")
 
 
+def _bt_pairing_state_path() -> str | None:
+    asset_dir = _resolve_asset_dir()
+    if not asset_dir:
+        return None
+    return os.path.join(asset_dir, "bt-pairing-state.json")
+
+
 def log_event(kind: str, message: str, level: str = "info", data: dict[str, Any] | None = None) -> None:
     path = _events_log_path()
     if not path:
@@ -107,6 +114,33 @@ def set_wps_state(state: dict[str, Any]) -> None:
 
 def get_wps_state() -> dict[str, Any]:
     path = _wps_state_path()
+    if not path:
+        return {}
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def set_bt_pairing_state(state: dict[str, Any]) -> None:
+    path = _bt_pairing_state_path()
+    if not path:
+        return
+    payload = dict(state or {})
+    payload["updated_at"] = utc_now()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception:
+        return
+
+
+def get_bt_pairing_state() -> dict[str, Any]:
+    path = _bt_pairing_state_path()
     if not path:
         return {}
     if not os.path.exists(path):

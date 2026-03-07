@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 
 from flask import Blueprint, jsonify, request, send_file
 
@@ -9,7 +10,14 @@ from app.core.device import ensure_device
 from app.core.display import DISPLAY_MOUNT_ORIENTATIONS, get_display_snapshot, normalize_mount_orientation, update_display_config
 from app.core.fingerprint import collect_fingerprint
 from app.core.jsonio import write_json
-from app.core.network_events import get_wps_state, log_event, read_events, set_wps_state
+from app.core.network_events import (
+    get_bt_pairing_state,
+    get_wps_state,
+    log_event,
+    read_events,
+    set_bt_pairing_state,
+    set_wps_state,
+)
 from app.core.netcontrol import (
     NONPREFERRED_WIFI_PRIORITY,
     PREFERRED_WIFI_PRIORITY,
@@ -26,6 +34,7 @@ from app.core.netcontrol import (
     restart_portal_service,
     set_ap_enabled,
     get_bluetooth_status,
+    get_bluetooth_pairing_feedback,
     set_bluetooth_enabled,
     set_bluetooth_runtime_settings,
     set_lan_enabled,
@@ -357,6 +366,135 @@ def api_network_bluetooth_config():
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/bluetooth/pairing/start")
+def api_network_bluetooth_pairing_start():
+    data = request.get_json(force=True, silent=True) or {}
+    timeout_seconds_raw = data.get("timeout_seconds", 180)
+    if not isinstance(timeout_seconds_raw, int):
+        return _error("invalid_payload", "Field 'timeout_seconds' must be int", status=400)
+    timeout_seconds = max(30, min(900, int(timeout_seconds_raw)))
+
+    try:
+        bt_info = get_network_info()
+        bt_enabled = bool((((bt_info or {}).get("interfaces") or {}).get("bluetooth") or {}).get("enabled"))
+        if not bt_enabled:
+            set_bluetooth_enabled(True)
+
+        status = set_bluetooth_runtime_settings(
+            discoverable=True,
+            discoverable_timeout=timeout_seconds,
+            pairable=True,
+            pairable_timeout=timeout_seconds,
+        )
+
+        now_ts = int(time.time())
+        session_id = uuid.uuid4().hex[:12]
+        pairing_state = {
+            "active": True,
+            "session_id": session_id,
+            "started_at_ts": now_ts,
+            "expires_at_ts": now_ts + timeout_seconds,
+            "timeout_seconds": timeout_seconds,
+        }
+        set_bt_pairing_state(pairing_state)
+        log_event(
+            "bluetooth",
+            "Bluetooth pairing mode started",
+            data={"session_id": session_id, "timeout_seconds": timeout_seconds},
+        )
+        return _ok(
+            {
+                "started": True,
+                "session_id": session_id,
+                "timeout_seconds": timeout_seconds,
+                "bluetooth": status,
+            }
+        )
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/bluetooth/pairing/stop")
+def api_network_bluetooth_pairing_stop():
+    try:
+        status = set_bluetooth_runtime_settings(
+            discoverable=False,
+            discoverable_timeout=0,
+            pairable=False,
+            pairable_timeout=0,
+        )
+        state = get_bt_pairing_state()
+        state.update(
+            {
+                "active": False,
+                "stopped_at_ts": int(time.time()),
+            }
+        )
+        set_bt_pairing_state(state)
+        log_event("bluetooth", "Bluetooth pairing mode stopped")
+        return _ok({"stopped": True, "bluetooth": status})
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/bluetooth/pairing/status")
+def api_network_bluetooth_pairing_status():
+    now_ts = int(time.time())
+    state = get_bt_pairing_state()
+    active = bool(state.get("active"))
+    expires_at_ts = int(state.get("expires_at_ts") or 0)
+    if active and expires_at_ts > 0 and now_ts >= expires_at_ts:
+        try:
+            set_bluetooth_runtime_settings(
+                discoverable=False,
+                discoverable_timeout=0,
+                pairable=False,
+                pairable_timeout=0,
+            )
+        except NetControlError:
+            pass
+        state["active"] = False
+        state["expired"] = True
+        state["stopped_at_ts"] = now_ts
+        set_bt_pairing_state(state)
+        active = False
+
+    try:
+        bt_status = get_bluetooth_status()
+    except NetControlError:
+        bt_status = {}
+
+    try:
+        feedback = get_bluetooth_pairing_feedback(window_seconds=300)
+    except NetControlError:
+        feedback = {
+            "passkey": "",
+            "device_mac": "",
+            "device_name": "",
+            "passkey_line": "",
+            "recent_line": "",
+        }
+
+    remaining_seconds = 0
+    if active and expires_at_ts > now_ts:
+        remaining_seconds = expires_at_ts - now_ts
+
+    return _ok(
+        {
+            "active": active,
+            "session_id": str(state.get("session_id") or ""),
+            "timeout_seconds": int(state.get("timeout_seconds") or 0),
+            "started_at_ts": int(state.get("started_at_ts") or 0),
+            "expires_at_ts": expires_at_ts,
+            "remaining_seconds": remaining_seconds,
+            "bluetooth": bt_status,
+            "feedback": feedback,
+        }
+    )
 
 
 @bp_network.post("/api/network/lan/toggle")
