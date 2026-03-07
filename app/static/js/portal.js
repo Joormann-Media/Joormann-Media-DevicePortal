@@ -1218,9 +1218,33 @@
     renderStatusSoftwareSection();
   }
 
+  async function refreshPanelFlagsLive() {
+    const status = statusDashboardState.status || {};
+    const cfg = status.config || {};
+    const state = status.state || {};
+    const panel = state.panel || cfg.panel_link_state || {};
+    if (!panel.linked) return;
+    const adminBaseUrl = String(cfg.admin_base_url || els.adminBase?.value || "").trim();
+    if (!adminBaseUrl) return;
+    try {
+      const payload = await fetchJson("/api/panel/ping", {
+        method: "POST",
+        body: { admin_base_url: adminBaseUrl },
+        timeoutMs: 9000,
+      });
+      if (payload.panel_device_flags && statusDashboardState.status && statusDashboardState.status.config) {
+        statusDashboardState.status.config.panel_device_flags = payload.panel_device_flags;
+        renderHeroPanelFlags(statusDashboardState.status.config);
+      }
+    } catch (_) {
+      // Keep page usable if panel is temporarily unreachable.
+    }
+  }
+
   async function refreshStatus() {
     const data = await fetchJson("/api/status", { cache: "no-store" });
     renderStatus(data);
+    await refreshPanelFlagsLive();
     return data;
   }
 
