@@ -564,6 +564,16 @@ def _refresh_link_targets_from_admin_context(cfg: dict, dev: dict) -> None:
     if code is None or code < 200 or code >= 300 or not isinstance(resp, dict):
         return
 
+    should_write = False
+    st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
+    if not bool(st.get('linked')) or int(st.get('last_http') or 0) != int(code) or str(st.get('last_error') or '').strip():
+        st['linked'] = True
+        st['last_http'] = int(code)
+        st['last_check'] = utc_now()
+        st['last_error'] = ''
+        cfg['panel_link_state'] = st
+        should_write = True
+
     linked_user_ids, linked_customer_ids = _extract_link_ids(resp)
     linked_users_rows: list[object] = []
     linked_customers_rows: list[object] = []
@@ -581,8 +591,14 @@ def _refresh_link_targets_from_admin_context(cfg: dict, dev: dict) -> None:
 
     if linked_users_rows or linked_customers_rows:
         _persist_link_targets(cfg, linked_users_rows or linked_user_ids, linked_customers_rows or linked_customer_ids)
+        should_write = True
     elif linked_user_ids or linked_customer_ids:
         _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
+        should_write = True
+
+    if should_write:
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
 
 
 def _response_indicates_success(code: int | None, resp: dict | None) -> bool:

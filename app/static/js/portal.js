@@ -1206,7 +1206,9 @@
   }
 
   function ensureLinkedMaintainersHydrated(usersRaw, linked) {
-    if (!linked || maintainerState.hydrating) return;
+    if (maintainerState.hydrating) return;
+    const adminBase = String(((statusDashboardState.status || {}).config || {}).admin_base_url || "").trim();
+    if (!adminBase) return;
     const users = Array.isArray(usersRaw) ? usersRaw : [];
     const isEmpty = users.length === 0;
     const needsHydration = users.some((row) => {
