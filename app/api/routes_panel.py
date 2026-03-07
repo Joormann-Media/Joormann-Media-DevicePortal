@@ -290,6 +290,51 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
     memory = _safe_call({}, parse_mem_stats_kb)
     load = _safe_call({}, parse_load_stats)
 
+    def _cpu_temp_c() -> float | None:
+        try:
+            with open('/sys/class/thermal/thermal_zone0/temp', 'r', encoding='utf-8') as f:
+                raw = (f.read() or '').strip()
+            if raw and raw.lstrip('-').isdigit():
+                return round(int(raw) / 1000.0, 1)
+        except Exception:
+            pass
+        return None
+
+    def _uptime_seconds() -> int | None:
+        try:
+            with open('/proc/uptime', 'r', encoding='utf-8') as f:
+                first = (f.read() or '').split()[0]
+            return int(float(first))
+        except Exception:
+            return None
+
+    def _uptime_human(seconds: int | None) -> str:
+        if seconds is None or seconds < 0:
+            return ''
+        days, rem = divmod(seconds, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, _ = divmod(rem, 60)
+        parts: list[str] = []
+        if days:
+            parts.append(f'{days}d')
+        if hours or days:
+            parts.append(f'{hours}h')
+        parts.append(f'{minutes}m')
+        return ' '.join(parts)
+
+    mem_total_kb = int(memory.get('mem_total_kb') or 0) if isinstance(memory, dict) else 0
+    mem_free_kb = int(memory.get('mem_free_kb') or 0) if isinstance(memory, dict) else 0
+    mem_avail_kb = int(memory.get('mem_available_kb') or 0) if isinstance(memory, dict) else 0
+    used_kb = max(0, mem_total_kb - (mem_avail_kb or mem_free_kb))
+    cpu_percent = None
+    if isinstance(load, dict):
+        raw_percent = load.get('cpu_percent_estimate')
+        if isinstance(raw_percent, (int, float)):
+            cpu_percent = float(raw_percent)
+
+    uptime_sec = _uptime_seconds()
+    cpu_temp = _cpu_temp_c()
+
     identity = {
         'deviceUuid': dev.get('device_uuid') or '',
         'machineId': dev.get('machine_id') or fp.get('machine_id') or '',
@@ -307,6 +352,7 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         'network_info': net_info if isinstance(net_info, dict) else {},
         'wifi': wifi_status if isinstance(wifi_status, dict) else {},
         'ap': {
+            'active': bool((ap_status or {}).get('active')) if isinstance(ap_status, dict) else False,
             'status': ap_status if isinstance(ap_status, dict) else {},
             'clients': ap_clients.get('clients') if isinstance(ap_clients, dict) and isinstance(ap_clients.get('clients'), list) else [],
             'clients_count': len(ap_clients.get('clients') or []) if isinstance(ap_clients, dict) and isinstance(ap_clients.get('clients'), list) else 0,
@@ -321,8 +367,25 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         'panelBaseUrl': _safe_base_url(cfg.get('admin_base_url', '')),
         'identity': identity,
         'health': {
+            'cpu': {
+                'load_1m': load.get('load_1m') if isinstance(load, dict) else None,
+                'load_5m': load.get('load_5m') if isinstance(load, dict) else None,
+                'load_15m': load.get('load_15m') if isinstance(load, dict) else None,
+                'cpu_cores': load.get('cpu_cores') if isinstance(load, dict) else None,
+                'cpu_percent_estimate': cpu_percent,
+                'temperature_c': cpu_temp,
+            },
             'memory': memory if isinstance(memory, dict) else {},
+            'memory_usage': {
+                'used_kb': used_kb if mem_total_kb > 0 else None,
+                'total_kb': mem_total_kb if mem_total_kb > 0 else None,
+                'used_mb': round((used_kb / 1024.0), 1) if mem_total_kb > 0 else None,
+                'total_mb': round((mem_total_kb / 1024.0), 1) if mem_total_kb > 0 else None,
+                'used_percent': round((used_kb / mem_total_kb) * 100.0, 1) if mem_total_kb > 0 else None,
+            },
             'load': load if isinstance(load, dict) else {},
+            'uptime_seconds': uptime_sec,
+            'uptime_human': _uptime_human(uptime_sec),
             'observedAt': utc_now(),
         },
         'network': network,
