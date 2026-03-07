@@ -93,6 +93,22 @@ EOF
     echo "[git] before=${BEFORE_COMMIT}"
   fi
 
+  RUNTIME_DATA_DIR="${REPO_DIR}/var/data"
+  RUNTIME_BACKUP_DIR="${UPDATE_DIR}/${JOB_ID}-runtime-backup"
+  rm -rf "${RUNTIME_BACKUP_DIR}" >/dev/null 2>&1 || true
+  mkdir -p "${RUNTIME_BACKUP_DIR}" >/dev/null 2>&1 || true
+  if [[ -d "${RUNTIME_DATA_DIR}" ]]; then
+    find "${RUNTIME_DATA_DIR}" -maxdepth 1 -type f -name "*.json" -print0 | while IFS= read -r -d '' file; do
+      base="$(basename "${file}")"
+      cp -a "${file}" "${RUNTIME_BACKUP_DIR}/${base}" >/dev/null 2>&1 || true
+    done
+    if compgen -G "${RUNTIME_BACKUP_DIR}/*.json" > /dev/null; then
+      echo "[runtime] backed up runtime json files to ${RUNTIME_BACKUP_DIR}"
+    else
+      echo "[runtime] no runtime json files found for backup"
+    fi
+  fi
+
   # Recover from previously interrupted pull/rebase/cherry-pick sessions.
   if runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && test -f .git/MERGE_HEAD"; then
     echo "[git] previous merge conflict detected, aborting merge state"
@@ -116,17 +132,7 @@ EOF
     runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git clean -fd" >/dev/null 2>&1 || true
   fi
 
-  RUNTIME_STASH_REF=""
-  RUNTIME_STASH_MSG="portal-update-runtime-${JOB_ID}"
-  STASH_TOP_BEFORE="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
-  runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash push -m \"${RUNTIME_STASH_MSG}\" -- 'var/data/config.json' 'var/data/*.json'" >/dev/null 2>&1 || true
-  STASH_TOP_AFTER="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash list --format='%gd %s' | head -n1" 2>/dev/null || true)"
-  if [[ "${STASH_TOP_AFTER}" != "${STASH_TOP_BEFORE}" && "${STASH_TOP_AFTER}" == *"${RUNTIME_STASH_MSG}"* ]]; then
-    RUNTIME_STASH_REF="${STASH_TOP_AFTER%% *}"
-    echo "[runtime] stashed local runtime config into ${RUNTIME_STASH_REF}"
-  else
-    echo "[runtime] no local runtime stash needed"
-  fi
+  echo "[runtime] local runtime backup mode active (no git stash for var/data)"
 
   GIT_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git pull --ff-only" 2>&1)"
   GIT_RC=$?
@@ -140,30 +146,19 @@ EOF
   fi
   echo "${GIT_OUT}"
 
-  if [[ -n "${RUNTIME_STASH_REF}" ]]; then
-    echo "[runtime] restoring stashed runtime config ${RUNTIME_STASH_REF}"
-    POP_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git stash pop --index \"${RUNTIME_STASH_REF}\"" 2>&1)"
-    POP_RC=$?
-    echo "${POP_OUT}"
-    if [[ ${POP_RC} -ne 0 ]]; then
-      echo "[runtime] failed to restore runtime config"
-      cat > "${STATE_FILE}" <<EOF
-status=failed
-success=false
-git_status=failed
-repo_dir=${REPO_DIR}
-service_user=${SERVICE_USER}
-service_name=${SERVICE_NAME}
-job_id=${JOB_ID}
-started_at=${STARTED_AT}
-updated_at=$(utc_now)
-finished_at=$(utc_now)
-before_commit=${BEFORE_COMMIT}
-after_commit=${AFTER_COMMIT}
-EOF
-      exit 0
+  if [[ -d "${RUNTIME_BACKUP_DIR}" ]]; then
+    if compgen -G "${RUNTIME_BACKUP_DIR}/*.json" > /dev/null; then
+      mkdir -p "${RUNTIME_DATA_DIR}" >/dev/null 2>&1 || true
+      find "${RUNTIME_BACKUP_DIR}" -maxdepth 1 -type f -name "*.json" -print0 | while IFS= read -r -d '' file; do
+        base="$(basename "${file}")"
+        cp -a "${file}" "${RUNTIME_DATA_DIR}/${base}" >/dev/null 2>&1 || true
+        chown "${SERVICE_USER}:${SERVICE_GROUP}" "${RUNTIME_DATA_DIR}/${base}" >/dev/null 2>&1 || true
+        chmod 600 "${RUNTIME_DATA_DIR}/${base}" >/dev/null 2>&1 || true
+      done
+      echo "[runtime] runtime json files restored from backup"
+    else
+      echo "[runtime] runtime backup empty, nothing to restore"
     fi
-    echo "[runtime] runtime config restored"
   fi
 
   if [[ ${GIT_RC} -ne 0 ]]; then
