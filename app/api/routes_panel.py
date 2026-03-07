@@ -1829,6 +1829,9 @@ def api_panel_link_status():
     dev = ensure_device()
     _refresh_link_targets_from_admin_context(cfg, dev)
     st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
+    bootstrap_refresh = {'ok': False, 'updated': False}
+    if bool(st.get('linked')):
+        bootstrap_refresh = _pull_and_apply_bootstrap_keys(cfg, dev)
     return jsonify(
         ok=True,
         linked=bool(st.get('linked')),
@@ -1843,6 +1846,7 @@ def api_panel_link_status():
             'admin_to_raspi_configured': bool(str(((cfg.get('panel_api_keys') or {}).get('admin_to_raspi') if isinstance(cfg.get('panel_api_keys'), dict) else '') or '').strip()),
             'updated_at': ((cfg.get('panel_api_keys') or {}).get('updated_at') if isinstance(cfg.get('panel_api_keys'), dict) else None),
         },
+        api_key_bootstrap=bootstrap_refresh,
         panel_linked_users=(cfg.get('panel_linked_users') if isinstance(cfg.get('panel_linked_users'), list) else []),
         panel_linked_customers=(cfg.get('panel_linked_customers') if isinstance(cfg.get('panel_linked_customers'), list) else []),
         device_slug=cfg.get('device_slug') or '',

@@ -1377,6 +1377,23 @@
   async function refreshState() {
     const data = await fetchJson("/api/status/state", { cache: "no-store" });
     const base = await fetchJson("/api/status", { cache: "no-store" });
+    try {
+      const linkStatus = await fetchJson("/api/panel/link-status", { cache: "no-store" });
+      if (linkStatus && typeof linkStatus === "object") {
+        base.config = base.config || {};
+        if (linkStatus.panel_api_keys && typeof linkStatus.panel_api_keys === "object") {
+          base.config.panel_api_keys = linkStatus.panel_api_keys;
+        }
+        if (linkStatus.panel_api_key_bootstrap && typeof linkStatus.panel_api_key_bootstrap === "object") {
+          base.config.panel_api_key_bootstrap = linkStatus.panel_api_key_bootstrap;
+        }
+        if (Array.isArray(linkStatus.panel_linked_users)) {
+          base.config.panel_linked_users = linkStatus.panel_linked_users;
+        }
+      }
+    } catch (_) {
+      // Keep UI functional if panel link-status endpoint is temporarily unavailable.
+    }
     base.state = data.state || base.state;
     renderStatus(base);
     return base;
