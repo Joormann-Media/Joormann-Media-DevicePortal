@@ -1096,6 +1096,7 @@
     q("status-stream-slug").textContent = state.selected_stream_slug || cfg.selected_stream_slug || "-";
     q("status-last-check").textContent = panel.last_check || "-";
     q("status-last-error").textContent = panel.last_error || "-";
+    renderPanelApiKeyStatus(cfg);
     const maintainers = cfg.panel_linked_users || [];
     renderLinkedMaintainers(maintainers);
     ensureLinkedMaintainersHydrated(maintainers, linked);
@@ -1126,6 +1127,22 @@
         hardcoreStatus.textContent = "inaktiv";
       }
     }
+  }
+
+  function renderPanelApiKeyStatus(cfg) {
+    const keyState = (cfg && typeof cfg === "object" && cfg.panel_api_keys && typeof cfg.panel_api_keys === "object") ? cfg.panel_api_keys : {};
+    const bootstrap = (cfg && typeof cfg === "object" && cfg.panel_api_key_bootstrap && typeof cfg.panel_api_key_bootstrap === "object") ? cfg.panel_api_key_bootstrap : {};
+
+    const raspiAdminConfigured = !!(keyState.raspi_to_admin_configured || String(keyState.raspi_to_admin || "").trim());
+    const adminRaspiConfigured = !!(keyState.admin_to_raspi_configured || String(keyState.admin_to_raspi || "").trim());
+    q("panel-api-key-raspi-admin").textContent = raspiAdminConfigured ? "konfiguriert" : "nicht gesetzt";
+    q("panel-api-key-admin-raspi").textContent = adminRaspiConfigured ? "konfiguriert" : "nicht gesetzt";
+
+    const mode = String(bootstrap.mode || "none");
+    const status = String(bootstrap.status || "none");
+    const pullAt = bootstrap.last_pull_at ? ` | pull: ${bootstrap.last_pull_at}` : "";
+    const ackAt = bootstrap.last_ack_at ? ` | ack: ${bootstrap.last_ack_at}` : "";
+    q("panel-api-key-bootstrap-status").textContent = `${status} (${mode})${pullAt}${ackAt}`;
   }
 
   function updateLinkActionButtons(linked) {
