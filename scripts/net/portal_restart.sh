@@ -24,8 +24,9 @@ if ! systemctl status "${SERVICE_NAME}" >/dev/null 2>&1; then
   exit 4
 fi
 
-systemctl restart "${SERVICE_NAME}"
+# Restart async so the API can respond before the web service is recycled.
+nohup bash -c "sleep 1; systemctl restart '${SERVICE_NAME}'" >/dev/null 2>&1 &
 
 emit "success" "true"
 emit "service_name" "${SERVICE_NAME}"
-emit "message" "Portal service restart requested"
+emit "message" "Portal service restart scheduled"

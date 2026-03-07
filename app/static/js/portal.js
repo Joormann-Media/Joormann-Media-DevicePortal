@@ -3023,11 +3023,20 @@
   async function restartPortalServiceNow() {
     const confirmed = window.confirm("Portal-Service jetzt neu starten?");
     if (!confirmed) return;
-    await fetchJson("/api/system/portal/restart", {
-      method: "POST",
-      timeoutMs: 12000,
-    });
-    toast("Portal-Neustart angefordert. Seite wird neu verbunden …", "success");
+    try {
+      await fetchJson("/api/system/portal/restart", {
+        method: "POST",
+        timeoutMs: 12000,
+      });
+      toast("Portal-Neustart angefordert. Seite wird neu verbunden …", "success");
+    } catch (err) {
+      const detail = String(err && err.message ? err.message : err || "").toLowerCase();
+      const expectedRestartDrop = detail.includes("502") || detail.includes("bad gateway") || detail.includes("invalid_json");
+      if (!expectedRestartDrop) {
+        throw err;
+      }
+      toast("Portal startet neu. Kurz warten, dann wird die Seite neu verbunden …", "warning");
+    }
     window.setTimeout(() => {
       window.location.reload();
     }, 4500);

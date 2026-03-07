@@ -419,6 +419,42 @@ def _panel_handshake_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/handshake"
 
 
+def _extract_handshake_register_path(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return ''
+    direct = str(payload.get('registerPath') or payload.get('register_path') or '').strip()
+    if direct:
+        return direct
+    data = payload.get('data')
+    if isinstance(data, dict):
+        nested = str(data.get('registerPath') or data.get('register_path') or '').strip()
+        if nested:
+            return nested
+    return ''
+
+
+def _handshake_schema_ok(payload: dict | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if _extract_handshake_register_path(payload):
+        return True
+    if any(key in payload for key in ('ok', 'success', 'message', 'data', 'version')):
+        return True
+    data = payload.get('data')
+    if isinstance(data, dict) and any(key in data for key in ('ok', 'success', 'message', 'version', 'registerPath', 'register_path')):
+        return True
+    return False
+
+
+def _probe_panel_register_route(base_url: str, register_path: str) -> tuple[int | None, str]:
+    path = (register_path or '/api/device/link/register').strip()
+    if not path.startswith('/'):
+        path = f'/{path}'
+    probe_url = f"{base_url}{path}"
+    code, _, err = http_get_text(probe_url, timeout=6)
+    return code, err
+
+
 def _panel_verify_token_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/verify-token"
 
