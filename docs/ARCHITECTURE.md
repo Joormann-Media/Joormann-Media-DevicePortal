@@ -22,6 +22,7 @@ app/
     jsonio.py           # JSON read/write (atomisch)
     httpclient.py       # HTTP helper (requests)
     systeminfo.py       # Host/IP/OS/Kernel/Binaries
+    display.py          # Display Detection (DRM/EDID/xrandr) + Orientation Mapping
     timeutil.py         # UTC ISO-Zeit
   templates/
     index.html          # Lokale Setup/Diagnostics UI
@@ -73,6 +74,14 @@ Wird über `update_state()` erzeugt, enthält u. a.:
 - `selected_stream_slug`, `device_slug`, `updated_at`
 
 Quelle: [app/core/state.py:50](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/core/state.py:50)
+
+### config.json (Display-Erweiterung)
+Zusätzlich zu den bisherigen Feldern enthält die Config:
+- `display_config.connectors.<connector>.mount_orientation`
+- `display_config.connectors.<connector>.active`
+- optional `friendly_name`, `note`
+
+Damit bleiben erkannte Hardware-Daten und manuelle Montage-Ausrichtung getrennt.
 
 ### plan.json
 Wird über `/api/plan/pull` geschrieben:

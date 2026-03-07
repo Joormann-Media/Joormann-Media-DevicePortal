@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from flask import Blueprint, jsonify, request
 
 from app.core.config import _panel_url, _safe_base_url, ensure_config
+from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint
 from app.core.gitinfo import get_update_info
@@ -241,6 +242,7 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
     ap_clients = _safe_call({'clients': []}, lambda: get_ap_clients(ifname='wlan0'))
     storage_info = _safe_call({}, get_storage_state)
     update_info = _safe_call({}, get_update_info)
+    display_info = _safe_call({}, lambda: get_display_snapshot(cfg))
     memory = _safe_call({}, parse_mem_stats_kb)
     load = _safe_call({}, parse_load_stats)
 
@@ -254,6 +256,7 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         'kernel': fp.get('kernel') or '',
         'cpuModel': ((fp.get('cpu') or {}).get('model') if isinstance(fp.get('cpu'), dict) else '') or '',
         'fingerprint': fp,
+        'displayCount': int(((display_info.get('display_summary') or {}).get('total') if isinstance(display_info, dict) and isinstance(display_info.get('display_summary'), dict) else 0) or 0),
     }
 
     network = {
@@ -280,6 +283,10 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         },
         'network': network,
         'storage': storage,
+        'display': display_info if isinstance(display_info, dict) else {},
+        'displays': (display_info.get('displays') if isinstance(display_info, dict) and isinstance(display_info.get('displays'), list) else []),
+        'primaryDisplay': (display_info.get('primary_display') if isinstance(display_info, dict) and isinstance(display_info.get('primary_display'), dict) else {}),
+        'displaySummary': (display_info.get('display_summary') if isinstance(display_info, dict) and isinstance(display_info.get('display_summary'), dict) else {}),
         'software': software,
         'portal': {
             'update': update_info if isinstance(update_info, dict) else {},

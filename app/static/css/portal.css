@@ -265,6 +265,65 @@ body.portal-body {
   color: var(--portal-muted);
 }
 
+.status-display-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.75rem;
+}
+
+.status-display-item {
+  border: 1px solid var(--portal-border);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.75rem;
+}
+
+.status-display-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.55rem;
+}
+
+.status-display-name {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.status-display-meta {
+  font-size: 0.8rem;
+  color: var(--portal-muted);
+}
+
+.status-display-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(130px, 150px) 1fr;
+  gap: 0.3rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.status-display-kv dt {
+  margin: 0;
+  color: var(--portal-muted);
+  font-weight: 600;
+}
+
+.status-display-kv dd {
+  margin: 0;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.status-display-actions {
+  border-top: 1px dashed var(--portal-border);
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
 .status-setup-trigger {
   cursor: pointer;
 }

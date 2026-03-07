@@ -5,6 +5,7 @@ import time
 from flask import Blueprint, jsonify, request, send_file
 
 from app.core.config import ensure_config
+from app.core.display import DISPLAY_MOUNT_ORIENTATIONS, get_display_snapshot, normalize_mount_orientation, update_display_config
 from app.core.jsonio import write_json
 from app.core.network_events import get_wps_state, log_event, read_events, set_wps_state
 from app.core.netcontrol import (
@@ -188,6 +189,84 @@ def api_network_info():
     except NetControlError as exc:
         http_status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=http_status, detail=exc.detail)
+
+
+@bp_network.get("/api/display/info")
+def api_display_info():
+    cfg = ensure_config()
+    return _ok(get_display_snapshot(cfg))
+
+
+@bp_network.get("/api/network/display/info")
+def api_network_display_info():
+    return api_display_info()
+
+
+@bp_network.post("/api/display/config")
+def api_display_config():
+    data = request.get_json(force=True, silent=True) or {}
+    connector = str(data.get("connector") or "").strip()
+    if not connector:
+        return _error("invalid_payload", "Field 'connector' is required", status=400)
+
+    mount_orientation = None
+    if "mount_orientation" in data:
+        mount_orientation_raw = str(data.get("mount_orientation") or "").strip()
+        mount_orientation = normalize_mount_orientation(mount_orientation_raw)
+        if mount_orientation_raw and mount_orientation == "unknown" and mount_orientation_raw.lower() not in ("unknown", "horizontal", "vertical"):
+            return _error(
+                "invalid_mount_orientation",
+                "Unsupported mount_orientation",
+                status=400,
+                detail=f"Allowed: {', '.join(DISPLAY_MOUNT_ORIENTATIONS)}",
+            )
+
+    active = None
+    if "active" in data:
+        if not isinstance(data.get("active"), bool):
+            return _error("invalid_payload", "Field 'active' must be boolean", status=400)
+        active = bool(data.get("active"))
+
+    friendly_name = None
+    if "friendly_name" in data:
+        friendly_name = str(data.get("friendly_name") or "").strip()
+
+    note = None
+    if "note" in data:
+        note = str(data.get("note") or "").strip()
+
+    cfg = ensure_config()
+    try:
+        updated_item = update_display_config(
+            cfg,
+            connector=connector,
+            mount_orientation=mount_orientation,
+            active=active,
+            friendly_name=friendly_name,
+            note=note,
+        )
+    except ValueError as exc:
+        return _error("invalid_payload", str(exc), status=400)
+
+    ok_write, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok_write:
+        return _error("config_write_failed", "Could not persist display config", status=500, detail=write_err)
+
+    snapshot = get_display_snapshot(cfg)
+    return _ok(
+        {
+            "saved": True,
+            "connector": connector,
+            "display_config": updated_item,
+            "display": snapshot,
+            "allowed_mount_orientations": list(DISPLAY_MOUNT_ORIENTATIONS),
+        }
+    )
+
+
+@bp_network.post("/api/network/display/config")
+def api_network_display_config():
+    return api_display_config()
 
 
 @bp_network.post("/api/network/wifi/toggle")

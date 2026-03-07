@@ -25,6 +25,10 @@ DEFAULT_CONFIG: dict = {
     'preferred_wifi': '',
     'last_wifi_ssid': '',
     'storage_delete_hardcore_mode': False,
+    'display_config': {
+        'connectors': {},
+        'updated_at': None,
+    },
 }
 
 
@@ -82,6 +86,18 @@ def ensure_config() -> dict:
             if key not in cfg['panel_link_state']:
                 cfg['panel_link_state'][key] = value
                 changed = True
+
+    if not isinstance(cfg.get('display_config'), dict):
+        cfg['display_config'] = dict(DEFAULT_CONFIG['display_config'])
+        changed = True
+    else:
+        dc = cfg['display_config']
+        if not isinstance(dc.get('connectors'), dict):
+            dc['connectors'] = {}
+            changed = True
+        if 'updated_at' not in dc:
+            dc['updated_at'] = None
+            changed = True
 
     clamped = clamp_poll_seconds(cfg.get('poll_seconds', 60))
     if clamped != cfg.get('poll_seconds'):

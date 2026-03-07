@@ -42,6 +42,24 @@ Zusätzliche Panel-Aktionen:
 - `Panel Ping` -> `POST /api/panel/ping`
 - `Panel Register` -> `POST /api/panel/register`
 
+## Display-Bereich (Status-Tab)
+
+- Neue Karte `Displays` im Tab `Status & Link`.
+- Zeigt pro erkanntem Display:
+  - Displayname / Connector / Verbindung
+  - Hersteller/Modell
+  - Aktueller und bevorzugter Modus
+  - Refresh
+  - Physische Größe / EDID-Status
+  - Montage-Ausrichtung + resultierende Rotation
+- Pro Display editierbar:
+  - `mount_orientation`
+  - `active`
+- Speichern läuft per AJAX über `POST /api/display/config`.
+- Nach dem Speichern:
+  - Status wird live neu geladen
+  - bei bestehendem Panel-Link wird ein Sync zum Adminpanel angestoßen.
+
 ## Netzwerk Aktionen
 
 - `Refresh Network Info` -> `GET /api/network/info`

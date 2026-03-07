@@ -19,6 +19,7 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | public/ui | GET | `/` | `routes_ui.index` |
 | status | GET | `/health` | `routes_status.health` |
 | status | GET | `/api/status` | `routes_status.api_status` |
+| status | GET | `/api/display/info` | `routes_status.api_display_info` |
 | status | GET | `/api/fingerprint` | `routes_status.api_fingerprint` |
 | status | POST | `/api/fingerprint/refresh` | `routes_status.api_fingerprint_refresh` |
 | status | POST | `/api/status/fingerprint/refresh` | `routes_status.api_status_fingerprint_refresh` |
@@ -32,6 +33,9 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | plan | POST | `/api/plan/pull` | `routes_plan.api_plan_pull` |
 | plan | GET | `/api/plan/current` | `routes_plan.api_plan_current` |
 | network | GET | `/api/network/info` | `routes_network.api_network_info` |
+| network | GET | `/api/network/display/info` | `routes_network.api_network_display_info` |
+| network | POST | `/api/display/config` | `routes_network.api_display_config` |
+| network | POST | `/api/network/display/config` | `routes_network.api_network_display_config` |
 | network | POST | `/api/network/wifi/toggle` | `routes_network.api_network_wifi_toggle` |
 | network | POST | `/api/network/bluetooth/toggle` | `routes_network.api_network_bluetooth_toggle` |
 | network | POST | `/api/network/lan/toggle` | `routes_network.api_network_lan_toggle` |
@@ -104,6 +108,7 @@ curl -sS http://127.0.0.1:5070/health
   - `config` (persistierte Config)
   - `device` (mit maskiertem `auth_key`)
   - `fingerprint` (short)
+  - `display` (Snapshot mit `displays[]`, `primary_display`, `display_summary`, `warnings`)
   - `app_update` (lokaler/remote Git-Stand + Update verfügbar)
   - `state`
 
@@ -114,10 +119,23 @@ curl -sS http://127.0.0.1:5070/health
   "config": {"admin_base_url": "https://..."},
   "device": {"device_uuid": "...", "auth_key": "********abcd"},
   "fingerprint": {"hostname": "...", "kernel": "..."},
+  "display": {"display_summary": {"total": 1, "connected": 1}, "displays": []},
   "app_update": {"available": false, "local_branch": "main", "local_commit": "abc...", "remote_commit": "abc...", "error": ""},
   "state": {"mode": "setup", "panel": {"linked": false}}
 }
 ```
+
+---
+
+## 5c) GET `/api/display/info`
+- **Auth:** none
+- **200:** `{ "ok": true, "display": { ...snapshot... } }`
+
+Snapshot enthält:
+- `displays[]` (Connector, Status, Modus, EDID-Metadaten, Orientierung)
+- `primary_display`
+- `display_summary`
+- `warnings`
 
 ---
 
@@ -171,6 +189,25 @@ curl -sS -X POST http://127.0.0.1:5070/api/panel/test-url \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://admin.xxlprint-wesel.de"}'
 ```
+
+---
+
+## 6b) POST `/api/display/config`
+- **Auth:** none
+- **Body JSON:**
+```json
+{
+  "connector": "HDMI-A-1",
+  "mount_orientation": "portrait_cable_right",
+  "active": true
+}
+```
+- **200:** persistiert lokale Display-Konfiguration und liefert aktuellen Snapshot.
+- **400:** ungültige Payload / ungültige Orientierung.
+- **500:** Config konnte nicht geschrieben werden.
+
+Alias:
+- `POST /api/network/display/config`
 
 ---
 

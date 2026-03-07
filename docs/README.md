@@ -38,6 +38,21 @@ Defaults (overridable by env vars):
 - Schritt 3: optionale User/Customer-Zuordnung per Live-Suche (AJAX).
 - Nach erfolgreichem Abschluss wird der lokale Link-Status ohne Full-Reload aktualisiert.
 
+## Display-Erkennung (neu)
+- Das Portal erkennt Displays primär über `/sys/class/drm` und EDID, ergänzt optional über `xrandr`.
+- Neue Endpunkte:
+  - `GET /api/display/info`
+  - `POST /api/display/config`
+- Pro Display werden u. a. Connector, Status, Modus/Auflösung, Refresh, EDID-Metadaten und Montage-Ausrichtung bereitgestellt.
+- Die Montage-Ausrichtung ist manuell pro Connector speicherbar:
+  - `landscape_cable_bottom`
+  - `landscape_cable_top`
+  - `portrait_cable_left`
+  - `portrait_cable_right`
+  - `unknown`
+  - `custom`
+- Display-Daten fließen in `/api/status` sowie in die Panel-Register/Sync-Payloads ein.
+
 ## State contract (`STATE_PATH`)
 Contains mode/setup/play, panel status, hostname/ip, selected stream/device slug and timestamp.
 

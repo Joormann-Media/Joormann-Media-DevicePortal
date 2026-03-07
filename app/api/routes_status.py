@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from app.core.config import ensure_config
+from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_fingerprint
 from app.core.gitinfo import get_update_info
@@ -40,6 +41,7 @@ def api_status():
         config=cfg,
         device=dev_view,
         fingerprint=short_fingerprint(fp),
+        display=get_display_snapshot(cfg),
         system={
             "memory": parse_mem_stats_kb(),
             "load": parse_load_stats(),
@@ -47,6 +49,12 @@ def api_status():
         app_update=get_update_info(),
         state=state,
     )
+
+
+@bp_status.get('/api/display/info')
+def api_display_info():
+    cfg = ensure_config()
+    return jsonify(ok=True, display=get_display_snapshot(cfg))
 
 
 @bp_status.get('/api/fingerprint')

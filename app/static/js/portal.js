@@ -413,6 +413,165 @@
     }
   }
 
+  function mountOrientationLabel(value) {
+    const v = String(value || "").trim();
+    if (v === "landscape_cable_bottom") return "Landscape (Kabel unten)";
+    if (v === "landscape_cable_top") return "Landscape (Kabel oben)";
+    if (v === "portrait_cable_left") return "Portrait (Kabel links)";
+    if (v === "portrait_cable_right") return "Portrait (Kabel rechts)";
+    if (v === "custom") return "Custom";
+    return "Unknown";
+  }
+
+  function renderStatusDisplaySection() {
+    const status = statusDashboardState.status || {};
+    const display = status.display || {};
+    const displays = Array.isArray(display.displays) ? display.displays : [];
+    const host = q("status-display-list");
+    if (!host) return;
+    clearNode(host);
+
+    const countBadge = q("status-display-count");
+    if (countBadge) {
+      countBadge.textContent = `${displays.length} erkannt`;
+    }
+
+    if (displays.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary small";
+      empty.textContent = "Keine Displays erkannt.";
+      host.append(empty);
+      return;
+    }
+
+    const orientationOptions = [
+      ["landscape_cable_bottom", "Landscape (Kabel unten)"],
+      ["landscape_cable_top", "Landscape (Kabel oben)"],
+      ["portrait_cable_left", "Portrait (Kabel links)"],
+      ["portrait_cable_right", "Portrait (Kabel rechts)"],
+      ["unknown", "Unknown"],
+      ["custom", "Custom"],
+    ];
+
+    for (const item of displays) {
+      const connector = String(item.connector || "").trim();
+      const card = document.createElement("div");
+      card.className = "status-display-item";
+
+      const head = document.createElement("div");
+      head.className = "status-display-head";
+      const nameWrap = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "status-display-name";
+      name.textContent = item.display_name || connector || "Display";
+      const meta = document.createElement("div");
+      meta.className = "status-display-meta";
+      meta.textContent = `${connector || "-"} | ${item.status || "unknown"}`;
+      nameWrap.append(name, meta);
+      const stateBadge = document.createElement("span");
+      stateBadge.className = `badge text-bg-${item.connected ? "success" : "secondary"}`;
+      stateBadge.textContent = item.connected ? "connected" : "disconnected";
+      head.append(nameWrap, stateBadge);
+
+      const kv = document.createElement("dl");
+      kv.className = "status-display-kv";
+      const rows = [
+        ["Hersteller/Modell", [item.manufacturer_name, item.model].filter(Boolean).join(" ") || "-"],
+        ["Auflösung", item.current_mode || "-"],
+        ["Refresh", item.current_refresh_hz ? `${item.current_refresh_hz} Hz` : "-"],
+        ["Preferred", item.preferred_mode || "-"],
+        ["Größe", item.diagonal_inch ? `${item.diagonal_inch}" (${item.physical_width_mm || 0}x${item.physical_height_mm || 0} mm)` : "-"],
+        ["EDID", item.edid_available ? "ja" : "nein"],
+        ["Montage", mountOrientationLabel(item.mount_orientation)],
+        ["Rotation", `${item.rotation_degrees || 0}° (${item.content_orientation || "landscape"})`],
+      ];
+      for (const [label, value] of rows) {
+        const dt = document.createElement("dt");
+        dt.textContent = label;
+        const dd = document.createElement("dd");
+        dd.textContent = String(value || "-");
+        kv.append(dt, dd);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "status-display-actions";
+      const row = document.createElement("div");
+      row.className = "row g-2";
+
+      const colSelect = document.createElement("div");
+      colSelect.className = "col-md-7";
+      const select = document.createElement("select");
+      select.className = "form-select form-select-sm";
+      for (const [value, label] of orientationOptions) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        if (String(item.mount_orientation || "") === value) {
+          option.selected = true;
+        }
+        select.append(option);
+      }
+      colSelect.append(select);
+
+      const colToggle = document.createElement("div");
+      colToggle.className = "col-md-3 d-flex align-items-center";
+      const checkWrap = document.createElement("div");
+      checkWrap.className = "form-check";
+      const checkbox = document.createElement("input");
+      checkbox.className = "form-check-input";
+      checkbox.type = "checkbox";
+      checkbox.checked = !!item.active;
+      const checkLabel = document.createElement("label");
+      checkLabel.className = "form-check-label small";
+      checkLabel.textContent = "Aktiv";
+      checkWrap.append(checkbox, checkLabel);
+      colToggle.append(checkWrap);
+
+      const colSave = document.createElement("div");
+      colSave.className = "col-md-2 d-grid";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "btn btn-outline-primary btn-sm";
+      saveBtn.textContent = "Speichern";
+      saveBtn.disabled = !connector;
+      saveBtn.addEventListener("click", () => {
+        run(async () => {
+          await saveDisplayConfig(connector, select.value, checkbox.checked);
+        });
+      });
+      colSave.append(saveBtn);
+
+      row.append(colSelect, colToggle, colSave);
+      actions.append(row);
+
+      card.append(head, kv, actions);
+      host.append(card);
+    }
+  }
+
+  async function saveDisplayConfig(connector, mountOrientation, active) {
+    await fetchJson("/api/display/config", {
+      method: "POST",
+      body: {
+        connector: String(connector || ""),
+        mount_orientation: String(mountOrientation || ""),
+        active: !!active,
+      },
+    });
+    await refreshStatus();
+    try {
+      const state = (statusDashboardState.status || {}).state || {};
+      const panel = state.panel || {};
+      const linked = !!panel.linked;
+      const adminBase = String(els.adminBase?.value || "").trim();
+      if (linked && adminBase) {
+        await panelSyncNow();
+      }
+    } catch (_) {
+      // display settings are persisted locally even if panel sync fails
+    }
+    toast("Display-Konfiguration gespeichert", "success");
+  }
+
   function setWpsTarget(target) {
     if (target && target.ssid) {
       selectedWpsTarget = {
@@ -807,6 +966,7 @@
     renderStatusIdentityCard();
     renderStatusHealthCard();
     renderStatusSoftwareSection();
+    renderStatusDisplaySection();
 
     els.adminBase.value = cfg.admin_base_url || "";
     els.regToken.value = cfg.registration_token || "";
@@ -2999,6 +3159,7 @@
       }
     });
     q("btn-link-refresh-status").addEventListener("click", () => run(refreshState));
+    q("btn-display-refresh").addEventListener("click", () => run(refreshStatus));
     q("btn-link-register").addEventListener("click", () => run(panelRegister));
     q("btn-link-assign").addEventListener("click", () => openSetupWizard("assign"));
     q("btn-pull-plan").addEventListener("click", () => run(pullPlan));
