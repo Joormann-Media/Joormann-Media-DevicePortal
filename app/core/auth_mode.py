@@ -14,7 +14,7 @@ def _safe_base_url(value: Any) -> str:
     return base.rstrip("/")
 
 
-def _extract_ids_from_payload(payload: dict | None) -> tuple[list[int], list[int]]:
+def _extract_ids_from_payload(payload: dict | None) -> tuple[list[dict], list[dict]]:
     if not isinstance(payload, dict):
         return ([], [])
     candidates: list[dict] = [payload]
@@ -22,38 +22,48 @@ def _extract_ids_from_payload(payload: dict | None) -> tuple[list[int], list[int
     if isinstance(data, dict):
         candidates.append(data)
 
-    users: set[int] = set()
-    customers: set[int] = set()
+    users_by_id: dict[int, dict] = {}
+    customers_by_id: dict[int, dict] = {}
 
-    def _add(value: Any, bucket: set[int]) -> None:
+    def _add(value: Any, bucket: dict[int, dict]) -> int:
         iv = _normalize_int(value)
         if iv > 0:
-            bucket.add(iv)
+            bucket.setdefault(iv, {"id": iv})
+        return iv
 
-    def _consume_list(value: Any, bucket: set[int]) -> None:
+    def _consume_list(value: Any, bucket: dict[int, dict], item_type: str) -> None:
         if not isinstance(value, list):
             return
         for row in value:
             if isinstance(row, dict):
-                _add(row.get("id"), bucket)
-                _add(row.get("user_id"), bucket)
-                _add(row.get("customer_id"), bucket)
+                if item_type == "user":
+                    rid = _add(row.get("id") or row.get("user_id"), bucket)
+                    if rid > 0:
+                        current = bucket.get(rid, {"id": rid})
+                        for key in ("username", "email", "displayName", "display_name", "avatar", "avatarUrl", "avatar_url", "userDir", "user_dir"):
+                            if row.get(key) not in (None, ""):
+                                current[key] = row.get(key)
+                        bucket[rid] = current
+                else:
+                    _add(row.get("id") or row.get("customer_id"), bucket)
             else:
                 _add(row, bucket)
 
     for source in candidates:
-        _add(source.get("linkedUserId"), users)
-        _add(source.get("linked_user_id"), users)
-        _add(source.get("linkedCustomerId"), customers)
-        _add(source.get("linked_customer_id"), customers)
-        _consume_list(source.get("linkedUsers"), users)
-        _consume_list(source.get("linked_users"), users)
-        _consume_list(source.get("users"), users)
-        _consume_list(source.get("linkedCustomers"), customers)
-        _consume_list(source.get("linked_customers"), customers)
-        _consume_list(source.get("customers"), customers)
+        _add(source.get("linkedUserId"), users_by_id)
+        _add(source.get("linked_user_id"), users_by_id)
+        _add(source.get("linkedCustomerId"), customers_by_id)
+        _add(source.get("linked_customer_id"), customers_by_id)
+        _consume_list(source.get("linkedUsers"), users_by_id, "user")
+        _consume_list(source.get("linked_users"), users_by_id, "user")
+        _consume_list(source.get("users"), users_by_id, "user")
+        _consume_list(source.get("linkedCustomers"), customers_by_id, "customer")
+        _consume_list(source.get("linked_customers"), customers_by_id, "customer")
+        _consume_list(source.get("customers"), customers_by_id, "customer")
 
-    return (sorted(users), sorted(customers))
+    users = [users_by_id[k] for k in sorted(users_by_id.keys())]
+    customers = [customers_by_id[k] for k in sorted(customers_by_id.keys())]
+    return (users, customers)
 
 
 def refresh_link_targets_from_panel(cfg: dict, dev: dict) -> bool:
@@ -83,12 +93,12 @@ def refresh_link_targets_from_panel(cfg: dict, dev: dict) -> bool:
     except Exception:
         body = {}
 
-    user_ids, customer_ids = _extract_ids_from_payload(body if isinstance(body, dict) else None)
-    if not user_ids and not customer_ids:
+    user_rows, customer_rows = _extract_ids_from_payload(body if isinstance(body, dict) else None)
+    if not user_rows and not customer_rows:
         return False
 
-    cfg["panel_linked_users"] = [{"id": uid} for uid in user_ids if int(uid) > 0]
-    cfg["panel_linked_customers"] = [{"id": cid} for cid in customer_ids if int(cid) > 0]
+    cfg["panel_linked_users"] = [row for row in user_rows if _normalize_int(row.get("id")) > 0]
+    cfg["panel_linked_customers"] = [row for row in customer_rows if _normalize_int(row.get("id")) > 0]
     cfg["updated_at"] = utc_now()
     write_json(CONFIG_PATH, cfg, mode=0o600)
     return True

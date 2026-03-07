@@ -458,9 +458,37 @@ def _extract_link_ids(resp: dict | None) -> tuple[list[int], list[int]]:
     return sorted(user_ids), sorted(customer_ids)
 
 
-def _persist_link_targets(cfg: dict, user_ids: list[int], customer_ids: list[int]) -> None:
-    cfg['panel_linked_users'] = [{'id': uid} for uid in sorted(set(user_ids)) if int(uid) > 0]
-    cfg['panel_linked_customers'] = [{'id': cid} for cid in sorted(set(customer_ids)) if int(cid) > 0]
+def _normalize_link_rows(items: list[object], row_type: str) -> list[dict]:
+    rows_by_id: dict[int, dict] = {}
+    for item in items:
+        if isinstance(item, dict):
+            try:
+                row_id = int(item.get('id') or item.get('user_id') or item.get('customer_id') or 0)
+            except Exception:
+                row_id = 0
+            if row_id <= 0:
+                continue
+            current = rows_by_id.get(row_id, {'id': row_id})
+            if row_type == 'user':
+                for key in ('username', 'email', 'displayName', 'display_name', 'avatar', 'avatarUrl', 'avatar_url', 'userDir', 'user_dir'):
+                    value = item.get(key)
+                    if value not in (None, ''):
+                        current[key] = value
+            rows_by_id[row_id] = current
+            continue
+        try:
+            row_id = int(item)
+        except Exception:
+            row_id = 0
+        if row_id > 0:
+            rows_by_id.setdefault(row_id, {'id': row_id})
+
+    return [rows_by_id[k] for k in sorted(rows_by_id.keys())]
+
+
+def _persist_link_targets(cfg: dict, user_items: list[object], customer_items: list[object]) -> None:
+    cfg['panel_linked_users'] = _normalize_link_rows(user_items, 'user')
+    cfg['panel_linked_customers'] = _normalize_link_rows(customer_items, 'customer')
     cfg['updated_at'] = utc_now()
     write_json(CONFIG_PATH, cfg, mode=0o600)
 
@@ -515,6 +543,49 @@ def _panel_assign_url(base_url: str) -> str:
 
 def _panel_sync_status_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/sync-status"
+
+
+def _panel_auth_context_url(base_url: str) -> str:
+    return f"{base_url}/api/device/link/auth-context"
+
+
+def _refresh_link_targets_from_admin_context(cfg: dict, dev: dict) -> None:
+    st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
+    if not bool(st.get('linked')):
+        return
+    base = _safe_base_url(cfg.get('admin_base_url', ''))
+    device_uuid = str(dev.get('device_uuid') or '').strip()
+    auth_key = str(dev.get('auth_key') or '').strip()
+    if not base or not device_uuid or not auth_key:
+        return
+
+    code, resp, _err = http_post_json(
+        _panel_auth_context_url(base),
+        {'deviceUuid': device_uuid, 'authKey': auth_key},
+        timeout=6,
+    )
+    if code is None or code < 200 or code >= 300 or not isinstance(resp, dict):
+        return
+
+    linked_user_ids, linked_customer_ids = _extract_link_ids(resp)
+    linked_users_rows: list[object] = []
+    linked_customers_rows: list[object] = []
+    candidates: list[dict] = [resp]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        candidates.append(data)
+    for source in candidates:
+        users = source.get('linkedUsers') or source.get('linked_users')
+        if isinstance(users, list):
+            linked_users_rows = users
+        customers = source.get('linkedCustomers') or source.get('linked_customers')
+        if isinstance(customers, list):
+            linked_customers_rows = customers
+
+    if linked_users_rows or linked_customers_rows:
+        _persist_link_targets(cfg, linked_users_rows or linked_user_ids, linked_customers_rows or linked_customer_ids)
+    elif linked_user_ids or linked_customer_ids:
+        _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
 
 
 def _response_indicates_success(code: int | None, resp: dict | None) -> bool:
@@ -1500,6 +1571,8 @@ def api_panel_assign():
 @bp_panel.get('/api/panel/link-status')
 def api_panel_link_status():
     cfg = ensure_config()
+    dev = ensure_device()
+    _refresh_link_targets_from_admin_context(cfg, dev)
     st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
     return jsonify(
         ok=True,

@@ -41,6 +41,9 @@
   const panelSyncState = {
     lastCheckAt: "",
   };
+  const maintainerState = {
+    hydrating: false,
+  };
   const hostnameRenameState = {
     preview: null,
     previewTimer: null,
@@ -1090,6 +1093,9 @@
     q("status-stream-slug").textContent = state.selected_stream_slug || cfg.selected_stream_slug || "-";
     q("status-last-check").textContent = panel.last_check || "-";
     q("status-last-error").textContent = panel.last_error || "-";
+    const maintainers = cfg.panel_linked_users || [];
+    renderLinkedMaintainers(maintainers);
+    ensureLinkedMaintainersHydrated(maintainers, linked);
     renderStatusIdentityCard();
     renderStatusHealthCard();
     renderStatusSoftwareSection();
@@ -1132,6 +1138,97 @@
     if (btnUnlink) {
       btnUnlink.classList.toggle("d-none", !linked);
     }
+  }
+
+  function renderLinkedMaintainers(usersRaw) {
+    const listEl = q("link-maintainers-list");
+    const countEl = q("link-maintainers-count");
+    if (!listEl || !countEl) return;
+
+    const users = Array.isArray(usersRaw)
+      ? usersRaw.map((row) => (row && typeof row === "object" ? row : null)).filter(Boolean)
+      : [];
+
+    countEl.textContent = String(users.length);
+    clearNode(listEl);
+
+    if (!users.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary small";
+      empty.textContent = "Keine Maintainer zugeordnet.";
+      listEl.appendChild(empty);
+      return;
+    }
+
+    users.forEach((user) => {
+      const wrap = document.createElement("div");
+      wrap.className = "link-maintainer-row";
+
+      const avatar = document.createElement("div");
+      avatar.className = "link-maintainer-avatar";
+      const displayName = String(user.displayName || user.display_name || user.username || user.email || `#${user.id || "?"}`).trim();
+      let avatarUrl = String(user.avatarUrl || user.avatar_url || "").trim();
+      if (avatarUrl && avatarUrl.startsWith("/")) {
+        const base = String(((statusDashboardState.status || {}).config || {}).admin_base_url || "").trim();
+        if (base) {
+          avatarUrl = `${base.replace(/\/+$/, "")}${avatarUrl}`;
+        }
+      }
+      if (avatarUrl) {
+        const img = document.createElement("img");
+        img.src = avatarUrl;
+        img.alt = displayName;
+        img.loading = "lazy";
+        img.referrerPolicy = "no-referrer";
+        avatar.appendChild(img);
+      } else {
+        avatar.textContent = (displayName[0] || "?").toUpperCase();
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "link-maintainer-meta";
+      const name = document.createElement("div");
+      name.className = "link-maintainer-name";
+      name.textContent = displayName;
+      const detail = document.createElement("div");
+      detail.className = "link-maintainer-sub";
+      const username = String(user.username || "").trim();
+      const email = String(user.email || "").trim();
+      detail.textContent = [username, email].filter(Boolean).join(" · ") || `id: ${user.id || "-"}`;
+      meta.appendChild(name);
+      meta.appendChild(detail);
+
+      wrap.appendChild(avatar);
+      wrap.appendChild(meta);
+      listEl.appendChild(wrap);
+    });
+  }
+
+  function ensureLinkedMaintainersHydrated(usersRaw, linked) {
+    if (!linked || maintainerState.hydrating) return;
+    const users = Array.isArray(usersRaw) ? usersRaw : [];
+    if (!users.length) return;
+    const needsHydration = users.some((row) => {
+      if (!row || typeof row !== "object") return false;
+      return !String(row.username || row.email || row.displayName || row.display_name || "").trim();
+    });
+    if (!needsHydration) return;
+
+    maintainerState.hydrating = true;
+    fetchJson("/api/panel/link-status", { cache: "no-store" })
+      .then((payload) => {
+        const rows = Array.isArray(payload.panel_linked_users) ? payload.panel_linked_users : [];
+        if (statusDashboardState.status && statusDashboardState.status.config) {
+          statusDashboardState.status.config.panel_linked_users = rows;
+        }
+        renderLinkedMaintainers(rows);
+      })
+      .catch(() => {
+        // Keep UI stable when admin panel is temporarily unavailable.
+      })
+      .finally(() => {
+        maintainerState.hydrating = false;
+      });
   }
 
   function renderPanelSyncStatus(result, hadError = false) {
