@@ -160,6 +160,17 @@
     return v ? "yes" : "no";
   }
 
+  function normalizeOptionalBoolean(value) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1 ? true : value === 0 ? false : null;
+    if (typeof value === "string") {
+      const raw = value.trim().toLowerCase();
+      if (["1", "true", "yes", "on"].includes(raw)) return true;
+      if (["0", "false", "no", "off"].includes(raw)) return false;
+    }
+    return null;
+  }
+
   function clearNode(el) {
     while (el && el.firstChild) {
       el.removeChild(el.firstChild);
@@ -661,6 +672,32 @@
     badge.textContent = "ONLINE / UNLINKED";
   }
 
+  function renderHeroPanelFlags(config) {
+    const flags = (config && typeof config === "object" && config.panel_device_flags && typeof config.panel_device_flags === "object")
+      ? config.panel_device_flags
+      : {};
+
+    const renderSwitch = (key, wrapId, inputId, valueId, onText, offText) => {
+      const wrap = q(wrapId);
+      const input = q(inputId);
+      const valueEl = q(valueId);
+      if (!wrap || !input || !valueEl) return;
+      const value = normalizeOptionalBoolean(flags[key]);
+      input.indeterminate = value === null;
+      input.checked = value === true;
+      wrap.classList.toggle("is-unknown", value === null);
+      valueEl.textContent = value === null ? "unknown" : (value ? onText : offText);
+    };
+
+    renderSwitch("is_active", "hero-flag-active-wrap", "hero-flag-active", "hero-flag-active-value", "active", "inactive");
+    renderSwitch("is_locked", "hero-flag-locked-wrap", "hero-flag-locked", "hero-flag-locked-value", "locked", "unlocked");
+
+    const updatedEl = q("hero-flag-updated");
+    if (updatedEl) {
+      updatedEl.textContent = String(flags.updated_at || "-");
+    }
+  }
+
   function getSetupLinkType() {
     const checked = document.querySelector('input[name="setup-link-type"]:checked');
     return checked ? String(checked.value || "skip") : "skip";
@@ -991,6 +1028,7 @@
     statusDashboardState.status = data;
 
     setStatusBadge(linked, online);
+    renderHeroPanelFlags(cfg);
     const updateBadge = q("hero-update");
     if (updateBadge) {
       updateBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
@@ -2756,6 +2794,10 @@
       panelSyncState.lastCheckAt = new Date().toLocaleString();
       const adminResponse = payload.response || {};
       const syncData = adminResponse.data || {};
+      if (payload.panel_device_flags && statusDashboardState.status && statusDashboardState.status.config) {
+        statusDashboardState.status.config.panel_device_flags = payload.panel_device_flags;
+        renderHeroPanelFlags(statusDashboardState.status.config);
+      }
       renderPanelSyncStatus(syncData, false);
       toast(syncData.ok ? "Admin-Sync vollständig" : "Admin-Sync unvollständig", syncData.ok ? "success" : "warning");
     } catch (err) {

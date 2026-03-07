@@ -31,6 +31,31 @@
               <span id="hero-update" class="badge text-bg-secondary">Update-Check läuft…</span>
             </button>
           </div>
+          <div class="hero-live-switches mt-3 ms-lg-auto">
+            <div class="hero-live-switch" id="hero-flag-active-wrap">
+              <div class="hero-live-switch-label">Active</div>
+              <div class="hero-live-switch-control">
+                <label class="hero-switch" for="hero-flag-active">
+                  <input id="hero-flag-active" type="checkbox" disabled>
+                  <span class="hero-switch-slider" aria-hidden="true"></span>
+                </label>
+                <span id="hero-flag-active-value" class="hero-live-switch-value">unknown</span>
+              </div>
+            </div>
+            <div class="hero-live-switch" id="hero-flag-locked-wrap">
+              <div class="hero-live-switch-label">Locked</div>
+              <div class="hero-live-switch-control">
+                <label class="hero-switch" for="hero-flag-locked">
+                  <input id="hero-flag-locked" type="checkbox" disabled>
+                  <span class="hero-switch-slider" aria-hidden="true"></span>
+                </label>
+                <span id="hero-flag-locked-value" class="hero-live-switch-value">unknown</span>
+              </div>
+            </div>
+            <div class="hero-live-switch-meta">
+              Panel Flags: <span id="hero-flag-updated">-</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>

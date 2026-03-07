@@ -21,6 +21,11 @@ DEFAULT_CONFIG: dict = {
         'last_response': None,
         'last_error': '',
     },
+    'panel_device_flags': {
+        'is_active': None,
+        'is_locked': None,
+        'updated_at': None,
+    },
     'wifi_profiles': [],
     'preferred_wifi': '',
     'last_wifi_ssid': '',
@@ -85,6 +90,15 @@ def ensure_config() -> dict:
         for key, value in DEFAULT_CONFIG['panel_link_state'].items():
             if key not in cfg['panel_link_state']:
                 cfg['panel_link_state'][key] = value
+                changed = True
+
+    if not isinstance(cfg.get('panel_device_flags'), dict):
+        cfg['panel_device_flags'] = dict(DEFAULT_CONFIG['panel_device_flags'])
+        changed = True
+    else:
+        for key, value in DEFAULT_CONFIG['panel_device_flags'].items():
+            if key not in cfg['panel_device_flags']:
+                cfg['panel_device_flags'][key] = value
                 changed = True
 
     if not isinstance(cfg.get('display_config'), dict):
