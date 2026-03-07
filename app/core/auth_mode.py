@@ -2,6 +2,97 @@ from __future__ import annotations
 
 from typing import Any
 
+import requests
+
+from app.core.jsonio import write_json
+from app.core.paths import CONFIG_PATH
+from app.core.timeutil import utc_now
+
+
+def _safe_base_url(value: Any) -> str:
+    base = str(value or "").strip()
+    return base.rstrip("/")
+
+
+def _extract_ids_from_payload(payload: dict | None) -> tuple[list[int], list[int]]:
+    if not isinstance(payload, dict):
+        return ([], [])
+    candidates: list[dict] = [payload]
+    data = payload.get("data")
+    if isinstance(data, dict):
+        candidates.append(data)
+
+    users: set[int] = set()
+    customers: set[int] = set()
+
+    def _add(value: Any, bucket: set[int]) -> None:
+        iv = _normalize_int(value)
+        if iv > 0:
+            bucket.add(iv)
+
+    def _consume_list(value: Any, bucket: set[int]) -> None:
+        if not isinstance(value, list):
+            return
+        for row in value:
+            if isinstance(row, dict):
+                _add(row.get("id"), bucket)
+                _add(row.get("user_id"), bucket)
+                _add(row.get("customer_id"), bucket)
+            else:
+                _add(row, bucket)
+
+    for source in candidates:
+        _add(source.get("linkedUserId"), users)
+        _add(source.get("linked_user_id"), users)
+        _add(source.get("linkedCustomerId"), customers)
+        _add(source.get("linked_customer_id"), customers)
+        _consume_list(source.get("linkedUsers"), users)
+        _consume_list(source.get("linked_users"), users)
+        _consume_list(source.get("users"), users)
+        _consume_list(source.get("linkedCustomers"), customers)
+        _consume_list(source.get("linked_customers"), customers)
+        _consume_list(source.get("customers"), customers)
+
+    return (sorted(users), sorted(customers))
+
+
+def refresh_link_targets_from_panel(cfg: dict, dev: dict) -> bool:
+    if not isinstance(cfg, dict) or not isinstance(dev, dict):
+        return False
+    panel_state = cfg.get("panel_link_state") if isinstance(cfg.get("panel_link_state"), dict) else {}
+    if not bool(panel_state.get("linked")):
+        return False
+
+    base = _safe_base_url(cfg.get("admin_base_url"))
+    device_uuid = str(dev.get("device_uuid") or "").strip()
+    auth_key = str(dev.get("auth_key") or "").strip()
+    if not base or not device_uuid or not auth_key:
+        return False
+
+    url = f"{base}/api/device/link/auth-context"
+    payload = {"deviceUuid": device_uuid, "authKey": auth_key}
+    try:
+        response = requests.post(url, json=payload, timeout=6)
+    except Exception:
+        return False
+    if response.status_code < 200 or response.status_code >= 300:
+        return False
+
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+
+    user_ids, customer_ids = _extract_ids_from_payload(body if isinstance(body, dict) else None)
+    if not user_ids and not customer_ids:
+        return False
+
+    cfg["panel_linked_users"] = [{"id": uid} for uid in user_ids if int(uid) > 0]
+    cfg["panel_linked_customers"] = [{"id": cid} for cid in customer_ids if int(cid) > 0]
+    cfg["updated_at"] = utc_now()
+    write_json(CONFIG_PATH, cfg, mode=0o600)
+    return True
+
 
 def _normalize_int(value: Any) -> int:
     try:

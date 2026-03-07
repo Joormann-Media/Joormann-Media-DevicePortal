@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
 from app.core.auth_local import LocalAuthError, authenticate_local_user, list_interactive_users
-from app.core.auth_mode import resolve_auth_mode
+from app.core.auth_mode import refresh_link_targets_from_panel, resolve_auth_mode
 from app.core.auth_panel import PanelAuthError, authenticate_via_panel, complete_panel_two_factor
 from app.core.auth_session import (
     clear_pending_panel_2fa,
@@ -40,6 +40,8 @@ def login_page():
         return redirect(_safe_next(request.args.get("next") or "/"))
 
     cfg = ensure_config()
+    dev = ensure_device()
+    refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(cfg)
     pending_2fa = get_pending_panel_2fa() if mode_info["mode"] == "panel_remote" else {}
     return render_template(
@@ -63,6 +65,7 @@ def login_submit():
 
     cfg = ensure_config()
     dev = ensure_device()
+    refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(cfg)
 
     username = (request.form.get("username") or request.form.get("_username") or "").strip()
@@ -206,6 +209,8 @@ def logout_submit():
 @bp_auth.get("/api/auth/mode")
 def api_auth_mode():
     cfg = ensure_config()
+    dev = ensure_device()
+    refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(cfg)
     return jsonify(
         ok=True,
@@ -222,6 +227,8 @@ def api_auth_mode():
 @bp_auth.get("/api/auth/status")
 def api_auth_status():
     cfg = ensure_config()
+    dev = ensure_device()
+    refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(cfg)
     auth = current_session()
     return jsonify(
