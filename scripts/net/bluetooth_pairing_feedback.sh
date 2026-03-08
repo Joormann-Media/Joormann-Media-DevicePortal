@@ -34,6 +34,8 @@ extract_passkey_line() {
 passkey_line="$(extract_passkey_line)"
 passkey="$(echo "${passkey_line}" | grep -Eo '[0-9]{6}' | tail -n1 || true)"
 passkey="${passkey:-}"
+pending_mac="$(echo "${passkey_line}" | grep -Eo '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' | tail -n1 || true)"
+pending_mac="${pending_mac:-}"
 
 device_mac=""
 device_name=""
@@ -45,10 +47,14 @@ if [[ -n "${paired_lines}" ]]; then
 fi
 
 recent_line="$(echo "${log_dump}" | tail -n1 | xargs || true)"
+if [[ -z "${pending_mac}" ]]; then
+  pending_mac="$(echo "${recent_line}" | grep -Eo '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' | tail -n1 || true)"
+  pending_mac="${pending_mac:-}"
+fi
 
 echo "passkey=${passkey}"
+echo "pending_mac=${pending_mac}"
 echo "device_mac=${device_mac}"
 echo "device_name=${device_name}"
 echo "passkey_line=${passkey_line}"
 echo "recent_line=${recent_line}"
-

@@ -364,6 +364,7 @@ def get_bluetooth_pairing_feedback(window_seconds: int = 300) -> dict:
     parsed = _parse_kv_output(out)
     return {
         "passkey": (parsed.get("passkey") or "").strip(),
+        "pending_mac": (parsed.get("pending_mac") or "").strip(),
         "device_mac": (parsed.get("device_mac") or "").strip(),
         "device_name": (parsed.get("device_name") or "").strip(),
         "passkey_line": (parsed.get("passkey_line") or "").strip(),
@@ -373,7 +374,7 @@ def get_bluetooth_pairing_feedback(window_seconds: int = 300) -> dict:
 
 def start_bluetooth_pairing_session(timeout_seconds: int = 180) -> dict:
     safe_timeout = max(30, min(900, int(timeout_seconds or 180)))
-    rc, out, err = _run_script("bluetooth_pairing_session.sh", ["start", str(safe_timeout)], timeout=10, use_sudo=True)
+    rc, out, err = _run_script("bluetooth_pairing_session.sh", ["start", str(safe_timeout)], timeout=20, use_sudo=True)
     if rc != 0:
         raise NetControlError(
             code="bluetooth_pairing_start_failed",
@@ -390,7 +391,7 @@ def start_bluetooth_pairing_session(timeout_seconds: int = 180) -> dict:
 
 
 def stop_bluetooth_pairing_session() -> dict:
-    rc, out, err = _run_script("bluetooth_pairing_session.sh", ["stop"], timeout=10, use_sudo=True)
+    rc, out, err = _run_script("bluetooth_pairing_session.sh", ["stop"], timeout=20, use_sudo=True)
     if rc != 0:
         raise NetControlError(
             code="bluetooth_pairing_stop_failed",
@@ -416,6 +417,37 @@ def get_bluetooth_pairing_session_status() -> dict:
     return {
         "active": _parse_bool_flag(parsed.get("active")) is True,
         "pid": _parse_int_flag(parsed.get("pid")),
+        "stdout": out,
+    }
+
+
+def bluetooth_pairing_action(action: str, target_mac: str) -> dict:
+    normalized_action = (action or "").strip().lower()
+    if normalized_action not in ("confirm", "reject"):
+        raise NetControlError(code="invalid_payload", message="action must be confirm or reject")
+
+    mac = (target_mac or "").strip()
+    if not re.fullmatch(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", mac):
+        raise NetControlError(code="invalid_payload", message="target_mac must be a valid MAC address")
+
+    rc, out, err = _run_script("bluetooth_pairing_action.sh", [normalized_action, mac], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(
+            code="bluetooth_pairing_action_failed",
+            message="Failed to apply Bluetooth pairing action",
+            detail=err or out,
+        )
+
+    parsed = _parse_kv_output(out)
+    return {
+        "action": (parsed.get("action") or normalized_action).strip(),
+        "mac": (parsed.get("mac") or mac).strip(),
+        "name": (parsed.get("name") or "").strip(),
+        "paired": _parse_bool_flag(parsed.get("paired")),
+        "trusted": _parse_bool_flag(parsed.get("trusted")),
+        "connected": _parse_bool_flag(parsed.get("connected")),
+        "stdout_tail": (parsed.get("stdout_tail") or "").strip(),
+        "stderr_tail": (parsed.get("stderr_tail") or "").strip(),
         "stdout": out,
     }
 

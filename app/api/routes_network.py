@@ -36,6 +36,7 @@ from app.core.netcontrol import (
     get_bluetooth_status,
     get_bluetooth_pairing_feedback,
     get_bluetooth_pairing_session_status,
+    bluetooth_pairing_action,
     set_bluetooth_enabled,
     set_bluetooth_runtime_settings,
     start_bluetooth_pairing_session,
@@ -431,6 +432,50 @@ def api_network_bluetooth_pairing_stop():
         set_bt_pairing_state(state)
         log_event("bluetooth", "Bluetooth pairing mode stopped")
         return _ok({"stopped": True, "session": stop_info, "bluetooth": status})
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/bluetooth/pairing/confirm")
+def api_network_bluetooth_pairing_confirm():
+    data = request.get_json(force=True, silent=True) or {}
+    target_mac = str(data.get("target_mac") or "").strip()
+    if target_mac == "":
+        try:
+            feedback = get_bluetooth_pairing_feedback(window_seconds=300)
+            target_mac = str(feedback.get("pending_mac") or feedback.get("device_mac") or "").strip()
+        except NetControlError:
+            target_mac = ""
+    if target_mac == "":
+        return _error("invalid_payload", "No target_mac available for confirmation", status=400)
+
+    try:
+        action_result = bluetooth_pairing_action("confirm", target_mac)
+        log_event("bluetooth", "Bluetooth pairing confirmed", data={"target_mac": target_mac, "result": action_result})
+        return _ok({"confirmed": True, "target_mac": target_mac, "result": action_result})
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/bluetooth/pairing/reject")
+def api_network_bluetooth_pairing_reject():
+    data = request.get_json(force=True, silent=True) or {}
+    target_mac = str(data.get("target_mac") or "").strip()
+    if target_mac == "":
+        try:
+            feedback = get_bluetooth_pairing_feedback(window_seconds=300)
+            target_mac = str(feedback.get("pending_mac") or feedback.get("device_mac") or "").strip()
+        except NetControlError:
+            target_mac = ""
+    if target_mac == "":
+        return _error("invalid_payload", "No target_mac available for reject", status=400)
+
+    try:
+        action_result = bluetooth_pairing_action("reject", target_mac)
+        log_event("bluetooth", "Bluetooth pairing rejected", data={"target_mac": target_mac, "result": action_result})
+        return _ok({"rejected": True, "target_mac": target_mac, "result": action_result})
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)

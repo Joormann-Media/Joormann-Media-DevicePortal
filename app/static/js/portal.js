@@ -6,6 +6,7 @@
   let wpsPollHandle = null;
   let apPollHandle = null;
   let btPairingPollHandle = null;
+  let btPairingLatest = {};
   let storagePollHandle = null;
   let updatePollHandle = null;
   let currentUpdateJobId = "";
@@ -3088,6 +3089,7 @@
   }
 
   function renderBtPairingStatus(data) {
+    btPairingLatest = data || {};
     const active = !!data.active;
     const badge = q("bt-pairing-status-badge");
     if (badge) {
@@ -3102,6 +3104,11 @@
     const deviceLabel = [String(feedback.device_name || "").trim(), String(feedback.device_mac || "").trim()].filter(Boolean).join(" ");
     q("bt-pairing-device").textContent = deviceLabel || "-";
     q("bt-pairing-message").textContent = String(feedback.passkey_line || feedback.recent_line || "Warte auf Pairing-Anfrage...").trim();
+  }
+
+  function currentBtTargetMac() {
+    const feedback = btPairingLatest.feedback || {};
+    return String(feedback.pending_mac || feedback.device_mac || "").trim();
   }
 
   async function refreshBtPairingStatus() {
@@ -3157,6 +3164,36 @@
     await refreshNetwork();
     await refreshBtPairingStatus();
     toast("Bluetooth Pairing gestoppt", "success");
+  }
+
+  async function confirmBluetoothPairing() {
+    const targetMac = currentBtTargetMac();
+    if (!targetMac) {
+      throw new Error("Keine Ziel-MAC für Bestätigung verfügbar.");
+    }
+    await fetchJson("/api/network/bluetooth/pairing/confirm", {
+      method: "POST",
+      body: { target_mac: targetMac },
+      timeoutMs: 20000,
+    });
+    await refreshBtPairingStatus();
+    await refreshNetwork();
+    toast(`Kopplung bestätigt (${targetMac})`, "success");
+  }
+
+  async function rejectBluetoothPairing() {
+    const targetMac = currentBtTargetMac();
+    if (!targetMac) {
+      throw new Error("Keine Ziel-MAC für Ablehnung verfügbar.");
+    }
+    await fetchJson("/api/network/bluetooth/pairing/reject", {
+      method: "POST",
+      body: { target_mac: targetMac },
+      timeoutMs: 20000,
+    });
+    await refreshBtPairingStatus();
+    await refreshNetwork();
+    toast(`Kopplung abgelehnt (${targetMac})`, "secondary");
   }
 
   async function toggleLan() {
@@ -3710,6 +3747,8 @@
     els.btnWifiToggle.addEventListener("click", () => run(toggleWifi));
     els.btnBtToggle.addEventListener("click", () => run(toggleBluetooth));
     els.btnBtPairingStart.addEventListener("click", () => run(startBluetoothPairing));
+    q("btn-bt-pairing-confirm").addEventListener("click", () => run(confirmBluetoothPairing));
+    q("btn-bt-pairing-reject").addEventListener("click", () => run(rejectBluetoothPairing));
     q("btn-bt-pairing-stop").addEventListener("click", () => run(stopBluetoothPairing));
     els.btnLanToggle.addEventListener("click", () => run(toggleLan));
     q("btn-wps").addEventListener("click", () => run(startWps));
