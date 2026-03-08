@@ -411,10 +411,11 @@ def api_stream_player_action(action: str):
 @bp_stream.get('/api/stream/player/repo')
 def api_stream_player_repo_get():
     cfg = ensure_config()
+    repo_link = str(cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '')
     return jsonify(
         ok=True,
         config={
-            'player_repo_dir': str(cfg.get('player_repo_dir') or ''),
+            'player_repo_link': repo_link,
             'player_service_name': str(cfg.get('player_service_name') or STREAM_SERVICE_NAME),
             'player_service_user': str(cfg.get('player_service_user') or ''),
         },
@@ -425,11 +426,12 @@ def api_stream_player_repo_get():
 def api_stream_player_repo_set():
     cfg = ensure_config()
     data = request.get_json(force=True, silent=True) or {}
-    repo_dir = str(data.get('player_repo_dir') or '').strip()
+    repo_link = str(data.get('player_repo_link') or data.get('player_repo_dir') or '').strip()
     service_name = str(data.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
     service_user = str(data.get('player_service_user') or '').strip()
 
-    cfg['player_repo_dir'] = repo_dir
+    cfg['player_repo_link'] = repo_link
+    cfg['player_repo_dir'] = repo_link
     cfg['player_service_name'] = service_name
     cfg['player_service_user'] = service_user
     cfg['updated_at'] = utc_now()
@@ -438,7 +440,7 @@ def api_stream_player_repo_set():
         return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
 
     return jsonify(ok=True, config={
-        'player_repo_dir': repo_dir,
+        'player_repo_link': repo_link,
         'player_service_name': service_name,
         'player_service_user': service_user,
     })
@@ -448,15 +450,15 @@ def api_stream_player_repo_set():
 def api_stream_player_install_update():
     cfg = ensure_config()
     data = request.get_json(force=True, silent=True) or {}
-    repo_dir = str(data.get('player_repo_dir') or cfg.get('player_repo_dir') or '').strip()
+    repo_link = str(data.get('player_repo_link') or data.get('player_repo_dir') or cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '').strip()
     service_name = str(data.get('player_service_name') or cfg.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
     service_user = str(data.get('player_service_user') or cfg.get('player_service_user') or '').strip()
 
-    if not repo_dir:
-        return jsonify(ok=False, error='player_repo_missing', detail='Bitte Player-Repo-Pfad setzen.'), 400
+    if not repo_link:
+        return jsonify(ok=False, error='player_repo_missing', detail='Bitte Player-Repo-Link oder lokalen Pfad setzen.'), 400
 
     try:
-        payload = player_update(repo_dir, service_user=service_user, service_name=service_name)
+        payload = player_update(repo_link, service_user=service_user, service_name=service_name)
     except NetControlError as exc:
         status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status

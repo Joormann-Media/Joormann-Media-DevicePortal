@@ -979,10 +979,10 @@ def portal_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_B
     }
 
 
-def player_update(player_repo_dir: str, service_user: str = "", service_name: str = "joormann-media-deviceplayer.service") -> dict:
-    repo_dir = (player_repo_dir or "").strip()
-    if not repo_dir:
-        raise NetControlError(code="player_repo_missing", message="Player repo path is required")
+def player_update(player_repo_link: str, service_user: str = "", service_name: str = "joormann-media-deviceplayer.service") -> dict:
+    repo_link = (player_repo_link or "").strip()
+    if not repo_link:
+        raise NetControlError(code="player_repo_missing", message="Player repo link/path is required")
 
     service = (service_name or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
     user = (service_user or "").strip() or _service_user_from_systemd("device-portal.service") or getpass.getuser()
@@ -990,7 +990,7 @@ def player_update(player_repo_dir: str, service_user: str = "", service_name: st
 
     rc, out, err = _run_script(
         "player_update.sh",
-        ["start", repo_dir, user, service, update_dir],
+        ["start", repo_link, user, service, update_dir, str(REPO_ROOT.resolve())],
         timeout=25,
         use_sudo=True,
     )
@@ -1005,7 +1005,8 @@ def player_update(player_repo_dir: str, service_user: str = "", service_name: st
 
     return {
         "success": parsed.get("success", "true").lower() == "true",
-        "repo_dir": parsed.get("repo_dir", repo_dir),
+        "repo_dir": parsed.get("repo_dir", ""),
+        "repo_link": parsed.get("repo_link", repo_link),
         "service_user": parsed.get("service_user", user),
         "service_name": parsed.get("service_name", service),
         "job_id": parsed.get("job_id", ""),

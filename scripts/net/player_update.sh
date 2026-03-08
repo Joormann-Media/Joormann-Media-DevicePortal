@@ -3,15 +3,16 @@ set -euo pipefail
 
 MODE="${1:-start}"
 if [[ "${MODE}" != "start" ]]; then
-  echo "usage: $0 start <player_repo_dir> <service_user> [service_name] [update_dir]" >&2
+  echo "usage: $0 start <player_repo_link_or_path> <service_user> [service_name] [update_dir] [portal_repo_dir]" >&2
   exit 2
 fi
 
 shift || true
-PLAYER_REPO_DIR="${1:-}"
+PLAYER_REPO_REF="${1:-}"
 SERVICE_USER="${2:-}"
 SERVICE_NAME="${3:-joormann-media-deviceplayer.service}"
 UPDATE_DIR="${4:-/tmp/deviceplayer-updates}"
+PORTAL_REPO_DIR="${5:-}"
 
 emit() {
   local key="$1"
@@ -23,14 +24,25 @@ utc_now() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
-if [[ -z "${PLAYER_REPO_DIR}" || -z "${SERVICE_USER}" ]]; then
-  echo "usage: $0 start <player_repo_dir> <service_user> [service_name] [update_dir]" >&2
-  exit 2
-fi
+is_repo_url() {
+  local v="$1"
+  [[ "$v" =~ ^https?:// ]] || [[ "$v" =~ ^git@ ]] || [[ "$v" =~ ^ssh:// ]]
+}
 
-if [[ ! -d "${PLAYER_REPO_DIR}" || ! -d "${PLAYER_REPO_DIR}/.git" ]]; then
-  echo "invalid player repo dir: ${PLAYER_REPO_DIR}" >&2
-  exit 3
+repo_name_from_ref() {
+  local v="$1"
+  local b
+  b="$(basename "$v")"
+  b="${b%.git}"
+  if [[ -z "$b" ]]; then
+    b="Joormann-Media-DevicePlayer"
+  fi
+  printf '%s' "$b"
+}
+
+if [[ -z "${PLAYER_REPO_REF}" || -z "${SERVICE_USER}" ]]; then
+  echo "usage: $0 start <player_repo_link_or_path> <service_user> [service_name] [update_dir] [portal_repo_dir]" >&2
+  exit 2
 fi
 
 if ! id "${SERVICE_USER}" >/dev/null 2>&1; then
@@ -53,7 +65,8 @@ cat > "${STATE_FILE}" <<EOF
 status=running
 success=false
 git_status=unknown
-repo_dir=${PLAYER_REPO_DIR}
+repo_ref=${PLAYER_REPO_REF}
+repo_dir=
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
@@ -66,16 +79,94 @@ EOF
 
 (
   set +e
-  echo "[player-update] start job=${JOB_ID} repo=${PLAYER_REPO_DIR} user=${SERVICE_USER}"
+  echo "[player-update] start job=${JOB_ID} ref=${PLAYER_REPO_REF} user=${SERVICE_USER}"
 
-  BEFORE_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${PLAYER_REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
+  REPO_REF="${PLAYER_REPO_REF}"
+  if is_repo_url "${REPO_REF}"; then
+    if [[ -n "${PORTAL_REPO_DIR}" ]]; then
+      PORTAL_PARENT="$(dirname "${PORTAL_REPO_DIR}")"
+    else
+      PORTAL_PARENT="$(eval echo "~${SERVICE_USER}")/projects"
+    fi
+    mkdir -p "${PORTAL_PARENT}"
+    REPO_NAME="$(repo_name_from_ref "${REPO_REF}")"
+    REPO_DIR="${PORTAL_PARENT}/${REPO_NAME}"
+
+    if [[ -d "${REPO_DIR}/.git" ]]; then
+      echo "[git] existing clone found at ${REPO_DIR}"
+    elif [[ -e "${REPO_DIR}" ]]; then
+      echo "[git] target path exists but is not a git repo: ${REPO_DIR}"
+      cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=failed
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=
+after_commit=
+EOF
+      exit 0
+    else
+      echo "[git] cloning ${REPO_REF} -> ${REPO_DIR}"
+      runuser -u "${SERVICE_USER}" -- bash -lc "git clone --depth=1 \"${REPO_REF}\" \"${REPO_DIR}\""
+      CLONE_RC=$?
+      if [[ ${CLONE_RC} -ne 0 ]]; then
+        echo "[git] clone failed rc=${CLONE_RC}"
+        cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=failed
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=
+after_commit=
+EOF
+        exit 0
+      fi
+    fi
+  else
+    REPO_DIR="${REPO_REF}"
+    if [[ ! -d "${REPO_DIR}/.git" ]]; then
+      echo "[git] invalid local player repo dir: ${REPO_DIR}"
+      cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=failed
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=
+after_commit=
+EOF
+      exit 0
+    fi
+  fi
+
+  BEFORE_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
   if [[ -n "${BEFORE_COMMIT}" ]]; then
     echo "[git] before=${BEFORE_COMMIT}"
   fi
 
-  GIT_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${PLAYER_REPO_DIR}\" && git pull --ff-only" 2>&1)"
+  GIT_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git pull --ff-only" 2>&1)"
   GIT_RC=$?
-  AFTER_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${PLAYER_REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
+  AFTER_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
   if [[ ${GIT_RC} -eq 0 ]]; then
     GIT_STATUS="ok"
     echo "[git] ok"
@@ -90,7 +181,8 @@ EOF
 status=failed
 success=false
 git_status=${GIT_STATUS}
-repo_dir=${PLAYER_REPO_DIR}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
@@ -113,7 +205,8 @@ EOF
 status=failed
 success=false
 git_status=${GIT_STATUS}
-repo_dir=${PLAYER_REPO_DIR}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
@@ -126,8 +219,8 @@ EOF
     exit 0
   fi
 
-  VENV_DIR="${PLAYER_REPO_DIR}/.venv"
-  REQ_FILE="${PLAYER_REPO_DIR}/requirements.txt"
+  VENV_DIR="${REPO_DIR}/.venv"
+  REQ_FILE="${REPO_DIR}/requirements.txt"
 
   if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
     echo "[venv] create ${VENV_DIR}"
@@ -147,7 +240,8 @@ EOF
 status=failed
 success=false
 git_status=${GIT_STATUS}
-repo_dir=${PLAYER_REPO_DIR}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
@@ -179,10 +273,10 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
-WorkingDirectory=${PLAYER_REPO_DIR}
+WorkingDirectory=${REPO_DIR}
 EnvironmentFile=-${ENV_FILE}
 Environment=SDL_AUDIODRIVER=dummy
-ExecStart=${VENV_DIR}/bin/python ${PLAYER_REPO_DIR}/run.py
+ExecStart=${VENV_DIR}/bin/python ${REPO_DIR}/run.py
 Restart=always
 RestartSec=2
 
@@ -198,7 +292,8 @@ EOF
 status=restarting
 success=false
 git_status=${GIT_STATUS}
-repo_dir=${PLAYER_REPO_DIR}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
@@ -216,7 +311,8 @@ EOF
 status=done
 success=true
 git_status=${GIT_STATUS}
-repo_dir=${PLAYER_REPO_DIR}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
@@ -232,7 +328,8 @@ EOF
 status=failed
 success=false
 git_status=${GIT_STATUS}
-repo_dir=${PLAYER_REPO_DIR}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
 job_id=${JOB_ID}
@@ -252,7 +349,8 @@ emit "success" "true"
 emit "code" "ok"
 emit "message" "Player update started"
 emit "job_id" "${JOB_ID}"
-emit "repo_dir" "${PLAYER_REPO_DIR}"
+emit "repo_link" "${PLAYER_REPO_REF}"
+emit "repo_dir" ""
 emit "service_user" "${SERVICE_USER}"
 emit "service_name" "${SERVICE_NAME}"
 emit "log_file" "${LOG_FILE}"

@@ -3219,18 +3219,18 @@
   async function loadPlayerRepoConfig() {
     const payload = await fetchJson("/api/stream/player/repo", { timeoutMs: 10000 });
     const cfg = payload.config || {};
-    q("stream-player-repo-dir").value = String(cfg.player_repo_dir || "");
+    q("stream-player-repo-dir").value = String(cfg.player_repo_link || cfg.player_repo_dir || "");
     q("stream-player-service-name").value = String(cfg.player_service_name || "joormann-media-deviceplayer.service");
     q("stream-player-service-user").value = String(cfg.player_service_user || "");
   }
 
   async function savePlayerRepoConfig() {
-    const player_repo_dir = String(q("stream-player-repo-dir")?.value || "").trim();
+    const player_repo_link = String(q("stream-player-repo-dir")?.value || "").trim();
     const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
     const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
     await fetchJson("/api/stream/player/repo", {
       method: "POST",
-      body: { player_repo_dir, player_service_name, player_service_user },
+      body: { player_repo_link, player_service_name, player_service_user },
       timeoutMs: 12000,
     });
     toast("Player-Repo Link gespeichert", "success");
@@ -3297,15 +3297,15 @@
   }
 
   async function startStreamPlayerInstallUpdate() {
-    const player_repo_dir = String(q("stream-player-repo-dir")?.value || "").trim();
+    const player_repo_link = String(q("stream-player-repo-dir")?.value || "").trim();
     const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
     const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
-    if (!player_repo_dir) {
-      throw new Error("Bitte zuerst Player-Repo Pfad setzen.");
+    if (!player_repo_link) {
+      throw new Error("Bitte zuerst Player-Repo Link/Pfad setzen.");
     }
     const payload = await fetchJson("/api/stream/player/install-update", {
       method: "POST",
-      body: { player_repo_dir, player_service_name, player_service_user },
+      body: { player_repo_link, player_service_name, player_service_user },
       timeoutMs: 20000,
     });
     const data = payload.data || {};

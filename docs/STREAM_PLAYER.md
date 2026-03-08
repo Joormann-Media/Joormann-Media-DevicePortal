@@ -21,7 +21,8 @@ Das Device Portal steuert den lokalen Device Player und synchronisiert Stream-Ma
 - `POST /api/stream/player/start|stop|restart`
 - `GET /api/stream/player/repo`
 - `POST /api/stream/player/repo`
-  - Player-Repo-Link + Service-Name/User speichern
+  - Player-Repo-Link + Service-Name/User speichern.
+  - `player_repo_link` kann URL **oder** lokaler Pfad sein.
 - `POST /api/stream/player/install-update`
   - Startet Install/Update-Job für den Player aus dem verlinkten Repo
 - `GET /api/stream/player/install-update/status`
@@ -63,6 +64,17 @@ Das Portal nutzt Script:
 
 - `scripts/net/player_service.sh`
 - `scripts/net/player_update.sh`
+
+## Repo-Link Verhalten
+
+- Bei lokalem Pfad:
+  - verwendet genau diesen Pfad als Player-Repo.
+- Bei URL (`https://...`, `git@...`, `ssh://...`):
+  - Portal klont automatisch in den Nachbarordner zum Portal-Repo.
+  - Beispiel:
+    - Portal: `/home/djanebmb/projects/Joormann-Media-Deviceportal`
+    - URL: `https://github.com/Joormann-Media/Joormann-Media-DevicePlayer.git`
+    - Ziel: `/home/djanebmb/projects/Joormann-Media-DevicePlayer`
 
 und netcontrol wrapper:
 
