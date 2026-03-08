@@ -50,6 +50,14 @@
     network: null,
     storage: null,
   };
+
+  const REQUEST_TIMEOUTS = {
+    panelUrlTestMs: 15000,
+    panelTokenValidateMs: 15000,
+    panelRegisterMs: 30000,
+    panelSearchMs: 15000,
+    panelAssignMs: 15000,
+  };
   const panelSyncState = {
     lastCheckAt: "",
   };
@@ -120,7 +128,8 @@
       txt = await res.text();
     } catch (err) {
       if (err && err.name === "AbortError") {
-        throw new Error(`Request timeout after ${Math.round(timeoutMs / 1000)}s`);
+        const seconds = Math.max(1, Math.round(timeoutMs / 1000));
+        throw new Error(`Zeitüberschreitung nach ${seconds}s. Panel-Anfrage hat zu lange gedauert.`);
       }
       throw err;
     } finally {
@@ -902,7 +911,7 @@
     const payload = await fetchJson("/api/panel/test-url", {
       method: "POST",
       body: { url: setupWizardState.panelUrl },
-      timeoutMs: 10000,
+      timeoutMs: REQUEST_TIMEOUTS.panelUrlTestMs,
     });
     setupWizardState.verifiedUrl = true;
     const result = q("setup-step-1-result");
@@ -945,7 +954,7 @@
         admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
         registration_token: setupWizardState.token,
       },
-      timeoutMs: 10000,
+      timeoutMs: REQUEST_TIMEOUTS.panelTokenValidateMs,
     });
     if (!validatePayload.valid) {
       throw new Error("Token ist ungültig.");
@@ -956,7 +965,7 @@
         admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
         registration_token: setupWizardState.token,
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUTS.panelRegisterMs,
     });
     setupWizardState.registered = !!registerPayload.ok;
     if (els.regToken) els.regToken.value = setupWizardState.token;
@@ -986,7 +995,7 @@
     });
     const payload = await fetchJson(`/api/panel/search-${target}?${params.toString()}`, {
       cache: "no-store",
-      timeoutMs: 10000,
+      timeoutMs: REQUEST_TIMEOUTS.panelSearchMs,
     });
     if (seq !== setupWizardState.searchSeq) return;
     const items = Array.isArray(payload.items) ? payload.items : [];
@@ -1014,7 +1023,7 @@
         selected_user: setupWizardState.linkType === "user" ? setupWizardState.selectedLinkItem : null,
         selected_customer: setupWizardState.linkType === "customer" ? setupWizardState.selectedLinkItem : null,
       },
-      timeoutMs: 10000,
+      timeoutMs: REQUEST_TIMEOUTS.panelAssignMs,
     });
   }
 
