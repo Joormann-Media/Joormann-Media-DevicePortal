@@ -57,6 +57,11 @@ install -m 0755 "$SRC_DIR/network_info.sh" "$DST_DIR/network_info.sh"
 if getent group netdev >/dev/null 2>&1; then
   usermod -aG netdev "$SERVICE_USER" || true
 fi
+for grp in video render input audio; do
+  if getent group "${grp}" >/dev/null 2>&1; then
+    usermod -aG "${grp}" "$SERVICE_USER" || true
+  fi
+done
 
 cat > "$SUDOERS_FILE" <<SUDO
 Defaults:${SERVICE_USER} !requiretty

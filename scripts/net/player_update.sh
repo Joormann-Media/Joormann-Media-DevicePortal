@@ -51,6 +51,76 @@ resolve_portal_storage_config_path() {
   fi
 }
 
+resolve_manifest_path_from_storage_config() {
+  local cfg_path="$1"
+  if [[ -z "${cfg_path}" || ! -f "${cfg_path}" ]]; then
+    return
+  fi
+  python3 - "$cfg_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+cfg_path = Path(sys.argv[1])
+try:
+    payload = json.loads(cfg_path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(0)
+
+rel = Path("stream/current/manifest.json")
+internal = payload.get("internal") if isinstance(payload, dict) else {}
+if isinstance(internal, dict):
+    if bool(internal.get("allow_media_storage", True)):
+        mount = str(internal.get("mount_path") or "").strip()
+        if mount:
+            print(str(Path(mount) / rel))
+            raise SystemExit(0)
+
+devices = payload.get("devices") if isinstance(payload, dict) else []
+if isinstance(devices, list):
+    for item in devices:
+        if not isinstance(item, dict):
+            continue
+        if not bool(item.get("allow_media_storage", False)):
+            continue
+        mount = str(item.get("mount_path") or "").strip()
+        if mount:
+            print(str(Path(mount) / rel))
+            raise SystemExit(0)
+PY
+}
+
+ensure_user_groups() {
+  local user_name="$1"
+  local groups=(video render input audio)
+  local existing=()
+  local grp
+  for grp in "${groups[@]}"; do
+    if getent group "${grp}" >/dev/null 2>&1; then
+      existing+=("${grp}")
+    fi
+  done
+  if [[ ${#existing[@]} -gt 0 ]]; then
+    echo "[perm] ensure ${user_name} supplementary groups: ${existing[*]}"
+    usermod -aG "$(IFS=,; echo "${existing[*]}")" "${user_name}" || true
+  fi
+}
+
+service_supplementary_groups() {
+  local groups=(video render input audio)
+  local existing=()
+  local grp
+  for grp in "${groups[@]}"; do
+    if getent group "${grp}" >/dev/null 2>&1; then
+      existing+=("${grp}")
+    fi
+  done
+  if [[ ${#existing[@]} -eq 0 ]]; then
+    return
+  fi
+  printf '%s' "${existing[*]}"
+}
+
 if [[ -z "${PLAYER_REPO_REF}" || -z "${SERVICE_USER}" ]]; then
   echo "usage: $0 start <player_repo_link_or_path> <service_user> [service_name] [update_dir] [portal_repo_dir]" >&2
   exit 2
@@ -174,6 +244,7 @@ EOF
     chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${REPO_DIR}" || true
     find "${REPO_DIR}" -type d -exec chmod u+rwx,go+rx {} + || true
   fi
+  ensure_user_groups "${SERVICE_USER}"
 
   BEFORE_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
   if [[ -n "${BEFORE_COMMIT}" ]]; then
@@ -271,15 +342,29 @@ EOF
   fi
 
   SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
+  SERVICE_DROPIN_DIR="/etc/systemd/system/${SERVICE_NAME}.d"
+  SERVICE_DROPIN_FILE="${SERVICE_DROPIN_DIR}/10-deviceplayer-permissions.conf"
   ENV_FILE="/etc/default/jm-deviceplayer"
   PORTAL_STORAGE_CONFIG_PATH="$(resolve_portal_storage_config_path "${PORTAL_REPO_DIR}")"
+  MANIFEST_PATH="$(resolve_manifest_path_from_storage_config "${PORTAL_STORAGE_CONFIG_PATH}" | head -n1)"
+  if [[ -z "${MANIFEST_PATH}" ]]; then
+    MANIFEST_PATH="/mnt/deviceportal/media/stream/current/manifest.json"
+  fi
 
   cat > "${ENV_FILE}" <<EOF
 PYTHONUNBUFFERED=1
+DEVICEPLAYER_MANIFEST_PATH=${MANIFEST_PATH}
 DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}
-DEVICEPLAYER_VIDEO_DRIVERS=fbcon,kmsdrm,wayland,x11
+DEVICEPLAYER_VIDEO_DRIVERS=kmsdrm,fbcon,wayland,x11
 EOF
   chmod 0644 "${ENV_FILE}" || true
+  echo "[env] DEVICEPLAYER_MANIFEST_PATH=${MANIFEST_PATH}"
+  echo "[env] DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}"
+  if [[ -f "${MANIFEST_PATH}" ]]; then
+    echo "[env] manifest exists: yes"
+  else
+    echo "[env] manifest exists: no"
+  fi
 
   cat > "${SERVICE_FILE}" <<EOF
 [Unit]
@@ -302,6 +387,22 @@ RestartSec=2
 WantedBy=multi-user.target
 EOF
   chmod 0644 "${SERVICE_FILE}" || true
+
+  SUPP_GROUPS="$(service_supplementary_groups)"
+  mkdir -p "${SERVICE_DROPIN_DIR}"
+  if [[ -n "${SUPP_GROUPS}" ]]; then
+    cat > "${SERVICE_DROPIN_FILE}" <<EOF
+[Service]
+SupplementaryGroups=${SUPP_GROUPS}
+EOF
+    chmod 0644 "${SERVICE_DROPIN_FILE}" || true
+    echo "[service] supplementary groups set: ${SUPP_GROUPS}"
+  else
+    rm -f "${SERVICE_DROPIN_FILE}" || true
+  fi
+  echo "[preflight] /dev/dri:"
+  ls -lah /dev/dri 2>/dev/null || echo "[preflight] /dev/dri not present"
+  echo "[preflight] service user groups: $(id -nG "${SERVICE_USER}" 2>/dev/null || true)"
 
   echo "[service] daemon-reload + enable + restart ${SERVICE_NAME}"
   systemctl daemon-reload
