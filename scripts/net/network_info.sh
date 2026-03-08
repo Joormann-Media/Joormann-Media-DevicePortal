@@ -53,6 +53,7 @@ LAN_ENABLED="$(iface_enabled "$LAN_IF")"
 LAN_CARRIER="$(iface_carrier "$LAN_IF")"
 LAN_IP="$(iface_ip "$LAN_IF")"
 LAN_MAC="$(iface_mac "$LAN_IF")"
+LAN_CONN_NAME=""
 
 WIFI_EXISTS="$(iface_exists "$WIFI_IF")"
 WIFI_ENABLED="$(iface_enabled "$WIFI_IF")"
@@ -90,6 +91,7 @@ if [[ "$NMCLI_PRESENT" == "1" ]]; then
   fi
 
   WIFI_CONN_NAME="$(safe_cmd nmcli -t -f NAME,TYPE,DEVICE connection show --active | awk -F: -v dev="$WIFI_IF" '$2=="802-11-wireless" && $3==dev {print $1; exit}')"
+  LAN_CONN_NAME="$(safe_cmd nmcli -t -f NAME,TYPE,DEVICE connection show --active | awk -F: -v dev="$LAN_IF" '$2=="802-3-ethernet" && $3==dev {print $1; exit}')"
 fi
 
 if [[ "$WIFI_CONNECTED" != "1" && "$WPA_CLI_PRESENT" == "1" ]]; then
@@ -154,6 +156,10 @@ if [[ "$BLUETOOTHCTL_PRESENT" == "1" ]]; then
 fi
 
 GATEWAY="$(safe_cmd ip route | awk '/default/ {print $3; exit}')"
+GATEWAY_MAC=""
+if [[ -n "$GATEWAY" ]]; then
+  GATEWAY_MAC="$(safe_cmd ip neigh show "$GATEWAY" | awk '{print $5; exit}')"
+fi
 DNS_RAW="$(safe_cmd awk '/^nameserver / {print $2}' /etc/resolv.conf | paste -sd, -)"
 TAILSCALE_IP=""
 if [[ "$TAILSCALE_PRESENT" == "1" ]]; then
@@ -162,11 +168,12 @@ fi
 
 export HOSTNAME_VAL LAN_IF WIFI_IF
 export LAN_ENABLED LAN_CARRIER LAN_IP LAN_MAC LAN_EXISTS
+export LAN_CONN_NAME
 export WIFI_ENABLED WIFI_CONNECTED WIFI_SSID WIFI_BSSID WIFI_SIGNAL WIFI_FREQ WIFI_RATE WIFI_SECURITY WIFI_CONN_NAME WIFI_IP WIFI_MAC WIFI_EXISTS WIFI_RADIO
 export WIFI_WPA_STATE
 export BT_ENABLED
 export BT_DISCOVERABLE BT_PAIRABLE BT_DISCOVERABLE_TIMEOUT BT_PAIRABLE_TIMEOUT
-export GATEWAY DNS_RAW
+export GATEWAY GATEWAY_MAC DNS_RAW
 export NMCLI_PRESENT RFKILL_PRESENT BLUETOOTHCTL_PRESENT TAILSCALE_PRESENT TAILSCALE_IP
 
 python3 - <<'PY'
@@ -204,6 +211,7 @@ payload = {
             "carrier": b("LAN_CARRIER"),
             "ip": s("LAN_IP"),
             "mac": s("LAN_MAC"),
+            "connection": s("LAN_CONN_NAME"),
         },
         "wifi": {
             "ifname": s("WIFI_IF"),
@@ -233,6 +241,7 @@ payload = {
     },
     "routes": {
         "gateway": s("GATEWAY"),
+        "gateway_mac": s("GATEWAY_MAC"),
         "dns": dns,
     },
     "tailscale": {

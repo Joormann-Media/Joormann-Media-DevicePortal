@@ -452,6 +452,31 @@ def bluetooth_pairing_action(action: str, target_mac: str) -> dict:
     }
 
 
+def get_bluetooth_paired_devices() -> list[dict]:
+    rc, out, err = _run_script("bluetooth_paired_devices.sh", [], timeout=12, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(
+            code="bluetooth_paired_devices_failed",
+            message="Failed to read paired Bluetooth devices",
+            detail=err or out,
+        )
+    devices: list[dict] = []
+    seen: set[str] = set()
+    for line in (out or "").splitlines():
+        line = line.strip()
+        if not line.startswith("device="):
+            continue
+        payload = line.split("=", 1)[1]
+        mac, _, name = payload.partition("|")
+        mac = mac.strip().upper()
+        name = name.strip()
+        if not mac or mac in seen:
+            continue
+        seen.add(mac)
+        devices.append({"mac": mac, "name": name})
+    return devices
+
+
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     iface = (ifname or "eth0").strip()
     if iface not in ALLOWED_LAN_INTERFACES:

@@ -34,6 +34,13 @@
   };
   const portalSecurityState = {
     storageDeleteHardcoreMode: false,
+    networkSecurity: {
+      enabled: false,
+      trusted_wifi: [],
+      trusted_lan: [],
+      trusted_bluetooth: [],
+      assessment: null,
+    },
   };
   const statusDashboardState = {
     status: null,
@@ -1135,6 +1142,17 @@
         hardcoreStatus.textContent = "inaktiv";
       }
     }
+
+    const rawNetworkSecurity = (cfg && cfg.network_security && typeof cfg.network_security === "object") ? cfg.network_security : {};
+    portalSecurityState.networkSecurity.enabled = !!rawNetworkSecurity.enabled;
+    portalSecurityState.networkSecurity.trusted_wifi = Array.isArray(rawNetworkSecurity.trusted_wifi) ? rawNetworkSecurity.trusted_wifi : [];
+    portalSecurityState.networkSecurity.trusted_lan = Array.isArray(rawNetworkSecurity.trusted_lan) ? rawNetworkSecurity.trusted_lan : [];
+    portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(rawNetworkSecurity.trusted_bluetooth) ? rawNetworkSecurity.trusted_bluetooth : [];
+    const perimeterToggle = q("security-perimeter-enabled");
+    if (perimeterToggle) {
+      perimeterToggle.checked = portalSecurityState.networkSecurity.enabled;
+    }
+    renderNetworkSecurityUi();
   }
 
   function renderPanelApiKeyStatus(cfg) {
@@ -1314,6 +1332,7 @@
 
     q("net-hostname").textContent = data.hostname || "-";
     q("net-gateway").textContent = routes.gateway || "-";
+    q("net-gateway-mac").textContent = routes.gateway_mac || "-";
     q("net-dns").textContent = (routes.dns || []).join(", ") || "-";
     q("net-tailscale").textContent = tailscale.present ? (tailscale.ip ? `connected (${tailscale.ip})` : "installed (no IP)") : "not present";
     q("radio-tailscale").textContent = tailscale.present ? (tailscale.ip ? `connected (${tailscale.ip})` : "installed (no IP)") : "not present";
@@ -1321,6 +1340,7 @@
     q("lan-ifname").textContent = lan.ifname || "eth0";
     q("lan-enabled").textContent = yn(!!lan.enabled);
     q("lan-carrier").textContent = yn(!!lan.carrier);
+    q("lan-connection").textContent = lan.connection || "-";
     q("lan-ip").textContent = lan.ip || "-";
     q("lan-mac").textContent = lan.mac || "-";
 
@@ -1353,6 +1373,20 @@
     els.btnWifiToggle.textContent = wifi.enabled ? "Disable Wi-Fi" : "Enable Wi-Fi";
     els.btnBtToggle.textContent = bt.enabled ? "Bluetooth ausschalten" : "Bluetooth einschalten";
     els.btnLanToggle.textContent = lan.enabled ? "Disable LAN" : "Enable LAN";
+    if (data.security && typeof data.security === "object") {
+      const profile = data.security.profile || {};
+      const assessment = data.security.assessment || null;
+      portalSecurityState.networkSecurity.enabled = !!profile.enabled;
+      portalSecurityState.networkSecurity.trusted_wifi = Array.isArray(profile.trusted_wifi) ? profile.trusted_wifi : [];
+      portalSecurityState.networkSecurity.trusted_lan = Array.isArray(profile.trusted_lan) ? profile.trusted_lan : [];
+      portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(profile.trusted_bluetooth) ? profile.trusted_bluetooth : [];
+      portalSecurityState.networkSecurity.assessment = assessment;
+      const perimeterToggle = q("security-perimeter-enabled");
+      if (perimeterToggle) {
+        perimeterToggle.checked = portalSecurityState.networkSecurity.enabled;
+      }
+      renderNetworkSecurityUi();
+    }
     renderStatusHealthCard();
     renderStatusSoftwareSection();
   }
@@ -3354,6 +3388,126 @@
     toast("Storage-Sicherheitseinstellung gespeichert.", "success");
   }
 
+  function renderNetworkSecurityList(hostId, rows, kind) {
+    const host = q(hostId);
+    if (!host) return;
+    const items = Array.isArray(rows) ? rows : [];
+    if (!items.length) {
+      host.innerHTML = '<div class="text-secondary">Keine Einträge.</div>';
+      return;
+    }
+    host.innerHTML = "";
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "list-group-item d-flex justify-content-between align-items-center gap-2";
+      const title = document.createElement("span");
+      title.className = "text-truncate";
+      const label = String(item.label || item.name || item.ssid || item.connection || item.mac || item.key || "-").trim();
+      title.textContent = label || "-";
+      row.appendChild(title);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "btn btn-outline-danger btn-sm";
+      removeBtn.textContent = "Entfernen";
+      removeBtn.dataset.kind = kind;
+      removeBtn.dataset.key = String(item.key || "").trim();
+      row.appendChild(removeBtn);
+      host.appendChild(row);
+    }
+  }
+
+  function renderNetworkSecurityUi() {
+    const profile = portalSecurityState.networkSecurity || {};
+    const assessment = profile.assessment || null;
+    const enabled = !!profile.enabled;
+
+    const badge = q("security-perimeter-badge");
+    if (badge) {
+      badge.classList.remove("text-bg-secondary", "text-bg-success", "text-bg-danger", "text-bg-warning");
+      if (!enabled) {
+        badge.classList.add("text-bg-secondary");
+        badge.textContent = "inaktiv";
+      } else if (assessment && assessment.in_perimeter) {
+        badge.classList.add("text-bg-success");
+        badge.textContent = "sicher";
+      } else if (assessment) {
+        badge.classList.add("text-bg-danger");
+        badge.textContent = "außerhalb";
+      } else {
+        badge.classList.add("text-bg-warning");
+        badge.textContent = "prüfe...";
+      }
+    }
+
+    const stateEl = q("security-perimeter-state");
+    if (stateEl) {
+      if (!enabled) {
+        stateEl.textContent = "Status: Eingrenzung aus.";
+      } else if (!assessment) {
+        stateEl.textContent = "Status: Bewertung läuft...";
+      } else if (assessment.in_perimeter) {
+        stateEl.textContent = "Status: Innerhalb der als sicher markierten Umgebung.";
+      } else {
+        stateEl.textContent = "Status: Aktuelle Verbindungen passen zu keinem sicheren Marker.";
+      }
+    }
+
+    renderNetworkSecurityList("security-trusted-wifi", profile.trusted_wifi || [], "wifi");
+    renderNetworkSecurityList("security-trusted-lan", profile.trusted_lan || [], "lan");
+    renderNetworkSecurityList("security-trusted-bt", profile.trusted_bluetooth || [], "bluetooth");
+  }
+
+  async function saveNetworkSecuritySettings() {
+    const enabled = !!q("security-perimeter-enabled")?.checked;
+    const payload = await fetchJson("/api/network/security/settings", {
+      method: "POST",
+      body: { enabled },
+      timeoutMs: 12000,
+    });
+    const profile = (payload.data || {}).profile || {};
+    portalSecurityState.networkSecurity.enabled = !!profile.enabled;
+    portalSecurityState.networkSecurity.trusted_wifi = Array.isArray(profile.trusted_wifi) ? profile.trusted_wifi : [];
+    portalSecurityState.networkSecurity.trusted_lan = Array.isArray(profile.trusted_lan) ? profile.trusted_lan : [];
+    portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(profile.trusted_bluetooth) ? profile.trusted_bluetooth : [];
+    await refreshNetwork();
+    renderNetworkSecurityUi();
+    toast("Standort-Härtung gespeichert.", "success");
+  }
+
+  async function trustCurrentNetwork(kind) {
+    const body = {
+      wifi: kind === "wifi",
+      lan: kind === "lan",
+      bluetooth: kind === "bluetooth",
+    };
+    const payload = await fetchJson("/api/network/security/trust/current", {
+      method: "POST",
+      body,
+      timeoutMs: 12000,
+    });
+    const profile = (payload.data || {}).profile || {};
+    const assessment = (payload.data || {}).assessment || null;
+    portalSecurityState.networkSecurity.enabled = !!profile.enabled;
+    portalSecurityState.networkSecurity.trusted_wifi = Array.isArray(profile.trusted_wifi) ? profile.trusted_wifi : [];
+    portalSecurityState.networkSecurity.trusted_lan = Array.isArray(profile.trusted_lan) ? profile.trusted_lan : [];
+    portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(profile.trusted_bluetooth) ? profile.trusted_bluetooth : [];
+    portalSecurityState.networkSecurity.assessment = assessment;
+    renderNetworkSecurityUi();
+    await refreshNetwork();
+    toast("Sicherheits-Marker übernommen.", "success");
+  }
+
+  async function removeTrustedNetworkMarker(kind, key) {
+    await fetchJson("/api/network/security/trust/remove", {
+      method: "POST",
+      body: { kind, key },
+      timeoutMs: 12000,
+    });
+    await refreshNetwork();
+    toast("Sicherheits-Marker entfernt.", "secondary");
+  }
+
   function setHostnameRenameError(message = "") {
     const alertEl = q("hostname-rename-alert");
     if (!alertEl) return;
@@ -3800,6 +3954,10 @@
     q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
     q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
     q("btn-system-storage-security-save").addEventListener("click", () => run(saveStorageSecuritySettings));
+    q("btn-security-save").addEventListener("click", () => run(saveNetworkSecuritySettings));
+    q("btn-security-trust-wifi").addEventListener("click", () => run(() => trustCurrentNetwork("wifi")));
+    q("btn-security-trust-lan").addEventListener("click", () => run(() => trustCurrentNetwork("lan")));
+    q("btn-security-trust-bt").addEventListener("click", () => run(() => trustCurrentNetwork("bluetooth")));
     q("btn-hostname-rename-save").addEventListener("click", () => run(saveHostnameRename));
     q("hostname-rename-input").addEventListener("input", () => {
       if (hostnameRenameState.previewTimer) {
@@ -3964,6 +4122,16 @@
         btPairingPollHandle = null;
       }
     });
+    for (const listId of ["security-trusted-wifi", "security-trusted-lan", "security-trusted-bt"]) {
+      q(listId).addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("button[data-kind][data-key]") : null;
+        if (!btn) return;
+        const kind = String(btn.dataset.kind || "").trim();
+        const key = String(btn.dataset.key || "").trim();
+        if (!kind || !key) return;
+        run(() => removeTrustedNetworkMarker(kind, key));
+      });
+    }
     for (const radio of document.querySelectorAll('input[name="setup-link-type"]')) {
       radio.addEventListener("change", () => {
         setupWizardState.linkType = getSetupLinkType();

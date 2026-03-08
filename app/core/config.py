@@ -32,6 +32,13 @@ DEFAULT_CONFIG: dict = {
     'preferred_wifi': '',
     'last_wifi_ssid': '',
     'storage_delete_hardcore_mode': False,
+    'network_security': {
+        'enabled': False,
+        'trusted_wifi': [],
+        'trusted_lan': [],
+        'trusted_bluetooth': [],
+        'updated_at': None,
+    },
     'display_config': {
         'connectors': {},
         'updated_at': None,
@@ -128,6 +135,22 @@ def ensure_config() -> dict:
             changed = True
         if 'updated_at' not in dc:
             dc['updated_at'] = None
+            changed = True
+
+    if not isinstance(cfg.get('network_security'), dict):
+        cfg['network_security'] = dict(DEFAULT_CONFIG['network_security'])
+        changed = True
+    else:
+        ns = cfg['network_security']
+        if not isinstance(ns.get('enabled'), bool):
+            ns['enabled'] = bool(ns.get('enabled'))
+            changed = True
+        for key in ('trusted_wifi', 'trusted_lan', 'trusted_bluetooth'):
+            if not isinstance(ns.get(key), list):
+                ns[key] = []
+                changed = True
+        if 'updated_at' not in ns:
+            ns['updated_at'] = None
             changed = True
 
     clamped = clamp_poll_seconds(cfg.get('poll_seconds', 60))

@@ -36,6 +36,7 @@ from app.core.netcontrol import (
     get_bluetooth_status,
     get_bluetooth_pairing_feedback,
     get_bluetooth_pairing_session_status,
+    get_bluetooth_paired_devices,
     bluetooth_pairing_action,
     set_bluetooth_enabled,
     set_bluetooth_runtime_settings,
@@ -201,14 +202,367 @@ def _merged_profiles(profiles_cfg: list[dict], nm_profiles: list[dict], preferre
     return result
 
 
+def _norm_text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _norm_mac(value: object) -> str:
+    return _norm_text(value).upper()
+
+
+def _normalize_network_security(raw: object) -> dict:
+    data = raw if isinstance(raw, dict) else {}
+    trusted_wifi_raw = data.get("trusted_wifi")
+    trusted_lan_raw = data.get("trusted_lan")
+    trusted_bt_raw = data.get("trusted_bluetooth")
+    trusted_wifi = trusted_wifi_raw if isinstance(trusted_wifi_raw, list) else []
+    trusted_lan = trusted_lan_raw if isinstance(trusted_lan_raw, list) else []
+    trusted_bt = trusted_bt_raw if isinstance(trusted_bt_raw, list) else []
+
+    wifi_rows: list[dict] = []
+    seen_wifi: set[str] = set()
+    for item in trusted_wifi:
+        if not isinstance(item, dict):
+            continue
+        ssid = _norm_text(item.get("ssid"))
+        bssid = _norm_mac(item.get("bssid"))
+        key = bssid or ssid
+        if key == "" or key in seen_wifi:
+            continue
+        seen_wifi.add(key)
+        wifi_rows.append(
+            {
+                "key": key,
+                "ssid": ssid,
+                "bssid": bssid,
+                "label": _norm_text(item.get("label")) or (f"{ssid} ({bssid})" if ssid and bssid else ssid or bssid),
+                "last_seen": _norm_text(item.get("last_seen")),
+            }
+        )
+
+    lan_rows: list[dict] = []
+    seen_lan: set[str] = set()
+    for item in trusted_lan:
+        if not isinstance(item, dict):
+            continue
+        gateway_ip = _norm_text(item.get("gateway_ip"))
+        gateway_mac = _norm_mac(item.get("gateway_mac"))
+        connection = _norm_text(item.get("connection"))
+        ifname = _norm_text(item.get("ifname")) or "eth0"
+        key = "|".join([gateway_ip, gateway_mac, connection, ifname]).strip("|")
+        if key == "" or key in seen_lan:
+            continue
+        seen_lan.add(key)
+        lan_rows.append(
+            {
+                "key": key,
+                "gateway_ip": gateway_ip,
+                "gateway_mac": gateway_mac,
+                "connection": connection,
+                "ifname": ifname,
+                "label": _norm_text(item.get("label")) or (connection or gateway_mac or gateway_ip or ifname),
+                "last_seen": _norm_text(item.get("last_seen")),
+            }
+        )
+
+    bt_rows: list[dict] = []
+    seen_bt: set[str] = set()
+    for item in trusted_bt:
+        if not isinstance(item, dict):
+            continue
+        mac = _norm_mac(item.get("mac"))
+        if mac == "" or mac in seen_bt:
+            continue
+        seen_bt.add(mac)
+        bt_rows.append(
+            {
+                "key": mac,
+                "mac": mac,
+                "name": _norm_text(item.get("name")),
+                "label": _norm_text(item.get("label")) or (_norm_text(item.get("name")) or mac),
+                "last_seen": _norm_text(item.get("last_seen")),
+            }
+        )
+
+    return {
+        "enabled": bool(data.get("enabled", False)),
+        "trusted_wifi": wifi_rows,
+        "trusted_lan": lan_rows,
+        "trusted_bluetooth": bt_rows,
+        "updated_at": _norm_text(data.get("updated_at")),
+    }
+
+
+def _get_network_security_profile(cfg: dict) -> dict:
+    profile = _normalize_network_security(cfg.get("network_security"))
+    cfg["network_security"] = profile
+    return profile
+
+
+def _security_assessment(profile: dict, network_info: dict, bt_paired: list[dict]) -> dict:
+    interfaces = (network_info or {}).get("interfaces") or {}
+    routes = (network_info or {}).get("routes") or {}
+    wifi = interfaces.get("wifi") or {}
+    lan = interfaces.get("lan") or {}
+
+    active_wifi = bool(wifi.get("connected"))
+    active_lan = bool(lan.get("carrier") or _norm_text(lan.get("ip")))
+    active_bt = len(bt_paired) > 0
+
+    trusted_wifi = profile.get("trusted_wifi") or []
+    trusted_lan = profile.get("trusted_lan") or []
+    trusted_bt = profile.get("trusted_bluetooth") or []
+
+    wifi_ssid = _norm_text(wifi.get("ssid"))
+    wifi_bssid = _norm_mac(wifi.get("bssid"))
+    lan_gateway_ip = _norm_text(routes.get("gateway"))
+    lan_gateway_mac = _norm_mac(routes.get("gateway_mac"))
+    lan_connection = _norm_text(lan.get("connection"))
+    lan_ifname = _norm_text(lan.get("ifname"))
+
+    wifi_match = None
+    if active_wifi:
+        for item in trusted_wifi:
+            if (item.get("bssid") and item.get("bssid") == wifi_bssid) or (item.get("ssid") and item.get("ssid") == wifi_ssid):
+                wifi_match = item
+                break
+
+    lan_match = None
+    if active_lan:
+        for item in trusted_lan:
+            by_mac = bool(item.get("gateway_mac")) and item.get("gateway_mac") == lan_gateway_mac
+            by_ip = bool(item.get("gateway_ip")) and item.get("gateway_ip") == lan_gateway_ip
+            by_conn = bool(item.get("connection")) and item.get("connection") == lan_connection
+            by_if = bool(item.get("ifname")) and item.get("ifname") == lan_ifname
+            if by_mac or by_ip or by_conn or by_if:
+                lan_match = item
+                break
+
+    bt_match = None
+    if active_bt:
+        trusted_macs = {_norm_mac(item.get("mac")) for item in trusted_bt}
+        for dev in bt_paired:
+            dev_mac = _norm_mac(dev.get("mac"))
+            if dev_mac in trusted_macs:
+                bt_match = dev
+                break
+
+    perimeter_enabled = bool(profile.get("enabled"))
+    in_perimeter = True
+    if perimeter_enabled:
+        in_perimeter = bool(wifi_match or lan_match or bt_match)
+
+    return {
+        "enabled": perimeter_enabled,
+        "in_perimeter": in_perimeter,
+        "active": {
+            "wifi": active_wifi,
+            "lan": active_lan,
+            "bluetooth": active_bt,
+        },
+        "matches": {
+            "wifi": wifi_match or {},
+            "lan": lan_match or {},
+            "bluetooth": bt_match or {},
+        },
+        "current": {
+            "wifi": {"ssid": wifi_ssid, "bssid": wifi_bssid},
+            "lan": {
+                "ifname": lan_ifname,
+                "connection": lan_connection,
+                "gateway_ip": lan_gateway_ip,
+                "gateway_mac": lan_gateway_mac,
+            },
+            "bluetooth": bt_paired,
+        },
+    }
+
+
 @bp_network.get("/api/network/info")
 def api_network_info():
     try:
         info = get_network_info()
+        cfg = ensure_config()
+        profile = _get_network_security_profile(cfg)
+        try:
+            bt_paired = get_bluetooth_paired_devices()
+        except NetControlError:
+            bt_paired = []
+        info["security"] = {
+            "profile": profile,
+            "assessment": _security_assessment(profile, info, bt_paired),
+        }
         return _ok(info)
     except NetControlError as exc:
         http_status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=http_status, detail=exc.detail)
+
+
+@bp_network.get("/api/network/security/status")
+def api_network_security_status():
+    cfg = ensure_config()
+    profile = _get_network_security_profile(cfg)
+    try:
+        info = get_network_info()
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+    try:
+        bt_paired = get_bluetooth_paired_devices()
+    except NetControlError:
+        bt_paired = []
+    return _ok(
+        {
+            "profile": profile,
+            "assessment": _security_assessment(profile, info, bt_paired),
+        }
+    )
+
+
+@bp_network.post("/api/network/security/settings")
+def api_network_security_settings():
+    data = request.get_json(force=True, silent=True) or {}
+    if "enabled" not in data or not isinstance(data.get("enabled"), bool):
+        return _error("invalid_payload", "Field 'enabled' (bool) is required", status=400)
+    cfg = ensure_config()
+    profile = _get_network_security_profile(cfg)
+    profile["enabled"] = bool(data.get("enabled"))
+    profile["updated_at"] = utc_now()
+    cfg["network_security"] = profile
+    cfg["updated_at"] = utc_now()
+    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist network security settings", status=500, detail=err)
+    return _ok({"profile": profile})
+
+
+@bp_network.post("/api/network/security/trust/current")
+def api_network_security_trust_current():
+    data = request.get_json(force=True, silent=True) or {}
+    trust_wifi = bool(data.get("wifi", True))
+    trust_lan = bool(data.get("lan", True))
+    trust_bt = bool(data.get("bluetooth", True))
+    cfg = ensure_config()
+    profile = _get_network_security_profile(cfg)
+    now = utc_now()
+
+    try:
+        info = get_network_info()
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+    interfaces = (info.get("interfaces") or {})
+    routes = (info.get("routes") or {})
+    wifi = interfaces.get("wifi") or {}
+    lan = interfaces.get("lan") or {}
+
+    added = {"wifi": 0, "lan": 0, "bluetooth": 0}
+
+    if trust_wifi and bool(wifi.get("connected")):
+        ssid = _norm_text(wifi.get("ssid"))
+        bssid = _norm_mac(wifi.get("bssid"))
+        key = bssid or ssid
+        if key:
+            trusted_wifi = profile.get("trusted_wifi") or []
+            if not any((_norm_text(item.get("key")) == key) for item in trusted_wifi if isinstance(item, dict)):
+                trusted_wifi.append(
+                    {
+                        "key": key,
+                        "ssid": ssid,
+                        "bssid": bssid,
+                        "label": f"{ssid} ({bssid})" if ssid and bssid else (ssid or bssid),
+                        "last_seen": now,
+                    }
+                )
+                profile["trusted_wifi"] = trusted_wifi
+                added["wifi"] += 1
+
+    if trust_lan and bool(lan.get("carrier") or _norm_text(lan.get("ip"))):
+        gateway_ip = _norm_text(routes.get("gateway"))
+        gateway_mac = _norm_mac(routes.get("gateway_mac"))
+        connection = _norm_text(lan.get("connection"))
+        ifname = _norm_text(lan.get("ifname")) or "eth0"
+        key = "|".join([gateway_ip, gateway_mac, connection, ifname]).strip("|")
+        if key:
+            trusted_lan = profile.get("trusted_lan") or []
+            if not any((_norm_text(item.get("key")) == key) for item in trusted_lan if isinstance(item, dict)):
+                trusted_lan.append(
+                    {
+                        "key": key,
+                        "gateway_ip": gateway_ip,
+                        "gateway_mac": gateway_mac,
+                        "connection": connection,
+                        "ifname": ifname,
+                        "label": connection or gateway_mac or gateway_ip or ifname,
+                        "last_seen": now,
+                    }
+                )
+                profile["trusted_lan"] = trusted_lan
+                added["lan"] += 1
+
+    if trust_bt:
+        try:
+            bt_paired = get_bluetooth_paired_devices()
+        except NetControlError:
+            bt_paired = []
+        trusted_bt = profile.get("trusted_bluetooth") or []
+        known = {_norm_mac(item.get("mac")) for item in trusted_bt if isinstance(item, dict)}
+        for dev in bt_paired:
+            mac = _norm_mac(dev.get("mac"))
+            if not mac or mac in known:
+                continue
+            trusted_bt.append(
+                {
+                    "key": mac,
+                    "mac": mac,
+                    "name": _norm_text(dev.get("name")),
+                    "label": _norm_text(dev.get("name")) or mac,
+                    "last_seen": now,
+                }
+            )
+            known.add(mac)
+            added["bluetooth"] += 1
+        profile["trusted_bluetooth"] = trusted_bt
+
+    profile = _normalize_network_security(profile)
+    profile["updated_at"] = now
+    cfg["network_security"] = profile
+    cfg["updated_at"] = now
+    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist trusted network markers", status=500, detail=err)
+
+    try:
+        bt_now = get_bluetooth_paired_devices()
+    except NetControlError:
+        bt_now = []
+    assessment = _security_assessment(profile, info, bt_now)
+    return _ok({"profile": profile, "assessment": assessment, "added": added})
+
+
+@bp_network.post("/api/network/security/trust/remove")
+def api_network_security_trust_remove():
+    data = request.get_json(force=True, silent=True) or {}
+    kind = _norm_text(data.get("kind")).lower()
+    key = _norm_text(data.get("key"))
+    if kind not in ("wifi", "lan", "bluetooth"):
+        return _error("invalid_payload", "Field 'kind' must be one of wifi|lan|bluetooth", status=400)
+    if not key:
+        return _error("invalid_payload", "Field 'key' is required", status=400)
+    cfg = ensure_config()
+    profile = _get_network_security_profile(cfg)
+    list_key = "trusted_wifi" if kind == "wifi" else ("trusted_lan" if kind == "lan" else "trusted_bluetooth")
+    before = len(profile.get(list_key) or [])
+    profile[list_key] = [item for item in (profile.get(list_key) or []) if _norm_text((item or {}).get("key")) != key]
+    removed = max(0, before - len(profile.get(list_key) or []))
+    profile["updated_at"] = utc_now()
+    cfg["network_security"] = profile
+    cfg["updated_at"] = utc_now()
+    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist trust removal", status=500, detail=err)
+    return _ok({"profile": profile, "removed": removed, "kind": kind, "key": key})
 
 
 @bp_network.get("/api/display/info")

@@ -361,6 +361,7 @@
                 <dt>Interface</dt><dd id="lan-ifname">-</dd>
                 <dt>Enabled</dt><dd id="lan-enabled">-</dd>
                 <dt>Carrier</dt><dd id="lan-carrier">-</dd>
+                <dt>Connection</dt><dd id="lan-connection">-</dd>
                 <dt>IP</dt><dd id="lan-ip">-</dd>
                 <dt>MAC</dt><dd id="lan-mac">-</dd>
               </dl>
@@ -393,6 +394,7 @@
               <dl class="portal-kv mb-0">
                 <dt>Hostname</dt><dd id="net-hostname">-</dd>
                 <dt>Gateway</dt><dd id="net-gateway">-</dd>
+                <dt>Gateway MAC</dt><dd id="net-gateway-mac">-</dd>
                 <dt>DNS</dt><dd id="net-dns">-</dd>
                 <dt>Tailscale</dt><dd id="net-tailscale">-</dd>
               </dl>
@@ -455,6 +457,49 @@
               </div>
               <div id="ap-clients-list" class="list-group list-group-flush small">
                 <div class="text-secondary">Keine verbundenen AP-Clients.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="portal-card p-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <h2 class="h5 mb-0">Standort-Härtung</h2>
+                <span id="security-perimeter-badge" class="badge text-bg-secondary">inaktiv</span>
+              </div>
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="security-perimeter-enabled">
+                <label class="form-check-label" for="security-perimeter-enabled">Sicherheits-Eingrenzung aktivieren</label>
+              </div>
+              <div class="small text-secondary mb-2">
+                Markiere vertrauenswürdige WLAN/LAN/BT-Umgebungen. Wenn aktiv, gilt das Gerät nur dann als "am sicheren Standort", wenn mindestens ein Marker passt.
+              </div>
+              <div id="security-perimeter-state" class="small mb-3">Status: -</div>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <button id="btn-security-save" class="btn btn-outline-primary btn-sm">Sicherheitsmodus speichern</button>
+                <button id="btn-security-trust-wifi" class="btn btn-outline-secondary btn-sm">Aktuelles WLAN sichern</button>
+                <button id="btn-security-trust-lan" class="btn btn-outline-secondary btn-sm">Aktuelles LAN sichern</button>
+                <button id="btn-security-trust-bt" class="btn btn-outline-secondary btn-sm">Gekoppelte BT-Geräte sichern</button>
+              </div>
+              <div class="row g-2">
+                <div class="col-12 col-xl-4">
+                  <h3 class="h6 mb-1">Vertrauenswürdige WLANs</h3>
+                  <div id="security-trusted-wifi" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine Einträge.</div>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <h3 class="h6 mb-1">Vertrauenswürdiges LAN</h3>
+                  <div id="security-trusted-lan" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine Einträge.</div>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <h3 class="h6 mb-1">Vertrauenswürdige BT-Geräte</h3>
+                  <div id="security-trusted-bt" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine Einträge.</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
