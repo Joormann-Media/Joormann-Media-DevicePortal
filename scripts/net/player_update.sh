@@ -346,25 +346,21 @@ EOF
   SERVICE_DROPIN_FILE="${SERVICE_DROPIN_DIR}/10-deviceplayer-permissions.conf"
   ENV_FILE="/etc/default/jm-deviceplayer"
   PORTAL_STORAGE_CONFIG_PATH="$(resolve_portal_storage_config_path "${PORTAL_REPO_DIR}")"
-  MANIFEST_PATH="$(resolve_manifest_path_from_storage_config "${PORTAL_STORAGE_CONFIG_PATH}" | head -n1)"
-  if [[ -z "${MANIFEST_PATH}" ]]; then
-    MANIFEST_PATH="/mnt/deviceportal/media/stream/current/manifest.json"
+  if [[ -z "${PORTAL_STORAGE_CONFIG_PATH}" ]]; then
+    PORTAL_STORAGE_CONFIG_PATH="${PORTAL_REPO_DIR}/var/data/config-storage.json"
   fi
 
   cat > "${ENV_FILE}" <<EOF
 PYTHONUNBUFFERED=1
-DEVICEPLAYER_MANIFEST_PATH=${MANIFEST_PATH}
+DEVICEPLAYER_MANIFEST_PATH=
+DEVICEPLAYER_STORAGE_ROOT=
 DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}
 DEVICEPLAYER_VIDEO_DRIVERS=kmsdrm,fbcon,wayland,x11
 EOF
   chmod 0644 "${ENV_FILE}" || true
-  echo "[env] DEVICEPLAYER_MANIFEST_PATH=${MANIFEST_PATH}"
+  echo "[env] DEVICEPLAYER_MANIFEST_PATH="
+  echo "[env] DEVICEPLAYER_STORAGE_ROOT="
   echo "[env] DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}"
-  if [[ -f "${MANIFEST_PATH}" ]]; then
-    echo "[env] manifest exists: yes"
-  else
-    echo "[env] manifest exists: no"
-  fi
 
   cat > "${SERVICE_FILE}" <<EOF
 [Unit]
@@ -379,6 +375,8 @@ Group=${SERVICE_GROUP}
 WorkingDirectory=${REPO_DIR}
 EnvironmentFile=-${ENV_FILE}
 Environment=SDL_AUDIODRIVER=dummy
+Environment=DEVICEPLAYER_MANIFEST_PATH=
+Environment=DEVICEPLAYER_STORAGE_ROOT=
 ExecStart=${VENV_DIR}/bin/python ${REPO_DIR}/run.py
 Restart=always
 RestartSec=2
