@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlencode
 from urllib.parse import urljoin
+from urllib.parse import urlparse
 
 import requests
 from requests.utils import cookiejar_from_dict
@@ -62,6 +63,32 @@ def _extract_2fa_csrf(html: str) -> tuple[str, str]:
         if "csrf" in key.lower():
             return (key, str(value or "").strip())
     return ("", "")
+
+
+def _is_login_url(url: str) -> bool:
+    try:
+        path = (urlparse(url).path or "").lower()
+    except Exception:
+        path = (url or "").lower()
+    return path.endswith("/login") or path == "/login"
+
+
+def _looks_like_login_page(html: str) -> bool:
+    if not html:
+        return False
+    hay = html.lower()
+    return (
+        'name="_username"' in hay
+        and 'name="_password"' in hay
+        and 'name="_csrf_token"' in hay
+    )
+
+
+def _looks_like_2fa_page(html: str, url: str) -> bool:
+    hay = (html or "").lower()
+    if "/2fa" in (url or "").lower():
+        return True
+    return ('id="_auth_code"' in hay) or ('autocomplete="one-time-code"' in hay and "_auth_code" in hay)
 
 
 def _normalize_identifier(value: str) -> str:
@@ -212,38 +239,52 @@ def authenticate_via_panel(
         csrf = _extract_csrf_token(login_page.text or "")
         if not csrf:
             raise PanelAuthError("CSRF-Token im Adminpanel nicht gefunden.", code="panel_login_csrf_missing")
+        form_action = _extract_form_action(login_page.text or "")
+        submit_url = urljoin(login_url, form_action) if form_action else login_url
 
         form = {
             "_username": login_identifier,
             "_password": password,
             "_csrf_token": csrf,
         }
+        headers = {
+            "Referer": login_url,
+            "Origin": base,
+            "User-Agent": "DevicePortalPanelAuth/1.0 (+python-requests)",
+        }
 
         try:
-            result = session.post(login_url, data=form, timeout=10, allow_redirects=False)
+            result = session.post(
+                submit_url,
+                data=form,
+                timeout=10,
+                allow_redirects=True,
+                headers=headers,
+            )
         except Exception as exc:
             raise PanelAuthError("Adminpanel Login fehlgeschlagen.", code="panel_unreachable") from exc
 
-        location = str(result.headers.get("Location") or "")
-        if result.status_code in (302, 303):
-            lower_location = location.lower()
-            if "/2fa" in lower_location:
-                return _prepare_two_factor_payload(
-                    session=session,
-                    base_url=base,
-                    location=location,
-                    user_candidate=user_candidate,
-                )
-            if "/login" not in lower_location:
-                return {
-                    "ok": True,
-                    "username": str(user_candidate.get("username") or login_identifier),
-                    "display_name": str(user_candidate.get("displayName") or user_candidate.get("username") or login_identifier),
-                    "user_id": user_id,
-                    "requires_2fa": False,
-                }
+        final_url = str(getattr(result, "url", "") or "")
+        if _looks_like_2fa_page(result.text or "", final_url):
+            return _prepare_two_factor_payload(
+                session=session,
+                base_url=base,
+                location=final_url or "/2fa",
+                user_candidate=user_candidate,
+            )
+
+        if _is_login_url(final_url) or _looks_like_login_page(result.text or ""):
             last_error_code = "invalid_credentials"
             continue
+
+        if 200 <= result.status_code < 400:
+            return {
+                "ok": True,
+                "username": str(user_candidate.get("username") or login_identifier),
+                "display_name": str(user_candidate.get("displayName") or user_candidate.get("username") or login_identifier),
+                "user_id": user_id,
+                "requires_2fa": False,
+            }
 
         last_error_code = "invalid_credentials"
 
