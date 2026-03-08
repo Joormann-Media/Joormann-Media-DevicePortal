@@ -5,7 +5,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import requests
 from flask import Blueprint, jsonify, request
@@ -107,6 +107,27 @@ def _normalize_asset_url(base_url: str, raw_url: str) -> str:
     return base_url + url
 
 
+def _asset_url_candidates(base_url: str, raw_url: str) -> list[str]:
+    original = _normalize_asset_url(base_url, raw_url)
+    parsed = urlparse(original)
+    host_prefix = f'{parsed.scheme}://{parsed.netloc}'
+    path = parsed.path or ''
+
+    candidates: list[str] = []
+
+    def _add(url: str) -> None:
+        if url and url not in candidates:
+            candidates.append(url)
+
+    _add(original)
+    if path.startswith('/uploads/') and not path.startswith('/uploads/uploads/'):
+        _add(host_prefix + '/uploads' + path)
+    if path.startswith('/uploads/uploads/'):
+        _add(host_prefix + path.replace('/uploads/uploads/', '/uploads/', 1))
+
+    return candidates
+
+
 def _asset_filename(asset_id: str, source_url: str) -> str:
     suffix = Path(source_url.split('?', 1)[0]).name or f'{asset_id}.bin'
     safe_suffix = ''.join(ch for ch in suffix if ch.isalnum() or ch in ('-', '_', '.')).strip('._')
@@ -128,6 +149,24 @@ def _download_file(url: str, target: Path, timeout: int = 40) -> int:
                 fh.write(chunk)
                 written += len(chunk)
     return written
+
+
+def _download_asset_with_fallback(base_url: str, raw_url: str, target: Path, timeout: int = 40) -> tuple[str, int]:
+    last_exc: Exception | None = None
+    attempts: list[str] = []
+    for candidate in _asset_url_candidates(base_url, raw_url):
+        attempts.append(candidate)
+        try:
+            size = _download_file(candidate, target, timeout=timeout)
+            return candidate, size
+        except Exception as exc:
+            last_exc = exc
+    detail = f'asset download failed after {len(attempts)} attempts'
+    if attempts:
+        detail += f': {attempts}'
+    if last_exc is not None:
+        detail += f' ({last_exc})'
+    raise RuntimeError(detail)
 
 
 def _load_remote_streams(base_url: str, dev: dict) -> tuple[list[dict], str]:
@@ -302,8 +341,7 @@ def api_stream_sync():
             if not asset_key or not source_value:
                 continue
 
-            remote_url = _normalize_asset_url(base_url, source_value)
-            filename = _asset_filename(asset_key, remote_url)
+            filename = _asset_filename(asset_key, source_value)
             relative_local = f'assets/{filename}'
             target_path = staging_dir / relative_local
 
@@ -319,9 +357,10 @@ def api_stream_sync():
                         break
 
             if not reused:
-                size = _download_file(remote_url, target_path)
+                remote_url, size = _download_asset_with_fallback(base_url, source_value, target_path)
             else:
                 size = target_path.stat().st_size if target_path.exists() else 0
+                remote_url = _normalize_asset_url(base_url, source_value)
 
             rewritten_assets[asset_key] = relative_local
             source_assets[asset_key] = remote_url
