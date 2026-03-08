@@ -32,6 +32,10 @@ def _selected_stream_slug(cfg: dict) -> str:
     return str(cfg.get('selected_stream_slug') or '').strip()
 
 
+def _selected_stream_name(cfg: dict) -> str:
+    return str(cfg.get('selected_stream_name') or '').strip()
+
+
 def _base_admin_url(cfg: dict, incoming: dict | None = None) -> str:
     incoming = incoming or {}
     return _safe_base_url(str(incoming.get('admin_base_url') or cfg.get('admin_base_url') or ''))
@@ -97,6 +101,51 @@ def _resolve_stream_storage_root(cfg: dict, requested_device_id: str = '') -> tu
     root = Path(mount_path).resolve() / 'stream'
     root.mkdir(parents=True, exist_ok=True)
     return device_id, root, label
+
+
+def _sanitize_stream_folder_name(stream_name: str, stream_slug: str) -> str:
+    raw = (stream_name or '').strip()
+    if not raw:
+        raw = (stream_slug or '').strip()
+    if not raw:
+        raw = 'stream'
+
+    safe_chars = []
+    last_was_sep = False
+    for ch in raw:
+        if ch.isalnum():
+            safe_chars.append(ch.lower())
+            last_was_sep = False
+            continue
+        if ch in (' ', '-', '_', '.'):
+            if not last_was_sep:
+                safe_chars.append('-')
+                last_was_sep = True
+            continue
+        # drop unsupported chars
+
+    folder = ''.join(safe_chars).strip('-')
+    if folder == '':
+        folder = 'stream'
+    if len(folder) > 120:
+        folder = folder[:120].rstrip('-') or 'stream'
+    return folder
+
+
+def _extract_stream_name(streams: list[dict], stream_slug: str) -> str:
+    slug = str(stream_slug or '').strip()
+    if slug == '':
+        return ''
+    for item in streams:
+        if not isinstance(item, dict):
+            continue
+        item_slug = str(item.get('slug') or item.get('streamSlug') or '').strip()
+        if item_slug != slug:
+            continue
+        name = str(item.get('name') or item.get('streamName') or item.get('title') or '').strip()
+        if name:
+            return name
+    return ''
 
 
 def _normalize_asset_url(base_url: str, raw_url: str) -> str:
@@ -262,16 +311,21 @@ def api_stream_overview():
             fetch_error = str(exc)
 
     selected = _selected_stream_slug(cfg) or admin_selected
+    selected_name = _selected_stream_name(cfg)
 
     storage_error = ''
     storage_info: dict = {}
     try:
         dev_id, root, label = _resolve_stream_storage_root(cfg)
+        stream_folder = _sanitize_stream_folder_name(selected_name, selected) if selected else ''
+        stream_root = (root / stream_folder).resolve() if stream_folder else root
+        current_path = (stream_root / 'current').resolve() if stream_folder else (root / 'current').resolve()
         storage_info = {
             'device_id': dev_id,
             'label': label,
             'root_path': str(root),
-            'current_path': str((root / 'current').resolve()),
+            'stream_root': str(stream_root),
+            'current_path': str(current_path),
         }
     except Exception as exc:
         storage_error = str(exc)
@@ -279,6 +333,7 @@ def api_stream_overview():
     status = {
         'admin_base_url': base_url,
         'selected_stream_slug': selected,
+        'selected_stream_name': selected_name,
         'selected_stream_updated_at': cfg.get('selected_stream_updated_at') or '',
         'stream_manifest_version': cfg.get('stream_manifest_version') or '',
         'stream_manifest_sha256': cfg.get('stream_manifest_sha256') or '',
@@ -311,10 +366,13 @@ def api_stream_select():
     dev = ensure_device()
     data = request.get_json(force=True, silent=True) or {}
     slug = str(data.get('streamSlug') or data.get('stream_slug') or '').strip()
+    stream_name = str(data.get('streamName') or data.get('stream_name') or '').strip()
     if not slug:
         return jsonify(ok=False, error='stream_slug_missing', detail='streamSlug fehlt.'), 400
 
     cfg['selected_stream_slug'] = slug
+    if stream_name:
+        cfg['selected_stream_name'] = stream_name
     cfg['selected_stream_updated_at'] = utc_now()
     cfg['updated_at'] = utc_now()
 
@@ -332,7 +390,13 @@ def api_stream_select():
     if not ok:
         return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
 
-    return jsonify(ok=True, selected_stream_slug=slug, pushed=(push_error == ''), push_error=push_error)
+    return jsonify(
+        ok=True,
+        selected_stream_slug=slug,
+        selected_stream_name=str(cfg.get('selected_stream_name') or ''),
+        pushed=(push_error == ''),
+        push_error=push_error,
+    )
 
 
 @bp_stream.post('/api/stream/sync')
@@ -346,14 +410,26 @@ def api_stream_sync():
         return jsonify(ok=False, error='missing_admin_base_url', detail='Panel URL fehlt.'), 400
 
     stream_slug = str(data.get('streamSlug') or _selected_stream_slug(cfg)).strip()
+    stream_name = str(data.get('streamName') or data.get('stream_name') or _selected_stream_name(cfg)).strip()
     if not stream_slug:
         return jsonify(ok=False, error='missing_stream_slug', detail='Kein Stream ausgewählt.'), 400
 
     requested_device_id = str(data.get('storageDeviceId') or '').strip()
     try:
-        storage_device_id, stream_root, storage_label = _resolve_stream_storage_root(cfg, requested_device_id)
+        storage_device_id, stream_base_root, storage_label = _resolve_stream_storage_root(cfg, requested_device_id)
     except Exception as exc:
         return jsonify(ok=False, error='storage_unavailable', detail=str(exc)), 400
+
+    if not stream_name:
+        try:
+            streams, _ = _load_remote_streams(base_url, dev)
+            stream_name = _extract_stream_name(streams, stream_slug)
+        except Exception:
+            stream_name = ''
+
+    stream_folder = _sanitize_stream_folder_name(stream_name, stream_slug)
+    stream_root = stream_base_root / stream_folder
+    stream_root.mkdir(parents=True, exist_ok=True)
 
     lock_path = stream_root / '.sync.lock'
     lock_file = None
@@ -494,9 +570,12 @@ def api_stream_sync():
             return jsonify(ok=False, error='stream_sync_failed', detail=detail), 500
 
         cfg['selected_stream_slug'] = stream_slug
+        cfg['selected_stream_name'] = stream_name
         cfg['selected_stream_updated_at'] = utc_now()
         cfg['stream_storage_device_id'] = storage_device_id
         cfg['stream_storage_label'] = storage_label
+        cfg['stream_storage_base_path'] = str(stream_base_root)
+        cfg['stream_storage_folder'] = stream_folder
         cfg['stream_storage_path'] = str(stream_root)
         cfg['stream_current_path'] = str(current_dir)
         cfg['stream_manifest_version'] = str(manifest.get('version') or '')
@@ -530,6 +609,7 @@ def api_stream_sync():
             storage={
                 'device_id': storage_device_id,
                 'label': storage_label,
+                'stream_folder': stream_folder,
                 'stream_root': str(stream_root),
                 'current_path': str(current_dir),
             },
