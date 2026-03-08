@@ -58,6 +58,9 @@ DEFAULT_CONFIG: dict = {
         'last_ack_at': None,
         'last_error': '',
     },
+    'player_repo_dir': '',
+    'player_service_name': 'joormann-media-deviceplayer.service',
+    'player_service_user': '',
 }
 
 

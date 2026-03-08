@@ -19,6 +19,13 @@ Das Device Portal steuert den lokalen Device Player und synchronisiert Stream-Ma
   - Nutzt staging/current-Strategie atomar.
 - `GET /api/stream/player/status`
 - `POST /api/stream/player/start|stop|restart`
+- `GET /api/stream/player/repo`
+- `POST /api/stream/player/repo`
+  - Player-Repo-Link + Service-Name/User speichern
+- `POST /api/stream/player/install-update`
+  - Startet Install/Update-Job für den Player aus dem verlinkten Repo
+- `GET /api/stream/player/install-update/status`
+  - Jobstatus + Logtail
 
 ## Storage-Regel
 
@@ -55,6 +62,7 @@ Umschaltung:
 Das Portal nutzt Script:
 
 - `scripts/net/player_service.sh`
+- `scripts/net/player_update.sh`
 
 und netcontrol wrapper:
 

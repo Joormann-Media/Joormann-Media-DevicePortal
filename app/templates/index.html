@@ -774,6 +774,30 @@
             <div id="stream-storage-target" class="small text-secondary">-</div>
             <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
           </div>
+
+          <div class="border rounded p-3 mt-3">
+            <div class="small text-uppercase text-secondary mb-2">Player Repo Link & Install/Update</div>
+            <div class="row g-2 mb-2">
+              <div class="col-12 col-lg-7">
+                <label for="stream-player-repo-dir" class="form-label form-label-sm mb-1">Player Repo Pfad</label>
+                <input id="stream-player-repo-dir" type="text" class="form-control form-control-sm" placeholder="/home/.../Joormann-Media-DevicePlayer">
+              </div>
+              <div class="col-12 col-lg-3">
+                <label for="stream-player-service-name" class="form-label form-label-sm mb-1">Service</label>
+                <input id="stream-player-service-name" type="text" class="form-control form-control-sm" value="joormann-media-deviceplayer.service">
+              </div>
+              <div class="col-12 col-lg-2">
+                <label for="stream-player-service-user" class="form-label form-label-sm mb-1">User</label>
+                <input id="stream-player-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              <button id="btn-stream-player-repo-save" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
+              <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
+              <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
+            </div>
+            <pre id="stream-player-update-log" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height:220px; overflow:auto;">Kein Player-Update gestartet.</pre>
+          </div>
         </div>
       </div>
 

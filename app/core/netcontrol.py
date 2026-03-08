@@ -36,6 +36,12 @@ def _update_dir() -> Path:
     return path
 
 
+def _player_update_dir() -> Path:
+    path = Path(ASSET_DIR) / "updates-player"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _is_valid_job_id(job_id: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9._-]{1,96}", job_id or ""))
 
@@ -953,6 +959,102 @@ def portal_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_B
         message = "Portal update running."
     else:
         message = f"Portal update status: {status or 'unknown'}"
+
+    return {
+        "job_id": selected_job_id,
+        "status": status,
+        "success": success,
+        "repo_dir": parsed.get("repo_dir", ""),
+        "service_user": parsed.get("service_user", ""),
+        "service_name": parsed.get("service_name", ""),
+        "git_status": parsed.get("git_status", "unknown"),
+        "before_commit": parsed.get("before_commit", ""),
+        "after_commit": parsed.get("after_commit", ""),
+        "started_at": parsed.get("started_at", ""),
+        "updated_at": parsed.get("updated_at", ""),
+        "finished_at": parsed.get("finished_at", ""),
+        "message": message,
+        "log": _tail_file(log_file, max_bytes=max_log_bytes) if log_file.exists() else "",
+        "log_file": str(log_file),
+    }
+
+
+def player_update(player_repo_dir: str, service_user: str = "", service_name: str = "joormann-media-deviceplayer.service") -> dict:
+    repo_dir = (player_repo_dir or "").strip()
+    if not repo_dir:
+        raise NetControlError(code="player_repo_missing", message="Player repo path is required")
+
+    service = (service_name or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
+    user = (service_user or "").strip() or _service_user_from_systemd("device-portal.service") or getpass.getuser()
+    update_dir = str(_player_update_dir())
+
+    rc, out, err = _run_script(
+        "player_update.sh",
+        ["start", repo_dir, user, service, update_dir],
+        timeout=25,
+        use_sudo=True,
+    )
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "player_update_failed"),
+            message=parsed.get("message", "Player update failed"),
+            detail=detail,
+        )
+
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "repo_dir": parsed.get("repo_dir", repo_dir),
+        "service_user": parsed.get("service_user", user),
+        "service_name": parsed.get("service_name", service),
+        "job_id": parsed.get("job_id", ""),
+        "status": "running",
+        "message": parsed.get("message", "Player install/update started."),
+        "details": detail,
+    }
+
+
+def player_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_BYTES) -> dict:
+    updates_dir = _player_update_dir()
+    selected_job_id = (job_id or "").strip()
+    if selected_job_id:
+        if not _is_valid_job_id(selected_job_id):
+            raise NetControlError(code="invalid_job_id", message="Invalid update job id")
+    else:
+        state_files = sorted(updates_dir.glob("*.state"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not state_files:
+            return {
+                "job_id": "",
+                "status": "idle",
+                "success": False,
+                "message": "No player update run found yet.",
+                "log": "",
+            }
+        selected_job_id = state_files[0].stem
+
+    state_file = updates_dir / f"{selected_job_id}.state"
+    log_file = updates_dir / f"{selected_job_id}.log"
+    if not state_file.exists():
+        raise NetControlError(code="job_not_found", message="Player update job not found")
+
+    try:
+        raw_state = state_file.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        raise NetControlError(code="update_state_read_failed", message="Failed to read player update state", detail=str(exc))
+    parsed = _parse_kv_output(raw_state)
+    status = (parsed.get("status") or "unknown").strip().lower()
+    success = (parsed.get("success") or "false").strip().lower() == "true"
+    if status == "done":
+        message = "Player update completed."
+    elif status == "failed":
+        message = "Player update failed."
+    elif status == "restarting":
+        message = "Player service restart in progress."
+    elif status == "running":
+        message = "Player update running."
+    else:
+        message = f"Player update status: {status or 'unknown'}"
 
     return {
         "job_id": selected_job_id,

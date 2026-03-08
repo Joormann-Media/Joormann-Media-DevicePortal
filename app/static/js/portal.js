@@ -10,6 +10,8 @@
   let storagePollHandle = null;
   let updatePollHandle = null;
   let currentUpdateJobId = "";
+  let streamPlayerUpdateJobId = "";
+  let streamPlayerUpdatePollHandle = null;
   let apClientsInitialized = false;
   let apKnownConnectedMacs = new Set();
   let storageInitialized = false;
@@ -3214,6 +3216,104 @@
     }
   }
 
+  async function loadPlayerRepoConfig() {
+    const payload = await fetchJson("/api/stream/player/repo", { timeoutMs: 10000 });
+    const cfg = payload.config || {};
+    q("stream-player-repo-dir").value = String(cfg.player_repo_dir || "");
+    q("stream-player-service-name").value = String(cfg.player_service_name || "joormann-media-deviceplayer.service");
+    q("stream-player-service-user").value = String(cfg.player_service_user || "");
+  }
+
+  async function savePlayerRepoConfig() {
+    const player_repo_dir = String(q("stream-player-repo-dir")?.value || "").trim();
+    const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
+    const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
+    await fetchJson("/api/stream/player/repo", {
+      method: "POST",
+      body: { player_repo_dir, player_service_name, player_service_user },
+      timeoutMs: 12000,
+    });
+    toast("Player-Repo Link gespeichert", "success");
+  }
+
+  function renderStreamPlayerUpdateStatus(data) {
+    const logEl = q("stream-player-update-log");
+    if (!logEl) return;
+    const status = String((data || {}).status || "unknown");
+    const lines = [
+      `status: ${status}`,
+      `success: ${String(!!(data || {}).success)}`,
+      `message: ${(data || {}).message || "-"}`,
+      `job_id: ${(data || {}).job_id || "-"}`,
+      `repo: ${(data || {}).repo_dir || "-"}`,
+      `user: ${(data || {}).service_user || "-"}`,
+      `service: ${(data || {}).service_name || "-"}`,
+      `git_status: ${(data || {}).git_status || "-"}`,
+      `commit: ${((data || {}).before_commit || "-")} -> ${((data || {}).after_commit || "-")}`,
+      `started_at: ${(data || {}).started_at || "-"}`,
+      `finished_at: ${(data || {}).finished_at || "-"}`,
+      "",
+      "log:",
+      (data || {}).log || "-",
+    ];
+    logEl.textContent = lines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function fetchStreamPlayerUpdateStatus(jobId = "") {
+    const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : "";
+    const payload = await fetchJson(`/api/stream/player/install-update/status${query}`, { timeoutMs: 8000, cache: "no-store" });
+    return payload.data || {};
+  }
+
+  async function pollStreamPlayerUpdateStatus(jobId = "") {
+    if (streamPlayerUpdatePollHandle) {
+      window.clearInterval(streamPlayerUpdatePollHandle);
+      streamPlayerUpdatePollHandle = null;
+    }
+    const first = await fetchStreamPlayerUpdateStatus(jobId);
+    renderStreamPlayerUpdateStatus(first);
+    const status = String(first.status || "").toLowerCase();
+    if (["running", "restarting"].includes(status)) {
+      streamPlayerUpdatePollHandle = window.setInterval(async () => {
+        try {
+          const data = await fetchStreamPlayerUpdateStatus(streamPlayerUpdateJobId);
+          renderStreamPlayerUpdateStatus(data);
+          const nextStatus = String(data.status || "").toLowerCase();
+          if (!["running", "restarting"].includes(nextStatus)) {
+            if (streamPlayerUpdatePollHandle) {
+              window.clearInterval(streamPlayerUpdatePollHandle);
+              streamPlayerUpdatePollHandle = null;
+            }
+          }
+        } catch (_) {
+          if (streamPlayerUpdatePollHandle) {
+            window.clearInterval(streamPlayerUpdatePollHandle);
+            streamPlayerUpdatePollHandle = null;
+          }
+        }
+      }, 3500);
+    }
+  }
+
+  async function startStreamPlayerInstallUpdate() {
+    const player_repo_dir = String(q("stream-player-repo-dir")?.value || "").trim();
+    const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
+    const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
+    if (!player_repo_dir) {
+      throw new Error("Bitte zuerst Player-Repo Pfad setzen.");
+    }
+    const payload = await fetchJson("/api/stream/player/install-update", {
+      method: "POST",
+      body: { player_repo_dir, player_service_name, player_service_user },
+      timeoutMs: 20000,
+    });
+    const data = payload.data || {};
+    streamPlayerUpdateJobId = String(data.job_id || "").trim();
+    await pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId);
+    toast("Player Install/Update gestartet", "success");
+  }
+
   async function playerAction(action) {
     await fetchJson(`/api/stream/player/${action}`, { method: "POST" });
     await refreshPlayerStatus();
@@ -4123,6 +4223,9 @@
     q("btn-player-start").addEventListener("click", () => run(() => playerAction("start")));
     q("btn-player-stop").addEventListener("click", () => run(() => playerAction("stop")));
     q("btn-player-restart").addEventListener("click", () => run(() => playerAction("restart")));
+    q("btn-stream-player-repo-save").addEventListener("click", () => run(savePlayerRepoConfig));
+    q("btn-stream-player-install-update").addEventListener("click", () => run(startStreamPlayerInstallUpdate));
+    q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
     q("btn-panel-sync-check").addEventListener("click", () => run(panelSyncCheck));
     q("btn-panel-sync-now").addEventListener("click", () => run(panelSyncNow));
 
@@ -4390,6 +4493,8 @@
     await run(refreshWifiLogs);
     await run(refreshStorageStatus);
     await run(refreshStreamOverview);
+    await run(loadPlayerRepoConfig);
+    await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
     await run(refreshApClients);
     await run(loadLastPortalUpdateStatus);

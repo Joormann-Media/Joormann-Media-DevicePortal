@@ -14,7 +14,7 @@ from app.core.config import _safe_base_url, ensure_config
 from app.core.device import ensure_device
 from app.core.httpclient import http_get_json, http_post_json
 from app.core.jsonio import write_json
-from app.core.netcontrol import NetControlError, player_service_action
+from app.core.netcontrol import NetControlError, player_service_action, player_update, player_update_status
 from app.core.paths import CONFIG_PATH
 from app.core.storage_state import get_storage_state
 from app.core.timeutil import utc_now
@@ -406,3 +406,70 @@ def api_stream_player_action(action: str):
     except NetControlError as exc:
         status = 500 if exc.code in ('execution_failed', 'script_missing') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+
+@bp_stream.get('/api/stream/player/repo')
+def api_stream_player_repo_get():
+    cfg = ensure_config()
+    return jsonify(
+        ok=True,
+        config={
+            'player_repo_dir': str(cfg.get('player_repo_dir') or ''),
+            'player_service_name': str(cfg.get('player_service_name') or STREAM_SERVICE_NAME),
+            'player_service_user': str(cfg.get('player_service_user') or ''),
+        },
+    )
+
+
+@bp_stream.post('/api/stream/player/repo')
+def api_stream_player_repo_set():
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    repo_dir = str(data.get('player_repo_dir') or '').strip()
+    service_name = str(data.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
+    service_user = str(data.get('player_service_user') or '').strip()
+
+    cfg['player_repo_dir'] = repo_dir
+    cfg['player_service_name'] = service_name
+    cfg['player_service_user'] = service_user
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    return jsonify(ok=True, config={
+        'player_repo_dir': repo_dir,
+        'player_service_name': service_name,
+        'player_service_user': service_user,
+    })
+
+
+@bp_stream.post('/api/stream/player/install-update')
+def api_stream_player_install_update():
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    repo_dir = str(data.get('player_repo_dir') or cfg.get('player_repo_dir') or '').strip()
+    service_name = str(data.get('player_service_name') or cfg.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
+    service_user = str(data.get('player_service_user') or cfg.get('player_service_user') or '').strip()
+
+    if not repo_dir:
+        return jsonify(ok=False, error='player_repo_missing', detail='Bitte Player-Repo-Pfad setzen.'), 400
+
+    try:
+        payload = player_update(repo_dir, service_user=service_user, service_name=service_name)
+    except NetControlError as exc:
+        status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+    return jsonify(ok=True, data=payload)
+
+
+@bp_stream.get('/api/stream/player/install-update/status')
+def api_stream_player_install_update_status():
+    job_id = str(request.args.get('job_id') or '').strip()
+    try:
+        payload = player_update_status(job_id=job_id)
+    except NetControlError as exc:
+        status = 500 if exc.code in ('script_missing', 'execution_failed', 'update_state_read_failed') else 400
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+    return jsonify(ok=True, data=payload)
