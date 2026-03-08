@@ -158,6 +158,7 @@ fi
 GATEWAY="$(safe_cmd ip route | awk '/default/ {print $3; exit}')"
 GATEWAY_MAC=""
 if [[ -n "$GATEWAY" ]]; then
+  safe_cmd ping -c1 -W1 "$GATEWAY" >/dev/null
   GATEWAY_MAC="$(safe_cmd ip neigh show "$GATEWAY" | awk '{print $5; exit}')"
 fi
 DNS_RAW="$(safe_cmd awk '/^nameserver / {print $2}' /etc/resolv.conf | paste -sd, -)"

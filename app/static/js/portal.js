@@ -40,6 +40,7 @@
       trusted_lan: [],
       trusted_bluetooth: [],
       assessment: null,
+      catalog: null,
     },
   };
   const statusDashboardState = {
@@ -1148,6 +1149,7 @@
     portalSecurityState.networkSecurity.trusted_wifi = Array.isArray(rawNetworkSecurity.trusted_wifi) ? rawNetworkSecurity.trusted_wifi : [];
     portalSecurityState.networkSecurity.trusted_lan = Array.isArray(rawNetworkSecurity.trusted_lan) ? rawNetworkSecurity.trusted_lan : [];
     portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(rawNetworkSecurity.trusted_bluetooth) ? rawNetworkSecurity.trusted_bluetooth : [];
+    portalSecurityState.networkSecurity.catalog = null;
     const perimeterToggle = q("security-perimeter-enabled");
     if (perimeterToggle) {
       perimeterToggle.checked = portalSecurityState.networkSecurity.enabled;
@@ -1381,6 +1383,7 @@
       portalSecurityState.networkSecurity.trusted_lan = Array.isArray(profile.trusted_lan) ? profile.trusted_lan : [];
       portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(profile.trusted_bluetooth) ? profile.trusted_bluetooth : [];
       portalSecurityState.networkSecurity.assessment = assessment;
+      portalSecurityState.networkSecurity.catalog = (data.security && data.security.catalog) ? data.security.catalog : null;
       const perimeterToggle = q("security-perimeter-enabled");
       if (perimeterToggle) {
         perimeterToggle.checked = portalSecurityState.networkSecurity.enabled;
@@ -3474,23 +3477,18 @@
     renderNetworkSecurityList("security-trusted-lan", profile.trusted_lan || [], "lan");
     renderNetworkSecurityList("security-trusted-bt", profile.trusted_bluetooth || [], "bluetooth");
 
+    const catalog = profile.catalog || {};
     const knownWifi = [];
     const knownLan = [];
     const knownBt = [];
-    if (assessment && assessment.current) {
-      const cur = assessment.current;
-      const cw = cur.wifi || {};
-      const cl = cur.lan || {};
-      const cb = Array.isArray(cur.bluetooth) ? cur.bluetooth : [];
-      if (cw.ssid || cw.bssid) {
-        knownWifi.push([cw.ssid || "-", cw.bssid || "-"].filter(Boolean).join(" | "));
-      }
-      if (cl.ifname || cl.connection || cl.gateway_ip || cl.gateway_mac) {
-        knownLan.push([cl.ifname || "-", cl.connection || "-", cl.gateway_ip || "-", cl.gateway_mac || "-"].filter(Boolean).join(" | "));
-      }
-      for (const dev of cb) {
-        knownBt.push([String(dev.name || "").trim() || "-", String(dev.mac || "").trim() || "-"].join(" | "));
-      }
+    for (const item of (Array.isArray(catalog.known_wifi) ? catalog.known_wifi : [])) {
+      knownWifi.push([item.ssid || "-", item.source || "-"].join(" | "));
+    }
+    for (const item of (Array.isArray(catalog.known_lan) ? catalog.known_lan : [])) {
+      knownLan.push([item.ifname || "-", item.connection || "-", item.gateway_ip || "-", item.gateway_mac || "-"].join(" | "));
+    }
+    for (const item of (Array.isArray(catalog.known_bluetooth) ? catalog.known_bluetooth : [])) {
+      knownBt.push([item.name || "-", item.mac || "-"].join(" | "));
     }
     renderNetworkKnownList("security-known-wifi", knownWifi);
     renderNetworkKnownList("security-known-lan", knownLan);
@@ -3507,6 +3505,7 @@
     portalSecurityState.networkSecurity.trusted_lan = Array.isArray(profile.trusted_lan) ? profile.trusted_lan : [];
     portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(profile.trusted_bluetooth) ? profile.trusted_bluetooth : [];
     portalSecurityState.networkSecurity.assessment = assessment;
+    portalSecurityState.networkSecurity.catalog = data.catalog || null;
     const perimeterToggle = q("security-perimeter-enabled");
     if (perimeterToggle) {
       perimeterToggle.checked = portalSecurityState.networkSecurity.enabled;

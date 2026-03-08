@@ -378,6 +378,80 @@ def _security_assessment(profile: dict, network_info: dict, bt_paired: list[dict
     }
 
 
+def _network_security_catalog(cfg: dict, network_info: dict, bt_paired: list[dict]) -> dict:
+    wifi_known: list[dict] = []
+    seen_wifi: set[str] = set()
+    profiles_cfg = _norm_profiles(cfg)
+    for item in profiles_cfg:
+        ssid = _norm_text(item.get("ssid"))
+        if not ssid or ssid in seen_wifi:
+            continue
+        seen_wifi.add(ssid)
+        wifi_known.append(
+            {
+                "key": ssid,
+                "ssid": ssid,
+                "source": "config",
+            }
+        )
+    try:
+        nm_profiles = wifi_profiles_list().get("profiles", [])
+    except NetControlError:
+        nm_profiles = []
+    for item in nm_profiles:
+        ssid = _norm_text(item.get("name"))
+        if not ssid or ssid in seen_wifi:
+            continue
+        seen_wifi.add(ssid)
+        wifi_known.append(
+            {
+                "key": ssid,
+                "ssid": ssid,
+                "source": "nm",
+            }
+        )
+
+    lan = ((network_info or {}).get("interfaces") or {}).get("lan") or {}
+    routes = (network_info or {}).get("routes") or {}
+    lan_known = []
+    if bool(lan.get("carrier") or _norm_text(lan.get("ip"))):
+        lan_known.append(
+            {
+                "key": "|".join(
+                    [
+                        _norm_text(routes.get("gateway")),
+                        _norm_mac(routes.get("gateway_mac")),
+                        _norm_text(lan.get("connection")),
+                        _norm_text(lan.get("ifname")),
+                    ]
+                ).strip("|"),
+                "ifname": _norm_text(lan.get("ifname")),
+                "connection": _norm_text(lan.get("connection")),
+                "gateway_ip": _norm_text(routes.get("gateway")),
+                "gateway_mac": _norm_mac(routes.get("gateway_mac")),
+            }
+        )
+
+    bt_known = []
+    for dev in bt_paired:
+        mac = _norm_mac(dev.get("mac"))
+        if not mac:
+            continue
+        bt_known.append(
+            {
+                "key": mac,
+                "mac": mac,
+                "name": _norm_text(dev.get("name")),
+            }
+        )
+
+    return {
+        "known_wifi": wifi_known,
+        "known_lan": lan_known,
+        "known_bluetooth": bt_known,
+    }
+
+
 @bp_network.get("/api/network/info")
 def api_network_info():
     try:
@@ -388,9 +462,12 @@ def api_network_info():
             bt_paired = get_bluetooth_paired_devices()
         except NetControlError:
             bt_paired = []
+        assessment = _security_assessment(profile, info, bt_paired)
+        catalog = _network_security_catalog(cfg, info, bt_paired)
         info["security"] = {
             "profile": profile,
-            "assessment": _security_assessment(profile, info, bt_paired),
+            "assessment": assessment,
+            "catalog": catalog,
         }
         return _ok(info)
     except NetControlError as exc:
@@ -411,10 +488,13 @@ def api_network_security_status():
         bt_paired = get_bluetooth_paired_devices()
     except NetControlError:
         bt_paired = []
+    assessment = _security_assessment(profile, info, bt_paired)
+    catalog = _network_security_catalog(cfg, info, bt_paired)
     return _ok(
         {
             "profile": profile,
-            "assessment": _security_assessment(profile, info, bt_paired),
+            "assessment": assessment,
+            "catalog": catalog,
         }
     )
 
@@ -459,24 +539,45 @@ def api_network_security_trust_current():
 
     added = {"wifi": 0, "lan": 0, "bluetooth": 0}
 
-    if trust_wifi and bool(wifi.get("connected")):
-        ssid = _norm_text(wifi.get("ssid"))
-        bssid = _norm_mac(wifi.get("bssid"))
-        key = bssid or ssid
-        if key:
-            trusted_wifi = profile.get("trusted_wifi") or []
-            if not any((_norm_text(item.get("key")) == key) for item in trusted_wifi if isinstance(item, dict)):
-                trusted_wifi.append(
-                    {
-                        "key": key,
-                        "ssid": ssid,
-                        "bssid": bssid,
-                        "label": f"{ssid} ({bssid})" if ssid and bssid else (ssid or bssid),
-                        "last_seen": now,
-                    }
-                )
-                profile["trusted_wifi"] = trusted_wifi
-                added["wifi"] += 1
+    if trust_wifi:
+        trusted_wifi = profile.get("trusted_wifi") or []
+        existing_keys = {_norm_text(item.get("key")) for item in trusted_wifi if isinstance(item, dict)}
+        wifi_candidates: list[tuple[str, str, str]] = []
+        if bool(wifi.get("connected")):
+            ssid = _norm_text(wifi.get("ssid"))
+            bssid = _norm_mac(wifi.get("bssid"))
+            key = bssid or ssid
+            if key:
+                wifi_candidates.append((key, ssid, bssid))
+        if not wifi_candidates:
+            for item in _norm_profiles(cfg):
+                ssid = _norm_text(item.get("ssid"))
+                if ssid:
+                    wifi_candidates.append((ssid, ssid, ""))
+            try:
+                for item in wifi_profiles_list().get("profiles", []):
+                    ssid = _norm_text(item.get("name"))
+                    if ssid:
+                        wifi_candidates.append((ssid, ssid, ""))
+            except NetControlError:
+                pass
+        seen_candidate: set[str] = set()
+        for key, ssid, bssid in wifi_candidates:
+            if not key or key in seen_candidate or key in existing_keys:
+                continue
+            seen_candidate.add(key)
+            trusted_wifi.append(
+                {
+                    "key": key,
+                    "ssid": ssid,
+                    "bssid": bssid,
+                    "label": f"{ssid} ({bssid})" if ssid and bssid else (ssid or bssid or key),
+                    "last_seen": now,
+                }
+            )
+            existing_keys.add(key)
+            added["wifi"] += 1
+        profile["trusted_wifi"] = trusted_wifi
 
     if trust_lan and bool(lan.get("carrier") or _norm_text(lan.get("ip"))):
         gateway_ip = _norm_text(routes.get("gateway"))
