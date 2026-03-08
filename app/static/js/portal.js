@@ -3133,16 +3133,23 @@
     if (!Number.isInteger(timeoutRaw) || timeoutRaw < 30 || timeoutRaw > 900) {
       throw new Error("Pairing-Timeout muss zwischen 30 und 900 Sekunden liegen.");
     }
-    await fetchJson("/api/network/bluetooth/pairing/start", {
-      method: "POST",
-      body: { timeout_seconds: timeoutRaw },
-    });
-    await refreshNetwork();
     const modal = bootstrap.Modal.getOrCreateInstance(q("btPairingModal"));
     modal.show();
+    q("bt-pairing-message").textContent = "Pairing wird gestartet...";
+    try {
+      await fetchJson("/api/network/bluetooth/pairing/start", {
+        method: "POST",
+        body: { timeout_seconds: timeoutRaw },
+        timeoutMs: 15000,
+      });
+      await refreshNetwork();
+      toast("Bluetooth Pairing gestartet", "success");
+    } catch (err) {
+      q("bt-pairing-message").textContent = `Start fehlgeschlagen: ${err && err.message ? err.message : String(err || "Unbekannter Fehler")}`;
+      throw err;
+    }
     await refreshBtPairingStatus();
     startBtPairingPolling();
-    toast("Bluetooth Pairing gestartet", "success");
   }
 
   async function stopBluetoothPairing() {
