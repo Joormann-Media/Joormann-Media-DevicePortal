@@ -277,6 +277,7 @@ EOF
   cat > "${ENV_FILE}" <<EOF
 PYTHONUNBUFFERED=1
 DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}
+DEVICEPLAYER_VIDEO_DRIVERS=fbcon,kmsdrm,wayland,x11
 EOF
   chmod 0644 "${ENV_FILE}" || true
 
@@ -292,7 +293,6 @@ User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
 WorkingDirectory=${REPO_DIR}
 EnvironmentFile=-${ENV_FILE}
-Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_AUDIODRIVER=dummy
 ExecStart=${VENV_DIR}/bin/python ${REPO_DIR}/run.py
 Restart=always
