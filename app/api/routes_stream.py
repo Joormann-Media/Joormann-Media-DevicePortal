@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import hashlib
 import os
 import shutil
+import fcntl
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -169,6 +171,32 @@ def _download_asset_with_fallback(base_url: str, raw_url: str, target: Path, tim
     raise RuntimeError(detail)
 
 
+def _load_manifest_file(path: Path) -> dict:
+    payload = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(payload, dict):
+        raise RuntimeError(f'Manifest ist kein JSON-Objekt: {path}')
+    return payload
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _release_lock(lock_file) -> None:
+    try:
+        if lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+    except Exception:
+        pass
+
+
 def _load_remote_streams(base_url: str, dev: dict) -> tuple[list[dict], str]:
     url = f"{base_url}/api/device/link/streams?" + (
         f"deviceUuid={quote(str(dev.get('device_uuid') or '').strip())}&authKey={quote(str(dev.get('auth_key') or '').strip())}"
@@ -220,6 +248,7 @@ def api_stream_overview():
         'selected_stream_slug': selected,
         'selected_stream_updated_at': cfg.get('selected_stream_updated_at') or '',
         'stream_manifest_version': cfg.get('stream_manifest_version') or '',
+        'stream_manifest_sha256': cfg.get('stream_manifest_sha256') or '',
         'stream_last_sync_at': cfg.get('stream_last_sync_at') or '',
         'stream_asset_count': int(cfg.get('stream_asset_count') or 0),
         'stream_sync_error': cfg.get('stream_sync_error') or '',
@@ -293,135 +322,176 @@ def api_stream_sync():
     except Exception as exc:
         return jsonify(ok=False, error='storage_unavailable', detail=str(exc)), 400
 
+    lock_path = stream_root / '.sync.lock'
+    lock_file = None
+    try:
+        lock_file = lock_path.open('w')
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        if lock_file:
+            lock_file.close()
+        return jsonify(ok=False, error='stream_sync_locked', detail='Ein anderer Stream-Sync läuft bereits.'), 409
+    except Exception as exc:
+        if lock_file:
+            lock_file.close()
+        return jsonify(ok=False, error='stream_sync_lock_failed', detail=str(exc)), 500
+
     manifest_url = f"{base_url}/api/device/link/streams/{quote(stream_slug)}/player-manifest?" + (
         f"deviceUuid={quote(str(dev.get('device_uuid') or '').strip())}&authKey={quote(str(dev.get('auth_key') or '').strip())}"
     )
     code, payload, err = http_get_json(manifest_url, timeout=20)
     if code is None:
+        _release_lock(lock_file)
         return jsonify(ok=False, error='manifest_fetch_failed', detail=str(err)), 502
     if code != 200 or not isinstance(payload, dict) or not bool(payload.get('ok', False)):
+        _release_lock(lock_file)
         return jsonify(ok=False, error='manifest_fetch_failed', detail=f'HTTP {code}', panel_response=payload), (code if isinstance(code, int) and code >= 400 else 502)
 
     data_payload = payload.get('data') if isinstance(payload.get('data'), dict) else {}
     manifest = data_payload.get('manifest') if isinstance(data_payload.get('manifest'), dict) else None
     if not isinstance(manifest, dict):
+        _release_lock(lock_file)
         return jsonify(ok=False, error='manifest_invalid', detail='Ungültiges Manifest vom Adminpanel.'), 502
 
     assets = manifest.get('assets') if isinstance(manifest.get('assets'), dict) else {}
     playlist = manifest.get('playlist') if isinstance(manifest.get('playlist'), list) else []
     if not assets or not playlist:
+        _release_lock(lock_file)
         return jsonify(ok=False, error='manifest_empty', detail='Manifest enthält keine Assets oder Playlist.'), 400
 
-    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
-    staging_dir = stream_root / 'staging' / f'build-{timestamp}'
-    staging_assets = staging_dir / 'assets'
-    staging_dir.mkdir(parents=True, exist_ok=True)
-    staging_assets.mkdir(parents=True, exist_ok=True)
-
-    current_dir = stream_root / 'current'
-    current_manifest_path = current_dir / 'manifest.json'
-    current_manifest = {}
-    if current_manifest_path.exists():
-        try:
-            import json
-            current_manifest = json.loads(current_manifest_path.read_text(encoding='utf-8'))
-        except Exception:
-            current_manifest = {}
-
-    current_assets = current_manifest.get('assets') if isinstance(current_manifest, dict) and isinstance(current_manifest.get('assets'), dict) else {}
-
-    rewritten_assets: dict[str, str] = {}
-    source_assets: dict[str, str] = {}
-    downloaded: list[dict] = []
-
     try:
-        for asset_id, source_url in assets.items():
-            asset_key = str(asset_id).strip()
-            source_value = str(source_url or '').strip()
-            if not asset_key or not source_value:
-                continue
+        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+        staging_dir = stream_root / 'staging' / f'build-{timestamp}'
+        staging_assets = staging_dir / 'assets'
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        staging_assets.mkdir(parents=True, exist_ok=True)
 
-            filename = _asset_filename(asset_key, source_value)
-            relative_local = f'assets/{filename}'
-            target_path = staging_dir / relative_local
+        current_dir = stream_root / 'current'
+        current_manifest_path = current_dir / 'manifest.json'
+        current_manifest = {}
+        if current_manifest_path.exists():
+            try:
+                current_manifest = _load_manifest_file(current_manifest_path)
+            except Exception:
+                current_manifest = {}
 
-            reused = False
-            if isinstance(current_assets, dict):
-                for _, curr_path in current_assets.items():
-                    if str(curr_path) == relative_local:
-                        candidate = current_dir / relative_local
-                        if candidate.exists() and candidate.is_file():
-                            target_path.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(candidate, target_path)
-                            reused = True
-                        break
+        current_assets = current_manifest.get('assets') if isinstance(current_manifest.get('assets'), dict) else {}
 
-            if not reused:
-                remote_url, size = _download_asset_with_fallback(base_url, source_value, target_path)
-            else:
-                size = target_path.stat().st_size if target_path.exists() else 0
-                remote_url = _normalize_asset_url(base_url, source_value)
-
-            rewritten_assets[asset_key] = relative_local
-            source_assets[asset_key] = remote_url
-            downloaded.append({'asset': asset_key, 'path': relative_local, 'bytes': int(size), 'reused': reused})
-
-        manifest_local = dict(manifest)
-        manifest_local['assets'] = rewritten_assets
-
-        import json
-        (staging_dir / 'manifest.json').write_text(
-            json.dumps(manifest_local, ensure_ascii=False, indent=2),
-            encoding='utf-8',
-        )
-        (staging_dir / 'manifest-source.json').write_text(
-            json.dumps({'source_assets': source_assets, 'stream_slug': stream_slug, 'synced_at': utc_now()}, ensure_ascii=False, indent=2),
-            encoding='utf-8',
-        )
-
+        rewritten_assets: dict[str, str] = {}
+        source_assets: dict[str, str] = {}
+        downloaded: list[dict] = []
+        manifest_sha256 = ''
         current_prev = stream_root / f'current.prev.{timestamp}'
-        if current_prev.exists():
-            shutil.rmtree(current_prev, ignore_errors=True)
+        current_was_renamed = False
+        published = False
 
-        if current_dir.exists():
-            current_dir.rename(current_prev)
-        staging_dir.rename(current_dir)
-        shutil.rmtree(current_prev, ignore_errors=True)
-    except Exception as exc:
-        shutil.rmtree(staging_dir, ignore_errors=True)
-        cfg['stream_sync_error'] = str(exc)
+        try:
+            for asset_id, source_url in assets.items():
+                asset_key = str(asset_id).strip()
+                source_value = str(source_url or '').strip()
+                if not asset_key or not source_value:
+                    continue
+
+                filename = _asset_filename(asset_key, source_value)
+                relative_local = f'assets/{filename}'
+                target_path = staging_dir / relative_local
+
+                reused = False
+                if isinstance(current_assets, dict):
+                    for _, curr_path in current_assets.items():
+                        if str(curr_path) == relative_local:
+                            candidate = current_dir / relative_local
+                            if candidate.exists() and candidate.is_file():
+                                target_path.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(candidate, target_path)
+                                reused = True
+                            break
+
+                if not reused:
+                    remote_url, size = _download_asset_with_fallback(base_url, source_value, target_path)
+                else:
+                    size = target_path.stat().st_size if target_path.exists() else 0
+                    remote_url = _normalize_asset_url(base_url, source_value)
+
+                rewritten_assets[asset_key] = relative_local
+                source_assets[asset_key] = remote_url
+                downloaded.append({'asset': asset_key, 'path': relative_local, 'bytes': int(size), 'reused': reused})
+
+            manifest_local = dict(manifest)
+            manifest_local['assets'] = rewritten_assets
+
+            (staging_dir / 'manifest.json').write_text(
+                json.dumps(manifest_local, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
+            (staging_dir / 'manifest-source.json').write_text(
+                json.dumps({'source_assets': source_assets, 'stream_slug': stream_slug, 'synced_at': utc_now()}, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
+
+            _load_manifest_file(staging_dir / 'manifest.json')
+
+            if current_prev.exists():
+                shutil.rmtree(current_prev, ignore_errors=True)
+
+            if current_dir.exists():
+                current_dir.rename(current_prev)
+                current_was_renamed = True
+            staging_dir.rename(current_dir)
+            published = True
+
+            _load_manifest_file(current_dir / 'manifest.json')
+            manifest_sha256 = _file_sha256(current_dir / 'manifest.json')
+
+            if current_prev.exists():
+                shutil.rmtree(current_prev, ignore_errors=True)
+        except Exception as exc:
+            rollback_error = ''
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            if (not published) and current_was_renamed and current_prev.exists() and (not current_dir.exists()):
+                try:
+                    current_prev.rename(current_dir)
+                except Exception as restore_exc:
+                    rollback_error = f' | rollback_failed: {restore_exc}'
+            detail = f'{exc}{rollback_error}'
+            cfg['stream_sync_error'] = detail
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+            return jsonify(ok=False, error='stream_sync_failed', detail=detail), 500
+
+        cfg['selected_stream_slug'] = stream_slug
+        cfg['selected_stream_updated_at'] = utc_now()
+        cfg['stream_storage_device_id'] = storage_device_id
+        cfg['stream_storage_label'] = storage_label
+        cfg['stream_storage_path'] = str(stream_root)
+        cfg['stream_current_path'] = str(current_dir)
+        cfg['stream_manifest_version'] = str(manifest.get('version') or '')
+        cfg['stream_manifest_sha256'] = manifest_sha256
+        cfg['stream_last_sync_at'] = utc_now()
+        cfg['stream_asset_count'] = len(rewritten_assets)
+        cfg['stream_sync_error'] = ''
         cfg['updated_at'] = utc_now()
-        write_json(CONFIG_PATH, cfg, mode=0o600)
-        return jsonify(ok=False, error='stream_sync_failed', detail=str(exc)), 500
+        ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+        if not ok:
+            return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
 
-    cfg['selected_stream_slug'] = stream_slug
-    cfg['selected_stream_updated_at'] = utc_now()
-    cfg['stream_storage_device_id'] = storage_device_id
-    cfg['stream_storage_label'] = storage_label
-    cfg['stream_storage_path'] = str(stream_root)
-    cfg['stream_current_path'] = str(current_dir)
-    cfg['stream_manifest_version'] = str(manifest.get('version') or '')
-    cfg['stream_last_sync_at'] = utc_now()
-    cfg['stream_asset_count'] = len(rewritten_assets)
-    cfg['stream_sync_error'] = ''
-    cfg['updated_at'] = utc_now()
-    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
-    if not ok:
-        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
-
-    return jsonify(
-        ok=True,
-        stream_slug=stream_slug,
-        manifest_version=cfg['stream_manifest_version'],
-        asset_count=len(rewritten_assets),
-        storage={
-            'device_id': storage_device_id,
-            'label': storage_label,
-            'stream_root': str(stream_root),
-            'current_path': str(current_dir),
-        },
-        downloaded=downloaded,
-    )
+        return jsonify(
+            ok=True,
+            stream_slug=stream_slug,
+            manifest_version=cfg['stream_manifest_version'],
+            manifest_sha256=cfg['stream_manifest_sha256'],
+            asset_count=len(rewritten_assets),
+            storage={
+                'device_id': storage_device_id,
+                'label': storage_label,
+                'stream_root': str(stream_root),
+                'current_path': str(current_dir),
+            },
+            downloaded=downloaded,
+        )
+    finally:
+        _release_lock(lock_file)
 
 
 @bp_stream.get('/api/stream/player/status')
