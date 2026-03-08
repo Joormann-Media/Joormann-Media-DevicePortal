@@ -16,6 +16,10 @@ fi
 JOURNALCTL="$(command -v journalctl || true)"
 RUNTIME_LOG="/run/deviceportal/bt-pairing-agent.log"
 
+sanitize_text() {
+  sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g' | tr -d '\r' | sed -E 's/[[:cntrl:]]//g'
+}
+
 now_epoch="$(date +%s)"
 since_epoch="$(( now_epoch - WINDOW_SEC ))"
 if [[ "${since_epoch}" -lt 0 ]]; then
@@ -33,6 +37,7 @@ if [[ -f "${RUNTIME_LOG}" ]]; then
     log_dump="${log_dump}"$'\n'"${runtime_tail}"
   fi
 fi
+log_dump="$(printf '%s\n' "${log_dump}" | sanitize_text)"
 
 extract_passkey_line() {
   echo "${log_dump}" | grep -Ei "passkey|pin code|pincode|request confirmation|confirm passkey|just-works|confirm value|authorize service|agent.*confirm" | tail -n1 || true
@@ -48,7 +53,8 @@ device_mac=""
 device_name=""
 paired_lines="$("${BTCTL}" paired-devices 2>/dev/null || true)"
 if [[ -n "${paired_lines}" ]]; then
-  last_paired="$(echo "${paired_lines}" | tail -n1)"
+  paired_lines="$(printf '%s\n' "${paired_lines}" | sanitize_text)"
+  last_paired="$(echo "${paired_lines}" | grep -E '^Device ([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2} ' | tail -n1 || true)"
   device_mac="$(echo "${last_paired}" | awk '{print $2}' || true)"
   device_name="$(echo "${last_paired}" | cut -d' ' -f3- | xargs || true)"
 fi

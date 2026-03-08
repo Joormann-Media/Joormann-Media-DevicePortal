@@ -3089,6 +3089,12 @@
   }
 
   function renderBtPairingStatus(data) {
+    const cleanBtText = (input) => String(input || "")
+      .replace(/\x1B\[[0-9;]*[A-Za-z]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const looksLikeMenuHint = (text) => /return to menu main|type 'back'|^\s*back\s*$/i.test(text);
+
     btPairingLatest = data || {};
     const active = !!data.active;
     const badge = q("bt-pairing-status-badge");
@@ -3099,11 +3105,14 @@
     }
     q("bt-pairing-remaining").textContent = active ? formatSeconds(data.remaining_seconds) : "-";
     const feedback = data.feedback || {};
-    const passkey = String(feedback.passkey || "").trim();
+    const passkey = cleanBtText(feedback.passkey || "");
     q("bt-pairing-passkey").textContent = passkey || "----";
-    const deviceLabel = [String(feedback.device_name || "").trim(), String(feedback.device_mac || "").trim()].filter(Boolean).join(" ");
+    const deviceName = cleanBtText(feedback.device_name || "");
+    const deviceMac = cleanBtText(feedback.device_mac || "");
+    const deviceLabel = [deviceName, deviceMac].filter(Boolean).join(" ");
     q("bt-pairing-device").textContent = deviceLabel || "-";
-    q("bt-pairing-message").textContent = String(feedback.passkey_line || feedback.recent_line || "Warte auf Pairing-Anfrage...").trim();
+    const rawMsg = cleanBtText(feedback.passkey_line || feedback.recent_line || "");
+    q("bt-pairing-message").textContent = rawMsg && !looksLikeMenuHint(rawMsg) ? rawMsg : "Warte auf Pairing-Anfrage...";
   }
 
   function currentBtTargetMac() {
@@ -3115,10 +3124,6 @@
     const payload = await fetchJson("/api/network/bluetooth/pairing/status", { cache: "no-store" });
     const data = payload.data || {};
     renderBtPairingStatus(data);
-    if (!data.active && btPairingPollHandle) {
-      window.clearInterval(btPairingPollHandle);
-      btPairingPollHandle = null;
-    }
     return data;
   }
 
@@ -3132,7 +3137,7 @@
       } catch (_) {
         // ignore transient polling errors
       }
-    }, 2000);
+    }, 900);
   }
 
   async function startBluetoothPairing() {
