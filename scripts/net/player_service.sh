@@ -17,7 +17,8 @@ if ! command -v systemctl >/dev/null 2>&1; then
   exit 3
 fi
 
-if ! systemctl status "${SERVICE_NAME}" >/dev/null 2>&1; then
+load_state="$(systemctl show "${SERVICE_NAME}" --property=LoadState --value 2>/dev/null || true)"
+if [[ -z "${load_state}" || "${load_state}" == "not-found" ]]; then
   emit "success" "false"
   emit "code" "service_not_found"
   emit "message" "Service not found"
@@ -46,15 +47,17 @@ case "${ACTION}" in
     ;;
 esac
 
+active_state="$(systemctl show "${SERVICE_NAME}" --property=ActiveState --value 2>/dev/null || true)"
+substate="$(systemctl show "${SERVICE_NAME}" --property=SubState --value 2>/dev/null || true)"
 active="false"
-if systemctl is-active --quiet "${SERVICE_NAME}"; then
+if [[ "${active_state}" == "active" ]]; then
   active="true"
 fi
-substate="$(systemctl show "${SERVICE_NAME}" --property=SubState --value 2>/dev/null || true)"
 
 emit "success" "true"
 emit "service_name" "${SERVICE_NAME}"
 emit "action" "${ACTION}"
 emit "active" "${active}"
+emit "active_state" "${active_state}"
 emit "substate" "${substate}"
 emit "message" "Player service ${ACTION} processed"
