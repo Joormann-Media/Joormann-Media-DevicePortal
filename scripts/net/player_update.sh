@@ -292,6 +292,7 @@ User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
 WorkingDirectory=${REPO_DIR}
 EnvironmentFile=-${ENV_FILE}
+Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_AUDIODRIVER=dummy
 ExecStart=${VENV_DIR}/bin/python ${REPO_DIR}/run.py
 Restart=always
