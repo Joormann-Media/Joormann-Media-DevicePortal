@@ -3143,20 +3143,46 @@
     const modal = bootstrap.Modal.getOrCreateInstance(q("btPairingModal"));
     modal.show();
     q("bt-pairing-message").textContent = "Pairing wird gestartet...";
+    startBtPairingPolling();
+    try {
+      await refreshBtPairingStatus();
+    } catch (_) {
+      // ignore initial status read errors; polling continues
+    }
+
     try {
       await fetchJson("/api/network/bluetooth/pairing/start", {
         method: "POST",
         body: { timeout_seconds: timeoutRaw },
-        timeoutMs: 15000,
       });
       await refreshNetwork();
       toast("Bluetooth Pairing gestartet", "success");
     } catch (err) {
-      q("bt-pairing-message").textContent = `Start fehlgeschlagen: ${err && err.message ? err.message : String(err || "Unbekannter Fehler")}`;
-      throw err;
+      let recovered = false;
+      // Some environments/proxies cut long requests early although pairing already started.
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        try {
+          const state = await refreshBtPairingStatus();
+          const feedback = (state && state.feedback) || {};
+          if (state.active || feedback.passkey || feedback.pending_mac || feedback.device_mac) {
+            recovered = true;
+            break;
+          }
+        } catch (_) {
+          // keep probing until retry budget is exhausted
+        }
+      }
+
+      if (recovered) {
+        q("bt-pairing-message").textContent = "Pairing läuft bereits. Warte auf Bestätigung...";
+        toast("Pairing läuft bereits (Start-Request wurde zu früh beendet).", "secondary");
+      } else {
+        q("bt-pairing-message").textContent = `Start fehlgeschlagen: ${err && err.message ? err.message : String(err || "Unbekannter Fehler")}`;
+        throw err;
+      }
     }
     await refreshBtPairingStatus();
-    startBtPairingPolling();
   }
 
   async function stopBluetoothPairing() {
