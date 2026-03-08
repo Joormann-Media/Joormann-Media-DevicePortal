@@ -17,7 +17,7 @@ from app.core.device import ensure_device
 from app.core.httpclient import http_get_json, http_post_json
 from app.core.jsonio import write_json
 from app.core.netcontrol import NetControlError, player_service_action, player_update, player_update_status
-from app.core.paths import CONFIG_PATH
+from app.core.paths import CONFIG_PATH, DATA_DIR
 from app.core.storage_state import get_storage_state
 from app.core.timeutil import utc_now
 
@@ -25,6 +25,7 @@ bp_stream = Blueprint('stream', __name__)
 
 
 STREAM_SERVICE_NAME = os.getenv('DEVICE_PLAYER_SERVICE_NAME', 'joormann-media-deviceplayer.service')
+PLAYER_SOURCE_PATH = Path(DATA_DIR) / 'player-source.json'
 
 
 def _selected_stream_slug(cfg: dict) -> str:
@@ -195,6 +196,38 @@ def _release_lock(lock_file) -> None:
             lock_file.close()
     except Exception:
         pass
+
+
+def _write_player_source_file(
+    *,
+    stream_slug: str,
+    storage_device_id: str,
+    storage_label: str,
+    stream_root: Path,
+    current_dir: Path,
+    manifest_version: str,
+    manifest_sha256: str,
+    asset_count: int,
+) -> None:
+    payload = {
+        'version': 1,
+        'updated_at': utc_now(),
+        'stream_slug': stream_slug,
+        'storage': {
+            'device_id': storage_device_id,
+            'label': storage_label,
+            'stream_root': str(stream_root),
+            'current_path': str(current_dir),
+        },
+        'manifest': {
+            'path': str(current_dir / 'manifest.json'),
+            'version': manifest_version,
+            'sha256': manifest_sha256,
+            'asset_count': int(asset_count),
+        },
+    }
+    PLAYER_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PLAYER_SOURCE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 def _load_remote_streams(base_url: str, dev: dict) -> tuple[list[dict], str]:
@@ -472,6 +505,18 @@ def api_stream_sync():
         cfg['stream_asset_count'] = len(rewritten_assets)
         cfg['stream_sync_error'] = ''
         cfg['updated_at'] = utc_now()
+
+        _write_player_source_file(
+            stream_slug=stream_slug,
+            storage_device_id=storage_device_id,
+            storage_label=storage_label,
+            stream_root=stream_root,
+            current_dir=current_dir,
+            manifest_version=cfg['stream_manifest_version'],
+            manifest_sha256=cfg['stream_manifest_sha256'],
+            asset_count=len(rewritten_assets),
+        )
+
         ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
         if not ok:
             return jsonify(ok=False, error='config_write_failed', detail=write_err), 500

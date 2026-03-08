@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from ipaddress import ip_address
 
 from flask import Flask, jsonify, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
@@ -17,6 +18,18 @@ from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint
 from app.web.routes_auth import bp_auth
 from app.web.routes_ui import bp_ui
+
+
+def _is_local_unauth_stream_sync() -> bool:
+    if request.method != "POST" or request.path != "/api/stream/sync":
+        return False
+    remote = (request.remote_addr or "").strip()
+    if not remote:
+        return False
+    try:
+        return ip_address(remote).is_loopback
+    except ValueError:
+        return False
 
 
 def create_app() -> Flask:
@@ -55,6 +68,10 @@ def create_app() -> Flask:
             "/api/panel/admin-sync-payload",
         }
         if path in public_exact or path.startswith("/static/"):
+            return None
+
+        # Allow local service-driven stream sync even when panel-remote auth is active.
+        if _is_local_unauth_stream_sync():
             return None
 
         if is_authenticated():
