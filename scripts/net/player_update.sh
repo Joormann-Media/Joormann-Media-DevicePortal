@@ -40,6 +40,17 @@ repo_name_from_ref() {
   printf '%s' "$b"
 }
 
+resolve_portal_storage_config_path() {
+  local portal_repo="$1"
+  if [[ -z "${portal_repo}" ]]; then
+    return
+  fi
+  local cfg="${portal_repo}/var/data/config-storage.json"
+  if [[ -f "${cfg}" ]]; then
+    printf '%s' "${cfg}"
+  fi
+}
+
 if [[ -z "${PLAYER_REPO_REF}" || -z "${SERVICE_USER}" ]]; then
   echo "usage: $0 start <player_repo_link_or_path> <service_user> [service_name] [update_dir] [portal_repo_dir]" >&2
   exit 2
@@ -159,6 +170,11 @@ EOF
     fi
   fi
 
+  if [[ -e "${REPO_DIR}" ]]; then
+    chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${REPO_DIR}" || true
+    find "${REPO_DIR}" -type d -exec chmod u+rwx,go+rx {} + || true
+  fi
+
   BEFORE_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
   if [[ -n "${BEFORE_COMMIT}" ]]; then
     echo "[git] before=${BEFORE_COMMIT}"
@@ -256,10 +272,11 @@ EOF
 
   SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
   ENV_FILE="/etc/default/jm-deviceplayer"
+  PORTAL_STORAGE_CONFIG_PATH="$(resolve_portal_storage_config_path "${PORTAL_REPO_DIR}")"
 
   cat > "${ENV_FILE}" <<EOF
 PYTHONUNBUFFERED=1
-DEVICEPLAYER_MANIFEST_PATH=/mnt/deviceportal/media/stream/current/manifest.json
+DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}
 EOF
   chmod 0644 "${ENV_FILE}" || true
 
@@ -283,6 +300,7 @@ RestartSec=2
 [Install]
 WantedBy=multi-user.target
 EOF
+  chmod 0644 "${SERVICE_FILE}" || true
 
   echo "[service] daemon-reload + enable + restart ${SERVICE_NAME}"
   systemctl daemon-reload
