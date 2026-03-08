@@ -371,6 +371,55 @@ def get_bluetooth_pairing_feedback(window_seconds: int = 300) -> dict:
     }
 
 
+def start_bluetooth_pairing_session(timeout_seconds: int = 180) -> dict:
+    safe_timeout = max(30, min(900, int(timeout_seconds or 180)))
+    rc, out, err = _run_script("bluetooth_pairing_session.sh", ["start", str(safe_timeout)], timeout=10, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(
+            code="bluetooth_pairing_start_failed",
+            message="Failed to start Bluetooth pairing session",
+            detail=err or out,
+        )
+    parsed = _parse_kv_output(out)
+    return {
+        "active": _parse_bool_flag(parsed.get("active")) is True,
+        "pid": _parse_int_flag(parsed.get("pid")),
+        "timeout_seconds": _parse_int_flag(parsed.get("timeout")) or safe_timeout,
+        "stdout": out,
+    }
+
+
+def stop_bluetooth_pairing_session() -> dict:
+    rc, out, err = _run_script("bluetooth_pairing_session.sh", ["stop"], timeout=10, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(
+            code="bluetooth_pairing_stop_failed",
+            message="Failed to stop Bluetooth pairing session",
+            detail=err or out,
+        )
+    parsed = _parse_kv_output(out)
+    return {
+        "active": _parse_bool_flag(parsed.get("active")) is True,
+        "stdout": out,
+    }
+
+
+def get_bluetooth_pairing_session_status() -> dict:
+    rc, out, err = _run_script("bluetooth_pairing_session.sh", ["status"], timeout=8, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(
+            code="bluetooth_pairing_status_failed",
+            message="Failed to read Bluetooth pairing session status",
+            detail=err or out,
+        )
+    parsed = _parse_kv_output(out)
+    return {
+        "active": _parse_bool_flag(parsed.get("active")) is True,
+        "pid": _parse_int_flag(parsed.get("pid")),
+        "stdout": out,
+    }
+
+
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     iface = (ifname or "eth0").strip()
     if iface not in ALLOWED_LAN_INTERFACES:

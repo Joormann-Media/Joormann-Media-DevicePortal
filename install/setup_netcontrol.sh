@@ -32,6 +32,7 @@ install -m 0750 "$SRC_DIR/wifi_dhcp.sh" "$DST_DIR/wifi_dhcp.sh"
 install -m 0750 "$SRC_DIR/bluetooth_toggle.sh" "$DST_DIR/bluetooth_toggle.sh"
 install -m 0750 "$SRC_DIR/bluetooth_ctl.sh" "$DST_DIR/bluetooth_ctl.sh"
 install -m 0750 "$SRC_DIR/bluetooth_pairing_feedback.sh" "$DST_DIR/bluetooth_pairing_feedback.sh"
+install -m 0750 "$SRC_DIR/bluetooth_pairing_session.sh" "$DST_DIR/bluetooth_pairing_session.sh"
 install -m 0750 "$SRC_DIR/lan_toggle.sh" "$DST_DIR/lan_toggle.sh"
 install -m 0750 "$SRC_DIR/wps_start.sh" "$DST_DIR/wps_start.sh"
 install -m 0750 "$SRC_DIR/ap_enable.sh" "$DST_DIR/ap_enable.sh"
@@ -55,7 +56,7 @@ fi
 
 cat > "$SUDOERS_FILE" <<SUDO
 Defaults:${SERVICE_USER} !requiretty
-${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/bluetooth_ctl.sh *, ${DST_DIR}/bluetooth_pairing_feedback.sh *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_format.sh *, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/tailscale_dns_fix.sh *, ${DST_DIR}/hostname_rename.sh *, ${DST_DIR}/local_auth.sh *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/bluetooth_ctl.sh *, ${DST_DIR}/bluetooth_pairing_feedback.sh *, ${DST_DIR}/bluetooth_pairing_session.sh *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_format.sh *, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/tailscale_dns_fix.sh *, ${DST_DIR}/hostname_rename.sh *, ${DST_DIR}/local_auth.sh *
 SUDO
 
 chmod 0440 "$SUDOERS_FILE"

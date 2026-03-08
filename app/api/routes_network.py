@@ -35,8 +35,11 @@ from app.core.netcontrol import (
     set_ap_enabled,
     get_bluetooth_status,
     get_bluetooth_pairing_feedback,
+    get_bluetooth_pairing_session_status,
     set_bluetooth_enabled,
     set_bluetooth_runtime_settings,
+    start_bluetooth_pairing_session,
+    stop_bluetooth_pairing_session,
     set_lan_enabled,
     system_power_action,
     set_wifi_enabled,
@@ -381,13 +384,8 @@ def api_network_bluetooth_pairing_start():
         bt_enabled = bool((((bt_info or {}).get("interfaces") or {}).get("bluetooth") or {}).get("enabled"))
         if not bt_enabled:
             set_bluetooth_enabled(True)
-
-        status = set_bluetooth_runtime_settings(
-            discoverable=True,
-            discoverable_timeout=timeout_seconds,
-            pairable=True,
-            pairable_timeout=timeout_seconds,
-        )
+        start_info = start_bluetooth_pairing_session(timeout_seconds=timeout_seconds)
+        status = get_bluetooth_status()
 
         now_ts = int(time.time())
         session_id = uuid.uuid4().hex[:12]
@@ -402,13 +400,14 @@ def api_network_bluetooth_pairing_start():
         log_event(
             "bluetooth",
             "Bluetooth pairing mode started",
-            data={"session_id": session_id, "timeout_seconds": timeout_seconds},
+            data={"session_id": session_id, "timeout_seconds": timeout_seconds, "pid": start_info.get("pid")},
         )
         return _ok(
             {
                 "started": True,
                 "session_id": session_id,
                 "timeout_seconds": timeout_seconds,
+                "session": start_info,
                 "bluetooth": status,
             }
         )
@@ -420,12 +419,8 @@ def api_network_bluetooth_pairing_start():
 @bp_network.post("/api/network/bluetooth/pairing/stop")
 def api_network_bluetooth_pairing_stop():
     try:
-        status = set_bluetooth_runtime_settings(
-            discoverable=False,
-            discoverable_timeout=0,
-            pairable=False,
-            pairable_timeout=0,
-        )
+        stop_info = stop_bluetooth_pairing_session()
+        status = get_bluetooth_status()
         state = get_bt_pairing_state()
         state.update(
             {
@@ -435,7 +430,7 @@ def api_network_bluetooth_pairing_stop():
         )
         set_bt_pairing_state(state)
         log_event("bluetooth", "Bluetooth pairing mode stopped")
-        return _ok({"stopped": True, "bluetooth": status})
+        return _ok({"stopped": True, "session": stop_info, "bluetooth": status})
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
@@ -445,16 +440,16 @@ def api_network_bluetooth_pairing_stop():
 def api_network_bluetooth_pairing_status():
     now_ts = int(time.time())
     state = get_bt_pairing_state()
-    active = bool(state.get("active"))
+    try:
+        session_status = get_bluetooth_pairing_session_status()
+    except NetControlError:
+        session_status = {"active": False, "pid": None}
+
+    active = bool(state.get("active")) and bool(session_status.get("active"))
     expires_at_ts = int(state.get("expires_at_ts") or 0)
     if active and expires_at_ts > 0 and now_ts >= expires_at_ts:
         try:
-            set_bluetooth_runtime_settings(
-                discoverable=False,
-                discoverable_timeout=0,
-                pairable=False,
-                pairable_timeout=0,
-            )
+            stop_bluetooth_pairing_session()
         except NetControlError:
             pass
         state["active"] = False
@@ -491,6 +486,7 @@ def api_network_bluetooth_pairing_status():
             "started_at_ts": int(state.get("started_at_ts") or 0),
             "expires_at_ts": expires_at_ts,
             "remaining_seconds": remaining_seconds,
+            "session": session_status,
             "bluetooth": bt_status,
             "feedback": feedback,
         }
