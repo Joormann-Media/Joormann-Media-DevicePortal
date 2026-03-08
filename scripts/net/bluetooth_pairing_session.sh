@@ -9,6 +9,7 @@ if [[ -z "${BTCTL}" ]]; then
   echo "bluetoothctl not found" >&2
   exit 127
 fi
+TIMEOUT_BIN="$(command -v timeout || true)"
 
 RUNTIME_DIR="/run/deviceportal"
 PID_FILE="${RUNTIME_DIR}/bt-pairing-agent.pid"
@@ -26,11 +27,19 @@ read_pid() {
 }
 
 cleanup_flags() {
+  local cmd_rc=0
   {
     echo "discoverable off"
     echo "pairable off"
     echo "quit"
-  } | "${BTCTL}" >/dev/null 2>&1 || true
+  } | (
+    if [[ -n "${TIMEOUT_BIN}" ]]; then
+      "${TIMEOUT_BIN}" 4s "${BTCTL}"
+    else
+      "${BTCTL}"
+    fi
+  ) >/dev/null 2>&1 || cmd_rc=$?
+  return 0
 }
 
 stop_session() {
@@ -60,7 +69,17 @@ start_session() {
     TIMEOUT=900
   fi
 
-  stop_session >/dev/null 2>&1 || true
+  # Best effort stop old worker quickly; do not block start path.
+  local old_pid
+  old_pid="$(read_pid)"
+  if is_running "${old_pid}"; then
+    kill "${old_pid}" 2>/dev/null || true
+    sleep 0.1
+    if is_running "${old_pid}"; then
+      kill -9 "${old_pid}" 2>/dev/null || true
+    fi
+  fi
+  rm -f "${PID_FILE}"
 
   (
     {
@@ -76,7 +95,13 @@ start_session() {
       echo "discoverable off"
       echo "pairable off"
       echo "quit"
-    } | "${BTCTL}" >/dev/null 2>&1
+    } | (
+      if [[ -n "${TIMEOUT_BIN}" ]]; then
+        "${TIMEOUT_BIN}" "$((TIMEOUT + 8))s" "${BTCTL}"
+      else
+        "${BTCTL}"
+      fi
+    ) >/dev/null 2>&1
   ) &
   local pid=$!
   echo "${pid}" >"${PID_FILE}"
@@ -113,4 +138,3 @@ case "${MODE}" in
     exit 2
     ;;
 esac
-
