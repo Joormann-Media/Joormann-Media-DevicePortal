@@ -3089,6 +3089,137 @@
     toast("Plan pulled", "success");
   }
 
+  function renderStreamOverview(payload) {
+    const data = payload || {};
+    const status = data.status || {};
+    const streams = Array.isArray(data.streams) ? data.streams : [];
+    const fetchError = String(data.fetch_error || "").trim();
+    const storage = data.storage || {};
+    const storageError = String(data.storage_error || "").trim();
+    const player = data.player || {};
+
+    const select = q("stream-select");
+    if (select) {
+      select.innerHTML = "";
+      if (streams.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "Keine Streams verfügbar";
+        select.appendChild(opt);
+      } else {
+        streams.forEach((stream) => {
+          const opt = document.createElement("option");
+          opt.value = String(stream.slug || "");
+          opt.textContent = `${stream.name || stream.slug || "Stream"} (${stream.slug || "-"})`;
+          if (stream.isSelected) {
+            opt.selected = true;
+          }
+          select.appendChild(opt);
+        });
+      }
+    }
+
+    const selected = String(status.selected_stream_slug || data.admin_selected_stream_slug || "");
+    q("stream-selected-slug").textContent = selected || "-";
+    q("stream-manifest-version").textContent = String(status.stream_manifest_version || "-");
+    q("stream-asset-count").textContent = String(status.stream_asset_count || 0);
+    q("stream-last-sync").textContent = String(status.stream_last_sync_at || "-");
+    q("stream-list-meta").textContent = `Streams: ${streams.length} · Admin: ${status.admin_base_url || "-"}`;
+
+    const storageText = storage && storage.current_path
+      ? `${storage.label || storage.device_id || "Storage"} · ${storage.current_path}`
+      : "-";
+    q("stream-storage-target").textContent = storageText;
+
+    const fetchErrorEl = q("stream-fetch-error");
+    if (fetchError) {
+      fetchErrorEl.classList.remove("d-none");
+      fetchErrorEl.textContent = fetchError;
+    } else {
+      fetchErrorEl.classList.add("d-none");
+      fetchErrorEl.textContent = "";
+    }
+
+    const syncError = String(status.stream_sync_error || storageError || "");
+    const syncErrorEl = q("stream-sync-error");
+    if (syncError) {
+      syncErrorEl.classList.remove("d-none");
+      syncErrorEl.textContent = syncError;
+    } else {
+      syncErrorEl.classList.add("d-none");
+      syncErrorEl.textContent = "";
+    }
+
+    const playerStatusEl = q("stream-player-status");
+    if (playerStatusEl) {
+      if (player && player.error) {
+        playerStatusEl.textContent = `Status: Fehler (${player.error})`;
+      } else if (player && typeof player.active !== "undefined") {
+        playerStatusEl.textContent = `Status: ${player.active ? "aktiv" : "inaktiv"} (${player.substate || "-"})`;
+      } else {
+        playerStatusEl.textContent = "Status: -";
+      }
+    }
+  }
+
+  async function refreshStreamOverview() {
+    const payload = await fetchJson("/api/stream/overview");
+    renderStreamOverview(payload);
+  }
+
+  async function saveSelectedStream() {
+    const select = q("stream-select");
+    const streamSlug = String(select?.value || "").trim();
+    if (!streamSlug) {
+      throw new Error("Bitte zuerst einen Stream auswählen.");
+    }
+    await fetchJson("/api/stream/select", {
+      method: "POST",
+      body: { streamSlug },
+    });
+    await refreshStreamOverview();
+    await refreshStatus();
+    toast("Stream-Auswahl gespeichert", "success");
+  }
+
+  async function syncSelectedStream() {
+    const select = q("stream-select");
+    const streamSlug = String(select?.value || q("stream-selected-slug")?.textContent || "").trim();
+    if (!streamSlug || streamSlug === "-") {
+      throw new Error("Kein Stream ausgewählt.");
+    }
+    const response = await fetchJson("/api/stream/sync", {
+      method: "POST",
+      body: { streamSlug },
+      timeoutMs: 120000,
+    });
+    await refreshStreamOverview();
+    await refreshStatus();
+    const count = Number((response || {}).asset_count || 0);
+    toast(`Sync abgeschlossen (${count} Assets)`, "success");
+  }
+
+  async function refreshPlayerStatus() {
+    const payload = await fetchJson("/api/stream/player/status");
+    const player = payload.player || {};
+    const playerStatusEl = q("stream-player-status");
+    if (playerStatusEl) {
+      if (player && player.error) {
+        playerStatusEl.textContent = `Status: Fehler (${player.error})`;
+      } else if (typeof player.active !== "undefined") {
+        playerStatusEl.textContent = `Status: ${player.active ? "aktiv" : "inaktiv"} (${player.substate || "-"})`;
+      } else {
+        playerStatusEl.textContent = "Status: -";
+      }
+    }
+  }
+
+  async function playerAction(action) {
+    await fetchJson(`/api/stream/player/${action}`, { method: "POST" });
+    await refreshPlayerStatus();
+    toast(`Player ${action}`, "success");
+  }
+
   async function refreshFingerprint() {
     await fetchJson("/api/status/fingerprint/refresh", { method: "POST" });
     toast("Fingerprint refreshed", "success");
@@ -3981,7 +4112,17 @@
     q("btn-link-register").addEventListener("click", () => run(panelRegister));
     q("btn-link-assign").addEventListener("click", () => openSetupWizard("assign"));
     q("btn-link-rebuild-fingerprint").addEventListener("click", () => run(rebuildFingerprintAndSync));
-    q("btn-pull-plan").addEventListener("click", () => run(pullPlan));
+    const btnPullPlan = q("btn-pull-plan");
+    if (btnPullPlan) {
+      btnPullPlan.addEventListener("click", () => run(pullPlan));
+    }
+    q("btn-stream-refresh").addEventListener("click", () => run(refreshStreamOverview));
+    q("btn-stream-select-save").addEventListener("click", () => run(saveSelectedStream));
+    q("btn-stream-sync").addEventListener("click", () => run(syncSelectedStream));
+    q("btn-player-status-refresh").addEventListener("click", () => run(refreshPlayerStatus));
+    q("btn-player-start").addEventListener("click", () => run(() => playerAction("start")));
+    q("btn-player-stop").addEventListener("click", () => run(() => playerAction("stop")));
+    q("btn-player-restart").addEventListener("click", () => run(() => playerAction("restart")));
     q("btn-panel-sync-check").addEventListener("click", () => run(panelSyncCheck));
     q("btn-panel-sync-now").addEventListener("click", () => run(panelSyncNow));
 
@@ -4248,6 +4389,7 @@
     await run(refreshWpsStatus);
     await run(refreshWifiLogs);
     await run(refreshStorageStatus);
+    await run(refreshStreamOverview);
     await run(refreshApStatus);
     await run(refreshApClients);
     await run(loadLastPortalUpdateStatus);

@@ -9,6 +9,7 @@ from app.api.routes_network import bp_network
 from app.api.routes_panel import bp_panel
 from app.api.routes_plan import bp_plan
 from app.api.routes_status import bp_status
+from app.api.routes_stream import bp_stream
 from app.core.auth_mode import resolve_auth_mode
 from app.core.auth_session import is_authenticated
 from app.core.config import ensure_config
@@ -33,6 +34,7 @@ def create_app() -> Flask:
     app.register_blueprint(bp_panel)
     app.register_blueprint(bp_plan)
     app.register_blueprint(bp_network)
+    app.register_blueprint(bp_stream)
     app.register_blueprint(bp_auth)
     app.register_blueprint(bp_ui)
 

@@ -703,12 +703,76 @@
 
       <div class="tab-pane fade" id="stream-pane" role="tabpanel" aria-labelledby="stream-tab">
         <div class="portal-card p-4">
-          <h2 class="h5">Stream Einstellungen</h2>
-          <p class="text-secondary mb-3">Kommt später – Stream Settings in Arbeit.</p>
-          <div class="d-flex flex-wrap gap-2">
-            <button id="btn-pull-plan" class="btn btn-outline-primary btn-sm">
-              Pull Plan
-            </button>
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+              <h2 class="h5 mb-1">Stream</h2>
+              <p class="text-secondary mb-0">Gerätestream vom Adminpanel laden, lokal synchronisieren und Player steuern.</p>
+            </div>
+            <div class="d-flex gap-2">
+              <button id="btn-stream-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+              <button id="btn-stream-sync" class="btn btn-primary btn-sm">Manifest + Assets sync</button>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-12 col-lg-7">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary mb-2">Verfügbare Streams</div>
+                <div class="d-flex gap-2 mb-2">
+                  <select id="stream-select" class="form-select form-select-sm">
+                    <option value="">Keine Streams geladen</option>
+                  </select>
+                  <button id="btn-stream-select-save" class="btn btn-outline-primary btn-sm">Auswählen</button>
+                </div>
+                <div id="stream-list-meta" class="small text-secondary">-</div>
+                <div id="stream-fetch-error" class="small text-danger mt-2 d-none"></div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-5">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary mb-2">Player</div>
+                <div id="stream-player-status" class="small mb-2">Status: -</div>
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
+                  <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                  <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                  <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mt-1">
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Ausgewählter Stream</div>
+                <div id="stream-selected-slug" class="fw-semibold">-</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Manifest Version</div>
+                <div id="stream-manifest-version" class="fw-semibold">-</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Assets lokal</div>
+                <div id="stream-asset-count" class="fw-semibold">0</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Letzter Sync</div>
+                <div id="stream-last-sync" class="fw-semibold">-</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="border rounded p-3 mt-3">
+            <div class="small text-uppercase text-secondary mb-1">Storage Ziel</div>
+            <div id="stream-storage-target" class="small text-secondary">-</div>
+            <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
           </div>
         </div>
       </div>

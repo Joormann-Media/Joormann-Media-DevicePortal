@@ -1009,3 +1009,29 @@ def restart_portal_service(service_name: str = "device-portal.service") -> dict:
         "service_name": parsed.get("service_name", service),
         "message": parsed.get("message", "Portal service restart requested"),
     }
+
+
+def player_service_action(action: str, service_name: str = "joormann-media-deviceplayer.service") -> dict:
+    requested = (action or "").strip().lower()
+    if requested not in {"start", "stop", "restart", "status"}:
+        raise NetControlError(code="invalid_action", message="Action must be start|stop|restart|status")
+
+    service = (service_name or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
+    rc, out, err = _run_script("player_service.sh", [requested, service], timeout=25, use_sudo=True)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "player_service_failed"),
+            message=parsed.get("message", "Player service action failed"),
+            detail=detail,
+        )
+
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "action": parsed.get("action", requested),
+        "service_name": parsed.get("service_name", service),
+        "active": parsed.get("active", "").lower() == "true",
+        "substate": parsed.get("substate", ""),
+        "message": parsed.get("message", "Player service action processed"),
+    }
