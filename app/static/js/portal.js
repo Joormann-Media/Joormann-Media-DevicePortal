@@ -3417,6 +3417,23 @@
     }
   }
 
+  function renderNetworkKnownList(hostId, rows) {
+    const host = q(hostId);
+    if (!host) return;
+    const items = Array.isArray(rows) ? rows : [];
+    if (!items.length) {
+      host.innerHTML = '<div class="text-secondary">Keine Daten.</div>';
+      return;
+    }
+    host.innerHTML = "";
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "list-group-item";
+      row.textContent = String(item || "-").trim() || "-";
+      host.appendChild(row);
+    }
+  }
+
   function renderNetworkSecurityUi() {
     const profile = portalSecurityState.networkSecurity || {};
     const assessment = profile.assessment || null;
@@ -3456,6 +3473,46 @@
     renderNetworkSecurityList("security-trusted-wifi", profile.trusted_wifi || [], "wifi");
     renderNetworkSecurityList("security-trusted-lan", profile.trusted_lan || [], "lan");
     renderNetworkSecurityList("security-trusted-bt", profile.trusted_bluetooth || [], "bluetooth");
+
+    const knownWifi = [];
+    const knownLan = [];
+    const knownBt = [];
+    if (assessment && assessment.current) {
+      const cur = assessment.current;
+      const cw = cur.wifi || {};
+      const cl = cur.lan || {};
+      const cb = Array.isArray(cur.bluetooth) ? cur.bluetooth : [];
+      if (cw.ssid || cw.bssid) {
+        knownWifi.push([cw.ssid || "-", cw.bssid || "-"].filter(Boolean).join(" | "));
+      }
+      if (cl.ifname || cl.connection || cl.gateway_ip || cl.gateway_mac) {
+        knownLan.push([cl.ifname || "-", cl.connection || "-", cl.gateway_ip || "-", cl.gateway_mac || "-"].filter(Boolean).join(" | "));
+      }
+      for (const dev of cb) {
+        knownBt.push([String(dev.name || "").trim() || "-", String(dev.mac || "").trim() || "-"].join(" | "));
+      }
+    }
+    renderNetworkKnownList("security-known-wifi", knownWifi);
+    renderNetworkKnownList("security-known-lan", knownLan);
+    renderNetworkKnownList("security-known-bt", knownBt);
+  }
+
+  async function refreshNetworkSecurityLive() {
+    const payload = await fetchJson("/api/network/security/status", { cache: "no-store", timeoutMs: 10000 });
+    const data = (payload && payload.data) || {};
+    const profile = data.profile || {};
+    const assessment = data.assessment || null;
+    portalSecurityState.networkSecurity.enabled = !!profile.enabled;
+    portalSecurityState.networkSecurity.trusted_wifi = Array.isArray(profile.trusted_wifi) ? profile.trusted_wifi : [];
+    portalSecurityState.networkSecurity.trusted_lan = Array.isArray(profile.trusted_lan) ? profile.trusted_lan : [];
+    portalSecurityState.networkSecurity.trusted_bluetooth = Array.isArray(profile.trusted_bluetooth) ? profile.trusted_bluetooth : [];
+    portalSecurityState.networkSecurity.assessment = assessment;
+    const perimeterToggle = q("security-perimeter-enabled");
+    if (perimeterToggle) {
+      perimeterToggle.checked = portalSecurityState.networkSecurity.enabled;
+    }
+    renderNetworkSecurityUi();
+    toast("Security Live-Daten aktualisiert.", "success");
   }
 
   async function saveNetworkSecuritySettings() {
@@ -3954,6 +4011,7 @@
     q("btn-storage-fm-unselect-all").addEventListener("click", () => storageFileManagerUnselectAll());
     q("btn-storage-fm-delete-selected").addEventListener("click", () => run(storageFileManagerDeleteSelected));
     q("btn-system-storage-security-save").addEventListener("click", () => run(saveStorageSecuritySettings));
+    q("btn-security-refresh-live").addEventListener("click", () => run(refreshNetworkSecurityLive));
     q("btn-security-save").addEventListener("click", () => run(saveNetworkSecuritySettings));
     q("btn-security-trust-wifi").addEventListener("click", () => run(() => trustCurrentNetwork("wifi")));
     q("btn-security-trust-lan").addEventListener("click", () => run(() => trustCurrentNetwork("lan")));

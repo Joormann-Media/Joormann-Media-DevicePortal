@@ -94,12 +94,17 @@
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="stream-tab" data-bs-toggle="tab" data-bs-target="#stream-pane" type="button" role="tab">
-          <i class="bi bi-broadcast me-1"></i>Stream Einstellungen
+          <i class="bi bi-broadcast me-1"></i>Stream
         </button>
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-pane" type="button" role="tab">
-          <i class="bi bi-gear me-1"></i>System Einstellungen
+          <i class="bi bi-gear me-1"></i>System
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#security-pane" type="button" role="tab">
+          <i class="bi bi-shield-check me-1"></i>Security
         </button>
       </li>
     </ul>
@@ -461,11 +466,19 @@
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="security-pane" role="tabpanel" aria-labelledby="security-tab">
+        <div class="row g-3">
           <div class="col-12">
             <div class="portal-card p-3">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                 <h2 class="h5 mb-0">Standort-Härtung</h2>
-                <span id="security-perimeter-badge" class="badge text-bg-secondary">inaktiv</span>
+                <div class="d-flex align-items-center gap-2">
+                  <span id="security-perimeter-badge" class="badge text-bg-secondary">inaktiv</span>
+                  <button id="btn-security-refresh-live" class="btn btn-outline-secondary btn-sm">Live Refresh</button>
+                </div>
               </div>
               <div class="form-check form-switch mb-2">
                 <input class="form-check-input" type="checkbox" role="switch" id="security-perimeter-enabled">
@@ -480,6 +493,26 @@
                 <button id="btn-security-trust-wifi" class="btn btn-outline-secondary btn-sm">Aktuelles WLAN sichern</button>
                 <button id="btn-security-trust-lan" class="btn btn-outline-secondary btn-sm">Aktuelles LAN sichern</button>
                 <button id="btn-security-trust-bt" class="btn btn-outline-secondary btn-sm">Gekoppelte BT-Geräte sichern</button>
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-12 col-xl-4">
+                  <h3 class="h6 mb-1">Bekanntes WLAN</h3>
+                  <div id="security-known-wifi" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine Daten.</div>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <h3 class="h6 mb-1">Bekanntes LAN</h3>
+                  <div id="security-known-lan" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine Daten.</div>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <h3 class="h6 mb-1">Bekannte BT-Geräte</h3>
+                  <div id="security-known-bt" class="list-group list-group-flush small">
+                    <div class="text-secondary">Keine Daten.</div>
+                  </div>
+                </div>
               </div>
               <div class="row g-2">
                 <div class="col-12 col-xl-4">
