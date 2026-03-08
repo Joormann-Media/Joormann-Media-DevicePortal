@@ -27,7 +27,7 @@ fi
 
 run_btctl() {
   if [[ -n "${TIMEOUT_BIN}" ]]; then
-    "${TIMEOUT_BIN}" 12s "${BTCTL}"
+    "${TIMEOUT_BIN}" 20s "${BTCTL}"
   else
     "${BTCTL}"
   fi
@@ -40,9 +40,16 @@ collect_info() {
 case "${ACTION}" in
   confirm)
     {
+      echo "agent KeyboardDisplay"
+      echo "default-agent"
       echo "power on"
+      echo "scan off"
+      echo "discoverable on"
+      echo "pairable on"
       echo "trust ${TARGET_MAC}"
       echo "pair ${TARGET_MAC}"
+      echo "yes"
+      echo "yes"
       echo "connect ${TARGET_MAC}"
       echo "info ${TARGET_MAC}"
       echo "quit"
@@ -80,4 +87,3 @@ echo "stdout_tail=${stdout_tail}"
 echo "stderr_tail=${stderr_tail}"
 
 rm -f /tmp/bt_pairing_action.out /tmp/bt_pairing_action.err
-

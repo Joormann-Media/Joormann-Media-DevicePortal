@@ -13,6 +13,7 @@ TIMEOUT_BIN="$(command -v timeout || true)"
 
 RUNTIME_DIR="/run/deviceportal"
 PID_FILE="${RUNTIME_DIR}/bt-pairing-agent.pid"
+LOG_FILE="${RUNTIME_DIR}/bt-pairing-agent.log"
 mkdir -p "${RUNTIME_DIR}"
 
 is_running() {
@@ -40,6 +41,10 @@ cleanup_flags() {
     fi
   ) >/dev/null 2>&1 || cmd_rc=$?
   return 0
+}
+
+clear_log() {
+  : >"${LOG_FILE}"
 }
 
 stop_session() {
@@ -80,11 +85,12 @@ start_session() {
     fi
   fi
   rm -f "${PID_FILE}"
+  clear_log
 
   (
     {
       # Keep the agent alive for the full pairing window.
-      echo "agent NoInputNoOutput"
+      echo "agent KeyboardDisplay"
       echo "default-agent"
       echo "power on"
       echo "discoverable-timeout ${TIMEOUT}"
@@ -101,7 +107,7 @@ start_session() {
       else
         "${BTCTL}"
       fi
-    ) >/dev/null 2>&1
+    ) >>"${LOG_FILE}" 2>&1
   ) &
   local pid=$!
   echo "${pid}" >"${PID_FILE}"
@@ -109,6 +115,7 @@ start_session() {
   echo "active=1"
   echo "pid=${pid}"
   echo "timeout=${TIMEOUT}"
+  echo "log_file=${LOG_FILE}"
 }
 
 status_session() {
@@ -117,6 +124,7 @@ status_session() {
   if is_running "${pid}"; then
     echo "active=1"
     echo "pid=${pid}"
+    echo "log_file=${LOG_FILE}"
   else
     rm -f "${PID_FILE}"
     echo "active=0"

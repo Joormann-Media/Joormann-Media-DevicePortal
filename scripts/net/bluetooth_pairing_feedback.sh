@@ -14,6 +14,7 @@ if [[ -z "${BTCTL}" ]]; then
 fi
 
 JOURNALCTL="$(command -v journalctl || true)"
+RUNTIME_LOG="/run/deviceportal/bt-pairing-agent.log"
 
 now_epoch="$(date +%s)"
 since_epoch="$(( now_epoch - WINDOW_SEC ))"
@@ -26,9 +27,15 @@ log_dump=""
 if [[ -n "${JOURNALCTL}" ]]; then
   log_dump="$("${JOURNALCTL}" -u bluetooth --since "${since_human}" --no-pager -n 400 -o cat 2>/dev/null || true)"
 fi
+if [[ -f "${RUNTIME_LOG}" ]]; then
+  runtime_tail="$(tail -n 600 "${RUNTIME_LOG}" 2>/dev/null || true)"
+  if [[ -n "${runtime_tail}" ]]; then
+    log_dump="${log_dump}"$'\n'"${runtime_tail}"
+  fi
+fi
 
 extract_passkey_line() {
-  echo "${log_dump}" | grep -Ei "passkey|pin code|pincode|request confirmation|confirm passkey|just-works" | tail -n1 || true
+  echo "${log_dump}" | grep -Ei "passkey|pin code|pincode|request confirmation|confirm passkey|just-works|confirm value|authorize service|agent.*confirm" | tail -n1 || true
 }
 
 passkey_line="$(extract_passkey_line)"
@@ -49,6 +56,10 @@ fi
 recent_line="$(echo "${log_dump}" | tail -n1 | xargs || true)"
 if [[ -z "${pending_mac}" ]]; then
   pending_mac="$(echo "${recent_line}" | grep -Eo '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' | tail -n1 || true)"
+  pending_mac="${pending_mac:-}"
+fi
+if [[ -z "${pending_mac}" ]]; then
+  pending_mac="$(echo "${log_dump}" | grep -Eo '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' | tail -n1 || true)"
   pending_mac="${pending_mac:-}"
 fi
 
