@@ -229,7 +229,7 @@
       const wpsBtn = document.createElement("button");
       wpsBtn.className = "btn btn-outline-secondary btn-sm";
       wpsBtn.textContent = "WPS";
-      wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: net.ssid || "", bssid: net.bssid || "" }, "btn-wifi-setup-wps")));
+      wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: net.ssid || "", bssid: "" }, "btn-wifi-setup-wps")));
 
       actions.append(connectBtn, wpsBtn);
       row.append(top, meta, actions, inlineConnect);

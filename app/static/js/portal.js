@@ -2942,7 +2942,7 @@
       const wpsBtn = document.createElement("button");
       wpsBtn.className = "btn btn-outline-secondary btn-sm";
       wpsBtn.textContent = "WPS";
-      wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: item.ssid || "", bssid: item.bssid || "" })));
+      wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: item.ssid || "", bssid: "" })));
       actions.append(selectBtn, connectBtn, wpsBtn);
       row.append(top, meta, actions, inlineConnect);
       host.append(row);
