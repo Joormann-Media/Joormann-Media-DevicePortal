@@ -13,6 +13,7 @@ from app.api.routes_status import bp_status
 from app.api.routes_stream import bp_stream
 from app.core.auth_mode import resolve_auth_mode
 from app.core.auth_session import is_authenticated
+from app.core.connectivity_watchdog import start_connectivity_watchdog
 from app.core.config import ensure_config
 from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint
@@ -38,6 +39,7 @@ def create_app() -> Flask:
     cfg = ensure_config()
     ensure_device()
     ensure_fingerprint()
+    start_connectivity_watchdog()
     app.config["SECRET_KEY"] = (cfg.get("session_secret") or "").strip()
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
