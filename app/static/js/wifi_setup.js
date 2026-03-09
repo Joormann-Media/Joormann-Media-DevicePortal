@@ -216,6 +216,79 @@
     }
   }
 
+  function renderKnownProfiles(payload) {
+    const data = payload.data || {};
+    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+    const host = q("wifi-setup-known-list");
+    host.innerHTML = "";
+
+    if (!profiles.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = "Keine bekannten WLAN-Profile.";
+      host.append(empty);
+      return;
+    }
+
+    for (const item of profiles) {
+      const ssid = String(item.ssid || "").trim();
+      if (!ssid) continue;
+
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+
+      const top = document.createElement("div");
+      top.className = "d-flex justify-content-between align-items-center gap-2";
+      const title = document.createElement("strong");
+      title.textContent = ssid;
+      const meta = document.createElement("span");
+      meta.className = "text-secondary";
+      meta.textContent = `prio=${item.priority ?? 0} auto=${item.autoconnect ? "yes" : "no"}`;
+      top.append(title, meta);
+
+      const actions = document.createElement("div");
+      actions.className = "d-flex gap-2 mt-2";
+
+      const connectBtn = document.createElement("button");
+      connectBtn.className = "btn btn-outline-primary btn-sm";
+      connectBtn.textContent = "Verbinden";
+      connectBtn.addEventListener("click", async () => {
+        try {
+          await fetchJson("/api/wifi/profiles/up", {
+            method: "POST",
+            body: { ssid, uuid: (item.nm && item.nm.uuid) ? String(item.nm.uuid) : "" },
+          });
+          toast(`WLAN-Profil aktiviert: ${ssid}`, "success");
+          await refreshAll();
+        } catch (err) {
+          toast(err.message || String(err), "danger");
+        }
+      });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "btn btn-outline-danger btn-sm";
+      deleteBtn.textContent = "Löschen";
+      deleteBtn.addEventListener("click", async () => {
+        const ok = window.confirm(`WLAN-Profil \"${ssid}\" auf dem Raspberry und im Portal wirklich löschen?`);
+        if (!ok) return;
+        try {
+          await fetchJson("/api/wifi/profiles/delete", {
+            method: "POST",
+            body: { ssid, uuid: (item.nm && item.nm.uuid) ? String(item.nm.uuid) : "" },
+          });
+          toast(`WLAN-Profil gelöscht: ${ssid}`, "success");
+          await refreshAll();
+        } catch (err) {
+          toast(err.message || String(err), "danger");
+        }
+      });
+
+      actions.append(connectBtn, deleteBtn);
+      row.append(top, actions);
+      host.append(row);
+    }
+  }
+
   async function refreshWifiStatus() {
     const payload = await fetchJson("/api/network/wifi/status");
     renderWifiStatus(payload);
@@ -224,6 +297,11 @@
   async function refreshScan() {
     const payload = await fetchJson("/api/wifi/scan");
     renderScanList(payload);
+  }
+
+  async function refreshKnownProfiles() {
+    const payload = await fetchJson("/api/wifi/profiles");
+    renderKnownProfiles(payload);
   }
 
   async function refreshWpsAndLogs() {
@@ -261,6 +339,7 @@
   async function refreshAll() {
     await refreshWifiStatus();
     await refreshScan();
+    await refreshKnownProfiles();
     await refreshWpsAndLogs();
   }
 
@@ -275,6 +354,7 @@
   function bind() {
     q("btn-wifi-setup-refresh").addEventListener("click", () => run(refreshAll));
     q("btn-wifi-setup-scan").addEventListener("click", () => run(refreshScan));
+    q("btn-wifi-setup-known-refresh").addEventListener("click", () => run(refreshKnownProfiles));
     q("btn-wifi-setup-connect").addEventListener("click", () => run(manualConnect));
     q("btn-wifi-setup-wps").addEventListener("click", () => run(startWps));
     q("btn-wifi-setup-wps-refresh").addEventListener("click", () => run(refreshWpsAndLogs));
