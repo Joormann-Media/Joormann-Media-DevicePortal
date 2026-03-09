@@ -78,7 +78,10 @@ def _force_local_auth_mode(setup_mode: dict) -> bool:
 @bp_auth.get("/login")
 def login_page():
     if is_authenticated():
-        return redirect(_safe_next(request.args.get("next") or "/"))
+        next_url = _safe_next(request.args.get("next") or "/")
+        if _is_ap_request() and next_url == "/":
+            return redirect(url_for("ui.wifi_setup"))
+        return redirect(next_url)
 
     cfg = ensure_config()
     dev = ensure_device()
@@ -214,6 +217,8 @@ def login_submit():
             connectivity_setup_mode=setup_mode,
         ), 401
 
+    if _is_ap_request() and next_url == "/":
+        return redirect(url_for("ui.wifi_setup"))
     return redirect(next_url)
 
 

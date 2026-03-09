@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WLAN Setup</title>
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+  <link rel="icon" type="image/png" sizes="96x96" href="{{ url_for('static', filename='favicon-96x96.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/portal.css') }}">
+</head>
+<body class="portal-body">
+  <div class="container py-4 py-lg-5">
+    <div id="wifi-setup-alerts"></div>
+
+    <section class="portal-card p-4 p-lg-5 mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h1 class="h4 mb-1">WLAN Setup</h1>
+          <div class="small text-secondary">Nur WLAN-Konfiguration für den AP/Setup-Modus.</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge text-bg-warning text-dark">AP Setup</span>
+          <span class="badge text-bg-light border text-dark">{{ hostname }} / {{ ip }}</span>
+          <form method="post" action="{{ url_for('auth.logout_submit') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Logout</button>
+          </form>
+        </div>
+      </div>
+      {% if connectivity_setup_mode is defined and connectivity_setup_mode.active %}
+      <div class="alert alert-warning py-2 mt-3 mb-0">
+        Kein Uplink erkannt. Nutze Scan + Passwort oder WPS, um das Gerät ins WLAN zu bringen.
+      </div>
+      {% endif %}
+    </section>
+
+    <div class="row g-3">
+      <div class="col-12 col-xl-6">
+        <section class="portal-card p-3 h-100">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2 class="h6 mb-0">Aktueller WLAN-Status</h2>
+            <button id="btn-wifi-setup-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+          </div>
+          <dl class="portal-kv mb-2">
+            <dt>Interface</dt><dd id="wifi-setup-ifname">-</dd>
+            <dt>Connected</dt><dd id="wifi-setup-connected">-</dd>
+            <dt>SSID</dt><dd id="wifi-setup-ssid">-</dd>
+            <dt>IP</dt><dd id="wifi-setup-ip">-</dd>
+            <dt>Signal</dt><dd id="wifi-setup-signal">-</dd>
+            <dt>WPA State</dt><dd id="wifi-setup-wpa">-</dd>
+          </dl>
+          <div class="small text-secondary"><strong>WPS Status:</strong> <span id="wifi-setup-wps-phase">idle</span></div>
+        </section>
+      </div>
+
+      <div class="col-12 col-xl-6">
+        <section class="portal-card p-3 h-100">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2 class="h6 mb-0">WLAN Netze</h2>
+            <button id="btn-wifi-setup-scan" class="btn btn-outline-dark btn-sm">Scan</button>
+          </div>
+          <div id="wifi-setup-scan-list" class="list-group list-group-flush small">
+            <div class="text-secondary">Noch kein Scan ausgeführt.</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="col-12 col-xl-6">
+        <section class="portal-card p-3 h-100">
+          <h2 class="h6 mb-2">Mit Passwort verbinden</h2>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <input id="wifi-setup-manual-ssid" class="form-control form-control-sm" placeholder="SSID">
+            </div>
+            <div class="col-md-6">
+              <input id="wifi-setup-manual-password" class="form-control form-control-sm" type="password" placeholder="Passwort (optional)">
+            </div>
+            <div class="col-12 d-grid">
+              <button id="btn-wifi-setup-connect" class="btn btn-outline-primary btn-sm">Verbinden & speichern</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="col-12 col-xl-6">
+        <section class="portal-card p-3 h-100">
+          <h2 class="h6 mb-2">WPS</h2>
+          <div class="small text-secondary mb-2">Vorher am Router WPS-Taste drücken, dann hier WPS starten.</div>
+          <div class="d-flex gap-2 mb-2">
+            <button id="btn-wifi-setup-wps" class="btn btn-outline-primary btn-sm">WPS starten</button>
+            <button id="btn-wifi-setup-wps-refresh" class="btn btn-outline-secondary btn-sm">WPS Status</button>
+          </div>
+          <pre id="wifi-setup-log" class="code-block mb-0" style="max-height:220px; overflow:auto;">-</pre>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/wifi_setup.js') }}"></script>
+</body>
+</html>
