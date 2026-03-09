@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import ipaddress
+
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
 from app.core.auth_local import LocalAuthError, authenticate_local_user, list_interactive_users
 from app.core.auth_mode import refresh_link_targets_from_panel, resolve_auth_mode
 from app.core.auth_panel import PanelAuthError, authenticate_via_panel, complete_panel_two_factor
 from app.core.connectivity_mode import detect_connectivity_setup_mode
+from app.core.netcontrol import NetControlError, get_ap_status
 from app.core.auth_session import (
     clear_pending_panel_2fa,
     current_session,
@@ -40,6 +43,34 @@ def _is_dev_mode() -> bool:
     return raw in {"dev", "1", "true", "yes", "on"}
 
 
+def _is_ap_request() -> bool:
+    host = (request.host or "").split(":", 1)[0].strip()
+    remote_addr = (request.remote_addr or "").strip()
+
+    try:
+        ap_status = get_ap_status()
+    except NetControlError:
+        ap_status = {}
+
+    ap_ip = str(ap_status.get("ip") or "").strip()
+    if ap_ip and host == ap_ip:
+        return True
+
+    if remote_addr:
+        try:
+            remote_ip = ipaddress.ip_address(remote_addr)
+            if remote_ip in ipaddress.ip_network("192.168.4.0/24"):
+                return True
+        except ValueError:
+            pass
+
+    return False
+
+
+def _login_template_name() -> str:
+    return "login_ap.html" if _is_ap_request() else "login.html"
+
+
 @bp_auth.get("/login")
 def login_page():
     if is_authenticated():
@@ -55,10 +86,11 @@ def login_page():
         force_local=bool(setup_mode.get("active")),
         force_reason="connectivity_setup_mode",
     )
+    login_template = _login_template_name()
     dev_mode = _is_dev_mode()
     pending_2fa = get_pending_panel_2fa() if mode_info["mode"] == "panel_remote" else {}
     return render_template(
-        "login.html",
+        login_template,
         auth_mode=mode_info["mode"],
         auth_mode_label=_mode_human(mode_info["mode"]),
         auth_mode_reason=mode_info.get("reason", ""),
@@ -88,6 +120,7 @@ def login_submit():
         force_local=bool(setup_mode.get("active")),
         force_reason="connectivity_setup_mode",
     )
+    login_template = _login_template_name()
     dev_mode = _is_dev_mode()
 
     username = (request.form.get("username") or request.form.get("_username") or "").strip()
@@ -100,7 +133,7 @@ def login_submit():
 
     if not username or not password:
         return render_template(
-            "login.html",
+            login_template,
             auth_mode=mode_info["mode"],
             auth_mode_label=_mode_human(mode_info["mode"]),
             auth_mode_reason=mode_info.get("reason", ""),
@@ -132,7 +165,7 @@ def login_submit():
                 pending_2fa["user_id"] = int(result.get("user_id") or 0) or None
                 set_pending_panel_2fa(pending_2fa)
                 return render_template(
-                    "login.html",
+                    login_template,
                     auth_mode=mode_info["mode"],
                     auth_mode_label=_mode_human(mode_info["mode"]),
                     auth_mode_reason=mode_info.get("reason", ""),
@@ -161,7 +194,7 @@ def login_submit():
             )
     except (LocalAuthError, PanelAuthError) as exc:
         return render_template(
-            "login.html",
+            login_template,
             auth_mode=mode_info["mode"],
             auth_mode_label=_mode_human(mode_info["mode"]),
             auth_mode_reason=mode_info.get("reason", ""),
@@ -190,6 +223,7 @@ def login_submit_2fa():
         force_local=bool(setup_mode.get("active")),
         force_reason="connectivity_setup_mode",
     )
+    login_template = _login_template_name()
     dev_mode = _is_dev_mode()
     next_url = _safe_next(request.form.get("next") or request.args.get("next") or "/")
     if mode_info["mode"] != "panel_remote":
@@ -200,7 +234,7 @@ def login_submit_2fa():
     pending_2fa = get_pending_panel_2fa()
     if not pending_2fa:
         return render_template(
-            "login.html",
+            login_template,
             auth_mode=mode_info["mode"],
             auth_mode_label=_mode_human(mode_info["mode"]),
             auth_mode_reason=mode_info.get("reason", ""),
@@ -219,7 +253,7 @@ def login_submit_2fa():
         complete_panel_two_factor(pending_2fa=pending_2fa, code=code)
     except PanelAuthError as exc:
         return render_template(
-            "login.html",
+            login_template,
             auth_mode=mode_info["mode"],
             auth_mode_label=_mode_human(mode_info["mode"]),
             auth_mode_reason=mode_info.get("reason", ""),

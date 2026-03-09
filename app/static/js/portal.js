@@ -4340,6 +4340,7 @@
     q("btn-security-trust-wifi").addEventListener("click", () => run(() => trustCurrentNetwork("wifi")));
     q("btn-security-trust-lan").addEventListener("click", () => run(() => trustCurrentNetwork("lan")));
     q("btn-security-trust-bt").addEventListener("click", () => run(() => trustCurrentNetwork("bluetooth")));
+    q("btn-security-ap-disable").addEventListener("click", () => run(() => toggleAp(false)));
     q("btn-hostname-rename-save").addEventListener("click", () => run(saveHostnameRename));
     q("hostname-rename-input").addEventListener("input", () => {
       if (hostnameRenameState.previewTimer) {
