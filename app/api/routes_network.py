@@ -143,9 +143,9 @@ def _disable_ap_after_wifi_uplink(ifname: str = "wlan0", reason: str = "") -> di
         log_event("ap", "Could not read AP status after Wi-Fi uplink", level="warning", data=result)
         return result
 
-    enabled = bool(ap_status.get("enabled"))
-    result["was_enabled"] = enabled
-    if not enabled:
+    active = bool(ap_status.get("active"))
+    result["was_enabled"] = active
+    if not active:
         return result
 
     profile = (ap_status.get("profile") or "jm-hotspot").strip() or "jm-hotspot"
@@ -158,6 +158,33 @@ def _disable_ap_after_wifi_uplink(ifname: str = "wlan0", reason: str = "") -> di
     except NetControlError as exc:
         result["error"] = exc.detail or exc.message
         log_event("ap", "Failed to disable AP after Wi-Fi uplink", level="warning", data={**result, "profile": profile})
+    return result
+
+
+def _prepare_client_uplink_switch(ifname: str = "wlan0", reason: str = "") -> dict:
+    """
+    Best-effort pre-switch: if AP is currently active on wlan0, disable it before
+    client connect/profile-up to avoid AP/client contention on single-radio devices.
+    """
+    result = {"attempted": False, "disabled": False, "was_enabled": False, "ifname": ifname, "reason": reason}
+    try:
+        ap_status = get_ap_status(ifname=ifname)
+    except NetControlError as exc:
+        result["error"] = exc.detail or exc.message
+        return result
+
+    active = bool(ap_status.get("active"))
+    result["was_enabled"] = active
+    if not active:
+        return result
+
+    result["attempted"] = True
+    profile = (ap_status.get("profile") or "jm-hotspot").strip() or "jm-hotspot"
+    try:
+        set_ap_enabled(False, ifname=ifname, profile=profile)
+        result["disabled"] = True
+    except NetControlError as exc:
+        result["error"] = exc.detail or exc.message
     return result
 
 
@@ -1749,6 +1776,7 @@ def api_wifi_connect():
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
     if _is_ap_ssid(ssid, ifname=ifname):
         return _error("forbidden_ssid", "Das eigene AP-Netz darf nicht als Client-WLAN verwendet werden.", status=409)
+    pre_switch = _prepare_client_uplink_switch(ifname=ifname, reason="wifi_connect_pre")
     try:
         result = wifi_connect(ssid=ssid, password=password, ifname=ifname, hidden=hidden)
     except NetControlError as exc:
@@ -1769,7 +1797,7 @@ def api_wifi_connect():
         return _error("config_write_failed", "Connected Wi-Fi but failed to persist profile", status=500, detail=err)
     log_event("wifi", "Connected to Wi-Fi network", data={"ssid": ssid, "ifname": ifname})
     ap_fallback = _disable_ap_after_wifi_uplink(ifname=ifname, reason="wifi_connect")
-    return _ok({**result, "persisted": True, "ap_fallback": ap_fallback})
+    return _ok({**result, "persisted": True, "ap_pre_switch": pre_switch, "ap_fallback": ap_fallback})
 
 
 @bp_network.post("/api/network/wifi/connect")
@@ -1958,6 +1986,7 @@ def api_wifi_profiles_up():
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
     if _is_ap_ssid(ssid):
         return _error("forbidden_ssid", "Das eigene AP-Netz darf nicht als Client-WLAN verbunden werden.", status=409)
+    pre_switch = _prepare_client_uplink_switch(ifname="wlan0", reason="wifi_profile_up_pre")
     try:
         result = wifi_profile_up(ssid, uuid=uuid)
     except NetControlError as exc:
@@ -1975,7 +2004,8 @@ def api_wifi_profiles_up():
     if not ok:
         return _error("config_write_failed", "Profile activated but state persistence failed", status=500, detail=err)
     log_event("wifi", "Activated Wi-Fi profile", data={"ssid": ssid})
-    return _ok(result)
+    ap_fallback = _disable_ap_after_wifi_uplink(ifname="wlan0", reason="wifi_profile_up")
+    return _ok({**result, "ap_pre_switch": pre_switch, "ap_fallback": ap_fallback})
 
 
 @bp_network.post("/api/network/wifi/select")
@@ -1996,6 +2026,7 @@ def api_wifi_profiles_apply():
             elif int(item.get("priority") or 0) >= PREFERRED_WIFI_PRIORITY:
                 item["priority"] = NONPREFERRED_WIFI_PRIORITY
     logs: list[str] = []
+    pre_switch = _prepare_client_uplink_switch(ifname="wlan0", reason="wifi_profiles_apply_pre")
     for item in profiles:
         try:
             wifi_profile_set(item["ssid"], int(item.get("priority") or 0), bool(item.get("autoconnect", True)))
@@ -2017,7 +2048,8 @@ def api_wifi_profiles_apply():
     if not ok:
         return _error("config_write_failed", "Profiles applied but state persistence failed", status=500, detail=err)
     log_event("wifi", "Applied Wi-Fi profiles", data={"connected_ssid": connected_ssid, "profiles": len(profiles)})
-    return _ok({"connected_ssid": connected_ssid, "logs": logs, "profiles": profiles})
+    ap_fallback = _disable_ap_after_wifi_uplink(ifname="wlan0", reason="wifi_profiles_apply")
+    return _ok({"connected_ssid": connected_ssid, "logs": logs, "profiles": profiles, "ap_pre_switch": pre_switch, "ap_fallback": ap_fallback})
 
 
 @bp_network.post("/api/network/wifi/toggle")
