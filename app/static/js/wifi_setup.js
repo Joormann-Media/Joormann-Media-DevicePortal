@@ -203,7 +203,7 @@
         try {
           await fetchJson("/api/network/wifi/wps/start", {
             method: "POST",
-            body: { ifname: "wlan0", ssid: net.ssid || "", bssid: net.bssid || "" },
+            body: { ifname: "wlan0", ssid: net.ssid || "", bssid: net.bssid || "", async_safe: true },
           });
           toast("WPS gestartet.", "success");
           await refreshWpsAndLogs();
@@ -377,7 +377,7 @@
   async function startWps() {
     await fetchJson("/api/network/wifi/wps/start", {
       method: "POST",
-      body: { ifname: "wlan0" },
+      body: { ifname: "wlan0", async_safe: true },
     });
     toast("WPS gestartet.", "success");
     await refreshWpsAndLogs();

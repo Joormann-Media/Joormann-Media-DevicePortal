@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ipaddress
+import threading
 import time
 import uuid
 
@@ -203,6 +205,28 @@ def _norm_profiles(cfg: dict) -> list[dict]:
     return list(unique.values())
 
 
+def _is_ap_client_request() -> bool:
+    remote_addr = (request.remote_addr or "").strip()
+    if not remote_addr:
+        return False
+    try:
+        remote_ip = ipaddress.ip_address(remote_addr)
+    except ValueError:
+        return False
+    return remote_ip in ipaddress.ip_network("192.168.4.0/24")
+
+
+def _run_wps_start_async(ifname: str, target_bssid: str, target_ssid: str) -> None:
+    # Give the HTTP response a short head start so AP clients do not lose the request mid-flight.
+    time.sleep(0.8)
+    try:
+        result = start_wps(ifname=ifname, target_bssid=target_bssid, target_ssid=target_ssid)
+        log_event("wps", result.get("message", "WPS started (async)"), data={"iface": ifname, "code": result.get("code", "ok"), "async": True})
+    except NetControlError as exc:
+        log_event("wps", exc.message, level="error", data={"iface": ifname, "code": exc.code, "detail": exc.detail, "async": True})
+        set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": exc.code})
+
+
 def _save_wifi_profiles(cfg: dict, profiles: list[dict], preferred: str = "", last_ssid: str = "") -> tuple[bool, str]:
     cfg["wifi_profiles"] = profiles
     if preferred:
@@ -211,6 +235,41 @@ def _save_wifi_profiles(cfg: dict, profiles: list[dict], preferred: str = "", la
         cfg["last_wifi_ssid"] = last_ssid
     cfg["updated_at"] = utc_now()
     return write_json(CONFIG_PATH, cfg, mode=0o600)
+
+
+def _current_ap_ssid(ifname: str = "wlan0", profile: str = "jm-hotspot") -> str:
+    try:
+        ap = get_ap_status(ifname=ifname, profile=profile)
+        return str(ap.get("ssid") or "").strip()
+    except NetControlError:
+        return ""
+
+
+def _is_ap_ssid(ssid: str, ifname: str = "wlan0", profile: str = "jm-hotspot") -> bool:
+    target = str(ssid or "").strip()
+    if not target:
+        return False
+    ap_ssid = _current_ap_ssid(ifname=ifname, profile=profile)
+    if not ap_ssid:
+        return False
+    return target.casefold() == ap_ssid.casefold()
+
+
+def _purge_ap_ssid_profile_if_needed(cfg: dict, ifname: str = "wlan0", profile: str = "jm-hotspot") -> None:
+    ap_ssid = _current_ap_ssid(ifname=ifname, profile=profile)
+    if not ap_ssid:
+        return
+    profiles = _norm_profiles(cfg)
+    kept = [item for item in profiles if str(item.get("ssid") or "").casefold() != ap_ssid.casefold()]
+    if len(kept) != len(profiles):
+        preferred = str(cfg.get("preferred_wifi") or "")
+        preferred_out = "" if preferred.casefold() == ap_ssid.casefold() else preferred
+        _save_wifi_profiles(cfg, kept, preferred=preferred_out)
+        try:
+            wifi_profile_delete(ap_ssid)
+        except NetControlError:
+            pass
+        log_event("wifi", "AP SSID removed from known Wi-Fi profiles", level="warning", data={"ssid": ap_ssid})
 
 
 def _merged_profiles(profiles_cfg: list[dict], nm_profiles: list[dict], preferred: str, last_ssid: str) -> list[dict]:
@@ -1433,6 +1492,7 @@ def api_network_wps():
     ifname = (data.get("ifname") or "wlan0").strip()
     target_bssid = (data.get("target_bssid") or "").strip()
     target_ssid = (data.get("target_ssid") or "").strip()
+    async_safe = bool(data.get("async_safe", False))
     log_event("wps", "WPS start requested", data={"ifname": ifname, "target_ssid": target_ssid, "target_bssid": target_bssid})
     set_wps_state(
         {
@@ -1443,6 +1503,32 @@ def api_network_wps():
             "target_bssid": target_bssid,
         }
     )
+
+    ap_active = False
+    try:
+        ap_active = bool(get_ap_status(ifname=ifname).get("active"))
+    except NetControlError:
+        ap_active = False
+
+    if async_safe or (_is_ap_client_request() and ap_active):
+        threading.Thread(
+            target=_run_wps_start_async,
+            args=(ifname, target_bssid, target_ssid),
+            daemon=True,
+            name="wps-start-async",
+        ).start()
+        return (
+            jsonify(
+                ok=True,
+                success=True,
+                message="WPS wird gestartet.",
+                details="AP-safe async mode",
+                hint="Bitte jetzt am Router die WPS-Taste drücken; Status wird laufend aktualisiert.",
+                data={"iface": ifname, "code": "wps_start_async", "async": True},
+            ),
+            200,
+        )
+
     try:
         result = start_wps(ifname=ifname, target_bssid=target_bssid, target_ssid=target_ssid)
         log_event("wps", result.get("message", "WPS started"), data={"iface": ifname, "code": result.get("code", "ok")})
@@ -1545,6 +1631,23 @@ def api_network_wifi_wps_status():
         set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": phase["phase"]})
     if phase["phase"] == "connected":
         connected_ssid = (status.get("ssid") or "").strip()
+        if _is_ap_ssid(connected_ssid, ifname=ifname):
+            # Do not ever persist/select our own AP SSID as client uplink target.
+            set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": "self_ap_ignored"})
+            return _ok(
+                {
+                    "ifname": ifname,
+                    "wps": {
+                        **phase,
+                        "phase": "idle",
+                        "phase_message": "Eigenes AP-Netz erkannt und ignoriert.",
+                        "target_ssid": wps_state.get("target_ssid", ""),
+                        "target_bssid": wps_state.get("target_bssid", ""),
+                    },
+                    "wifi": status,
+                    "ap_fallback": {"attempted": False, "disabled": False, "was_enabled": False, "ifname": ifname, "reason": "self_ap_ignored"},
+                }
+            )
         ap_fallback = _disable_ap_after_wifi_uplink(ifname=ifname, reason="wps_connected")
         if connected_ssid:
             try:
@@ -1594,7 +1697,14 @@ def api_network_wifi_status():
 def api_wifi_scan():
     ifname = (request.args.get("ifname") or "wlan0").strip()
     try:
-        return _ok(wifi_scan(ifname=ifname))
+        payload = wifi_scan(ifname=ifname)
+        ap_ssid = _current_ap_ssid(ifname=ifname)
+        networks = payload.get("networks") if isinstance(payload.get("networks"), list) else []
+        if ap_ssid:
+            payload["networks"] = [
+                item for item in networks if str((item or {}).get("ssid") or "").strip().casefold() != ap_ssid.casefold()
+            ]
+        return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
@@ -1614,6 +1724,8 @@ def api_wifi_connect():
     ifname = (data.get("ifname") or "wlan0").strip()
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
+    if _is_ap_ssid(ssid, ifname=ifname):
+        return _error("forbidden_ssid", "Das eigene AP-Netz darf nicht als Client-WLAN verwendet werden.", status=409)
     try:
         result = wifi_connect(ssid=ssid, password=password, ifname=ifname, hidden=hidden)
     except NetControlError as exc:
@@ -1645,12 +1757,17 @@ def api_network_wifi_connect():
 @bp_network.get("/api/wifi/profiles")
 def api_wifi_profiles():
     cfg = ensure_config()
+    _purge_ap_ssid_profile_if_needed(cfg)
     profiles_cfg = _norm_profiles(cfg)
+    ap_ssid = _current_ap_ssid()
     try:
         nm_profiles = wifi_profiles_list().get("profiles", [])
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
+    if ap_ssid:
+        nm_profiles = [item for item in nm_profiles if str(item.get("name") or "").strip().casefold() != ap_ssid.casefold()]
+        profiles_cfg = [item for item in profiles_cfg if str(item.get("ssid") or "").strip().casefold() != ap_ssid.casefold()]
     preferred_ssid = (cfg.get("preferred_wifi") or "")
     last_wifi_ssid = (cfg.get("last_wifi_ssid") or "")
     nm_by_name = {item.get("name"): item for item in nm_profiles if item.get("name")}
@@ -1701,6 +1818,8 @@ def api_wifi_profiles_add():
     autoconnect = bool(data.get("autoconnect", True))
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
+    if _is_ap_ssid(ssid, ifname=ifname):
+        return _error("forbidden_ssid", "Das eigene AP-Netz darf nicht als Client-WLAN gespeichert werden.", status=409)
 
     connect_error = ""
     try:
@@ -1779,6 +1898,8 @@ def api_wifi_profiles_prefer():
     ssid = (data.get("ssid") or "").strip()
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
+    if _is_ap_ssid(ssid):
+        return _error("forbidden_ssid", "Das eigene AP-Netz darf nicht als bevorzugtes Client-WLAN gesetzt werden.", status=409)
 
     cfg = ensure_config()
     profiles = _norm_profiles(cfg)
@@ -1812,6 +1933,8 @@ def api_wifi_profiles_up():
     uuid = (data.get("uuid") or "").strip()
     if not ssid:
         return _error("invalid_payload", "Field 'ssid' is required", status=400)
+    if _is_ap_ssid(ssid):
+        return _error("forbidden_ssid", "Das eigene AP-Netz darf nicht als Client-WLAN verbunden werden.", status=409)
     try:
         result = wifi_profile_up(ssid, uuid=uuid)
     except NetControlError as exc:
