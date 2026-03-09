@@ -71,6 +71,10 @@ def _login_template_name() -> str:
     return "login_ap.html" if _is_ap_request() else "login.html"
 
 
+def _force_local_auth_mode(setup_mode: dict) -> bool:
+    return bool(setup_mode.get("active")) or _is_ap_request()
+
+
 @bp_auth.get("/login")
 def login_page():
     if is_authenticated():
@@ -79,12 +83,13 @@ def login_page():
     cfg = ensure_config()
     dev = ensure_device()
     setup_mode = detect_connectivity_setup_mode()
-    if not bool(setup_mode.get("active")):
+    force_local_auth = _force_local_auth_mode(setup_mode)
+    if not force_local_auth:
         refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(
         cfg,
-        force_local=bool(setup_mode.get("active")),
-        force_reason="connectivity_setup_mode",
+        force_local=force_local_auth,
+        force_reason="ap_or_connectivity_setup_mode",
     )
     login_template = _login_template_name()
     dev_mode = _is_dev_mode()
@@ -113,12 +118,13 @@ def login_submit():
     cfg = ensure_config()
     dev = ensure_device()
     setup_mode = detect_connectivity_setup_mode()
-    if not bool(setup_mode.get("active")):
+    force_local_auth = _force_local_auth_mode(setup_mode)
+    if not force_local_auth:
         refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(
         cfg,
-        force_local=bool(setup_mode.get("active")),
-        force_reason="connectivity_setup_mode",
+        force_local=force_local_auth,
+        force_reason="ap_or_connectivity_setup_mode",
     )
     login_template = _login_template_name()
     dev_mode = _is_dev_mode()
@@ -128,7 +134,7 @@ def login_submit():
     next_url = _safe_next(request.form.get("next") or request.args.get("next") or "/")
     mode_override = (request.form.get("auth_mode_override") or "").strip()
     submit_mode = mode_override if mode_override in {"local_system", "panel_remote"} else mode_info["mode"]
-    if bool(setup_mode.get("active")):
+    if force_local_auth:
         submit_mode = "local_system"
 
     if not username or not password:
@@ -218,10 +224,11 @@ def login_submit_2fa():
 
     cfg = ensure_config()
     setup_mode = detect_connectivity_setup_mode()
+    force_local_auth = _force_local_auth_mode(setup_mode)
     mode_info = resolve_auth_mode(
         cfg,
-        force_local=bool(setup_mode.get("active")),
-        force_reason="connectivity_setup_mode",
+        force_local=force_local_auth,
+        force_reason="ap_or_connectivity_setup_mode",
     )
     login_template = _login_template_name()
     dev_mode = _is_dev_mode()
@@ -289,12 +296,13 @@ def api_auth_mode():
     cfg = ensure_config()
     dev = ensure_device()
     setup_mode = detect_connectivity_setup_mode()
-    if not bool(setup_mode.get("active")):
+    force_local_auth = _force_local_auth_mode(setup_mode)
+    if not force_local_auth:
         refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(
         cfg,
-        force_local=bool(setup_mode.get("active")),
-        force_reason="connectivity_setup_mode",
+        force_local=force_local_auth,
+        force_reason="ap_or_connectivity_setup_mode",
     )
     return jsonify(
         ok=True,
@@ -314,12 +322,13 @@ def api_auth_status():
     cfg = ensure_config()
     dev = ensure_device()
     setup_mode = detect_connectivity_setup_mode()
-    if not bool(setup_mode.get("active")):
+    force_local_auth = _force_local_auth_mode(setup_mode)
+    if not force_local_auth:
         refresh_link_targets_from_panel(cfg, dev)
     mode_info = resolve_auth_mode(
         cfg,
-        force_local=bool(setup_mode.get("active")),
-        force_reason="connectivity_setup_mode",
+        force_local=force_local_auth,
+        force_reason="ap_or_connectivity_setup_mode",
     )
     auth = current_session()
     return jsonify(
@@ -336,10 +345,11 @@ def api_auth_status():
 def api_auth_local_users():
     cfg = ensure_config()
     setup_mode = detect_connectivity_setup_mode()
+    force_local_auth = _force_local_auth_mode(setup_mode)
     mode_info = resolve_auth_mode(
         cfg,
-        force_local=bool(setup_mode.get("active")),
-        force_reason="connectivity_setup_mode",
+        force_local=force_local_auth,
+        force_reason="ap_or_connectivity_setup_mode",
     )
     if mode_info["mode"] != "local_system":
         return jsonify(ok=True, users=[], count=0, mode=mode_info["mode"], connectivity_setup_mode=setup_mode)
