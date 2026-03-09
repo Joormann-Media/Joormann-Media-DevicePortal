@@ -1,5 +1,6 @@
 (() => {
   let wifiRadioEnabled = null;
+  let selectedWpsTarget = null;
 
   function q(id) {
     return document.getElementById(id);
@@ -228,18 +229,7 @@
       const wpsBtn = document.createElement("button");
       wpsBtn.className = "btn btn-outline-secondary btn-sm";
       wpsBtn.textContent = "WPS";
-      wpsBtn.addEventListener("click", async () => {
-        try {
-          await fetchJson("/api/network/wifi/wps/start", {
-            method: "POST",
-            body: { ifname: "wlan0", ssid: net.ssid || "", bssid: net.bssid || "", async_safe: true },
-          });
-          toast("WPS gestartet.", "success");
-          await refreshWpsAndLogs();
-        } catch (err) {
-          toast(err.message || String(err), "danger");
-        }
-      });
+      wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: net.ssid || "", bssid: net.bssid || "" }, "btn-wifi-setup-wps")));
 
       actions.append(connectBtn, wpsBtn);
       row.append(top, meta, actions, inlineConnect);
@@ -341,6 +331,7 @@
   async function refreshWifiStatus() {
     const payload = await fetchJson("/api/network/wifi/status");
     renderWifiStatus(payload);
+    return payload;
   }
 
   async function refreshScan() {
@@ -403,13 +394,79 @@
     await refreshAll();
   }
 
-  async function startWps() {
-    await fetchJson("/api/network/wifi/wps/start", {
-      method: "POST",
-      body: { ifname: "wlan0", async_safe: true },
-    });
-    toast("WPS gestartet.", "success");
-    await refreshWpsAndLogs();
+  async function startWps(target = null, triggerId = "btn-wifi-setup-wps-hero") {
+    const btn = q(triggerId) || q("btn-wifi-setup-wps-hero") || q("btn-wifi-setup-wps");
+    const original = btn ? btn.innerHTML : "";
+
+    if (target && target.ssid) {
+      selectedWpsTarget = {
+        ssid: String(target.ssid || "").trim(),
+        bssid: String(target.bssid || "").trim(),
+      };
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>WPS startet...';
+    }
+    toast("WPS wird gestartet...", "secondary");
+
+    try {
+      let triggerError = null;
+      const payloadBody = { ifname: "wlan0" };
+      if (selectedWpsTarget && selectedWpsTarget.ssid) {
+        payloadBody.target_ssid = selectedWpsTarget.ssid;
+      }
+      if (selectedWpsTarget && selectedWpsTarget.bssid) {
+        payloadBody.target_bssid = selectedWpsTarget.bssid;
+      }
+      try {
+        const payload = await fetchJson("/api/network/wifi/wps/start", {
+          method: "POST",
+          body: payloadBody,
+          timeoutMs: 20000,
+        });
+        const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
+        const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
+        toast(`${message} ${hint}`.trim(), "success");
+      } catch (err) {
+        triggerError = err instanceof Error ? err : new Error(String(err));
+        const msg = triggerError.message || "Unbekannter Fehler";
+        const probablyStarted = /wps(_| )?pbc|WPS wurde gestartet/i.test(msg);
+        toast(
+          probablyStarted
+            ? "WPS wurde ausgelöst. Verbindung wird weiter geprüft (30-120 Sekunden möglich)."
+            : `WPS-Trigger meldet Fehler, Verbindung wird trotzdem weiter geprüft: ${msg}`,
+          "secondary",
+        );
+      }
+
+      await refreshWifiStatus();
+      await refreshWpsAndLogs();
+      let connected = false;
+      for (let i = 0; i < 10; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+        const payload = await refreshWifiStatus();
+        await refreshWpsAndLogs();
+        const wifi = (payload.data || {});
+        if (wifi.connected) {
+          toast(`WLAN verbunden: ${wifi.ssid || "SSID unbekannt"}`, "success");
+          connected = true;
+          break;
+        }
+      }
+
+      if (!connected && triggerError) {
+        toast("WPS wurde offenbar nicht sauber gestartet oder Verbindung blieb aus. Bitte WPS am Router erneut drücken und nochmal versuchen.", "danger");
+      } else if (!connected) {
+        toast("WPS gestartet, aber noch keine WLAN-Verbindung erkannt.", "secondary");
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original || "WPS starten";
+      }
+    }
   }
 
   async function refreshAll() {
@@ -433,7 +490,8 @@
     q("btn-wifi-setup-scan").addEventListener("click", () => run(refreshScan));
     q("btn-wifi-setup-known-refresh").addEventListener("click", () => run(refreshKnownProfiles));
     q("btn-wifi-setup-connect").addEventListener("click", () => run(manualConnect));
-    q("btn-wifi-setup-wps").addEventListener("click", () => run(startWps));
+    q("btn-wifi-setup-wps").addEventListener("click", () => run(() => startWps(null, "btn-wifi-setup-wps")));
+    q("btn-wifi-setup-wps-hero").addEventListener("click", () => run(() => startWps(null, "btn-wifi-setup-wps-hero")));
     q("btn-wifi-setup-wps-refresh").addEventListener("click", () => run(refreshWpsAndLogs));
     q("btn-wifi-setup-radio-on").addEventListener("click", () => run(() => toggleWifiRadio(true)));
     q("btn-wifi-setup-radio-off").addEventListener("click", () => run(() => toggleWifiRadio(false)));
