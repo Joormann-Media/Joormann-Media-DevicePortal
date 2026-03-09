@@ -8,6 +8,7 @@ from app.core.auth_mode import resolve_auth_mode
 from app.core.auth_session import current_session
 from app.core.config import ensure_config
 from app.core.connectivity_mode import detect_connectivity_setup_mode
+from app.core.qr import build_qr_svg_data_uri
 from app.core.netcontrol import NetControlError, get_ap_status
 from app.core.device import ensure_device
 from app.core.fingerprint import ensure_fingerprint, short_fingerprint
@@ -48,8 +49,22 @@ def _is_ap_request() -> bool:
     return False
 
 
+def _is_local_display_request() -> bool:
+    remote_addr = (request.remote_addr or "").strip()
+    if not remote_addr:
+        return False
+    try:
+        return ipaddress.ip_address(remote_addr).is_loopback
+    except ValueError:
+        return False
+
+
 @bp_ui.get('/')
 def index():
+    setup_mode = detect_connectivity_setup_mode()
+    if bool(setup_mode.get("active")) and _is_local_display_request():
+        return redirect(url_for('ui.ap_display'))
+
     if _is_ap_request():
         return redirect(url_for('ui.wifi_setup'))
 
@@ -57,7 +72,6 @@ def index():
     dev = ensure_device()
     fp = ensure_fingerprint()
     state = get_state()
-    setup_mode = detect_connectivity_setup_mode()
     auth_mode = resolve_auth_mode(
         cfg,
         force_local=bool(setup_mode.get("active")),
@@ -98,4 +112,28 @@ def wifi_setup():
         auth_mode=auth_mode,
         connectivity_setup_mode=setup_mode,
         auth_state=auth_state,
+    )
+
+
+@bp_ui.get('/ap-display')
+def ap_display():
+    setup_mode = detect_connectivity_setup_mode()
+
+    try:
+        ap_status = get_ap_status()
+    except NetControlError:
+        ap_status = {}
+
+    ap_ip = str(ap_status.get("ip") or "192.168.4.1").strip() or "192.168.4.1"
+    ap_ssid = str(ap_status.get("ssid") or "").strip()
+    setup_url = f"http://{ap_ip}/login"
+
+    return render_template(
+        'ap_display.html',
+        hostname=get_hostname(),
+        ap_ip=ap_ip,
+        ap_ssid=ap_ssid,
+        setup_url=setup_url,
+        setup_qr_svg_data_uri=build_qr_svg_data_uri(setup_url),
+        connectivity_setup_mode=setup_mode,
     )

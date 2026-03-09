@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AP Setup Display</title>
+  <style>
+    :root {
+      --bg: #08131f;
+      --panel: #0f2235;
+      --muted: #9db1c7;
+      --text: #ecf5ff;
+      --accent: #4ec3ff;
+      --accent2: #8fffa7;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 10%, #1d3f5f 0%, #08131f 45%, #050b13 100%);
+      display: grid;
+      place-items: center;
+      padding: 2rem;
+    }
+    .shell {
+      width: min(1100px, 100%);
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 1.5rem;
+    }
+    .card {
+      background: linear-gradient(160deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 22px;
+      padding: 1.5rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+    }
+    h1 { margin: 0 0 .6rem; font-size: clamp(1.4rem, 3vw, 2rem); }
+    p { margin: 0 0 1rem; color: var(--muted); line-height: 1.45; }
+    .badges { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .8rem; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      border-radius: 999px;
+      padding: .35rem .7rem;
+      font-size: .85rem;
+      font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #d6edff;
+      background: rgba(255,255,255,.05);
+    }
+    .badge.ok { border-color: rgba(143,255,167,.5); color: #d3ffe1; }
+    .kv {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: .5rem .8rem;
+      font-size: 1.05rem;
+      margin-top: 1rem;
+    }
+    .kv dt { color: #a6c0d9; }
+    .kv dd { margin: 0; color: #fff; font-weight: 600; word-break: break-word; }
+    .url {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(1rem, 2.8vw, 1.5rem);
+      background: rgba(0,0,0,0.32);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: .6rem .8rem;
+      margin-top: .5rem;
+      word-break: break-word;
+      color: var(--accent2);
+    }
+    .qr-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 320px;
+    }
+    .qr {
+      width: min(100%, 420px);
+      aspect-ratio: 1;
+      background: #fff;
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.15), 0 14px 40px rgba(0,0,0,.35);
+    }
+    .qr img { width: 100%; height: 100%; display: block; }
+    .fallback {
+      padding: .9rem;
+      border-radius: 10px;
+      border: 1px solid rgba(255,80,80,.45);
+      background: rgba(255,80,80,.15);
+      color: #ffd6d6;
+      font-size: .95rem;
+    }
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="card">
+      <div class="badges">
+        <span class="badge ok">AP-Modus aktiv</span>
+        <span class="badge">Lokales Setup</span>
+      </div>
+      <h1>WLAN-Setup aufrufen</h1>
+      <p>Der Stream ist pausiert, solange der Access Point aktiv ist. Bitte mit dem Handy den QR-Code scannen und das WLAN-Setup öffnen.</p>
+      <div class="url">{{ setup_url }}</div>
+      <dl class="kv">
+        <dt>Hostname</dt><dd>{{ hostname }}</dd>
+        <dt>AP SSID</dt><dd>{{ ap_ssid or 'jm-hotspot' }}</dd>
+        <dt>AP IP</dt><dd>{{ ap_ip or '192.168.4.1' }}</dd>
+      </dl>
+    </section>
+    <section class="card qr-wrap">
+      {% if setup_qr_svg_data_uri %}
+      <div class="qr">
+        <img src="{{ setup_qr_svg_data_uri }}" alt="QR Code für {{ setup_url }}">
+      </div>
+      {% else %}
+      <div class="fallback">QR konnte nicht erzeugt werden. Öffne die URL links manuell.</div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
