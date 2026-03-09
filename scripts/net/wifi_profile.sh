@@ -221,6 +221,18 @@ case "${CMD}" in
       exit 0
     fi
 
+    # Last fallback: ask NM to connect by SSID; this can reactivate an existing
+    # stored profile even if connection.id/uuid mapping changed.
+    set +e
+    WIFI_CONNECT_OUT="$(run_nmcli_capture dev wifi connect "${SSID}" ifname "${IFACE}")"
+    WIFI_CONNECT_RC=$?
+    set -e
+    if [[ ${WIFI_CONNECT_RC} -eq 0 ]]; then
+      echo "fallback_connect=true"
+      exit 0
+    fi
+    PROFILE_UP_ERRS+=("${WIFI_CONNECT_OUT}")
+
     echo "${PROFILE_UP_ERRS[*]}" >&2
     exit 46
     ;;

@@ -6,6 +6,7 @@ WAIT_SECONDS="${2:-120}"
 TARGET_BSSID="${3:-}"
 TARGET_SSID="${4:-}"
 DEFAULT_IFACE="wlan0"
+AP_PROFILE="${AP_PROFILE_NAME:-jm-hotspot}"
 NMCLI="$(command -v nmcli || true)"
 IW="$(command -v iw || true)"
 WPA_CLI="$(command -v wpa_cli || true)"
@@ -13,6 +14,7 @@ DHCPCD_BIN="$(command -v dhcpcd || true)"
 DHCLIENT_BIN="$(command -v dhclient || true)"
 TIMEOUT_BIN="$(command -v timeout || true)"
 WPS_AUTOCONNECT_PRIORITY="${WPS_AUTOCONNECT_PRIORITY:-900}"
+AP_SSID=""
 
 emit_result() {
   local success="$1"
@@ -117,10 +119,25 @@ collect_wifi_info() {
   echo "device_state=${state}"
 }
 
+refresh_ap_ssid() {
+  AP_SSID="$("${NMCLI}" -g 802-11-wireless.ssid connection show "${AP_PROFILE}" 2>/dev/null | head -n1 || true)"
+}
+
+is_self_ap_ssid() {
+  local ssid="${1:-}"
+  [[ -n "${ssid}" && -n "${AP_SSID}" && "${ssid}" == "${AP_SSID}" ]]
+}
+
 is_connected() {
   local state conn
   state="$("${NMCLI}" -t -f GENERAL.STATE device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.STATE://p' | head -n1)"
   conn="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
+  if [[ -n "${conn}" && "${conn}" == "${AP_PROFILE}" ]]; then
+    return 1
+  fi
+  if is_self_ap_ssid "${conn}"; then
+    return 1
+  fi
   if [[ "${state}" == 100* ]] || [[ -n "${conn}" && "${conn}" != "--" ]]; then
     return 0
   fi
@@ -128,7 +145,7 @@ is_connected() {
     local wpa_state ssid
     wpa_state="$("${WPA_CLI}" -i "${IFACE}" status 2>/dev/null | sed -n 's/^wpa_state=//p' | head -n1)"
     ssid="$("${WPA_CLI}" -i "${IFACE}" status 2>/dev/null | sed -n 's/^ssid=//p' | head -n1)"
-    if [[ "${wpa_state}" == "COMPLETED" && -n "${ssid}" ]]; then
+    if [[ "${wpa_state}" == "COMPLETED" && -n "${ssid}" ]] && ! is_self_ap_ssid "${ssid}"; then
       return 0
     fi
   fi
@@ -173,6 +190,9 @@ persist_wps_profile() {
   if [[ -z "${ssid}" ]]; then
     ssid="$("${NMCLI}" -t -f ACTIVE,SSID dev wifi list ifname "${IFACE}" 2>/dev/null | awk -F: '$1=="yes"||$1=="*" {print $2; exit}')"
   fi
+  if is_self_ap_ssid "${ssid}"; then
+    return 0
+  fi
 
   conn_name="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
   conn_uuid="$("${NMCLI}" -t -f NAME,UUID,TYPE,DEVICE connection show --active 2>/dev/null | awk -F: -v dev="${IFACE}" -v name="${conn_name}" '$3=="802-11-wireless" && ($4==dev || $1==name) {print $2; exit}')"
@@ -207,6 +227,8 @@ if [[ ! -d "/sys/class/net/${IFACE}" ]]; then
   exit 4
 fi
 
+refresh_ap_ssid
+
 WIFI_RADIO_STATE="$("${NMCLI}" radio wifi 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 if [[ "${WIFI_RADIO_STATE}" == "disabled" || "${WIFI_RADIO_STATE}" == "off" ]]; then
   "${NMCLI}" radio wifi on >/dev/null 2>&1 || {
@@ -216,6 +238,12 @@ if [[ "${WIFI_RADIO_STATE}" == "disabled" || "${WIFI_RADIO_STATE}" == "off" ]]; 
 fi
 "${NMCLI}" device set "${IFACE}" managed yes >/dev/null 2>&1 || true
 ip link set "${IFACE}" up >/dev/null 2>&1 || true
+
+# If AP is currently active on the same radio, drop it before WPS start.
+ACTIVE_CONN="$("${NMCLI}" -t -f GENERAL.CONNECTION device show "${IFACE}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | head -n1)"
+if [[ -n "${ACTIVE_CONN}" && "${ACTIVE_CONN}" == "${AP_PROFILE}" ]]; then
+  "${NMCLI}" connection down "${AP_PROFILE}" >/dev/null 2>&1 || true
+fi
 
 attempt_details=()
 wps_started_method=""
