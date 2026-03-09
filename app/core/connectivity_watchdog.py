@@ -4,7 +4,8 @@ import os
 import threading
 import time
 
-from app.core.netcontrol import NetControlError, get_ap_status, get_network_info, set_ap_enabled, set_wifi_enabled
+from app.core.config import ensure_config
+from app.core.netcontrol import NetControlError, get_ap_status, get_network_info, player_service_action, set_ap_enabled, set_wifi_enabled
 from app.core.network_events import log_event
 
 _thread_lock = threading.Lock()
@@ -39,6 +40,26 @@ def _has_uplink(info: dict) -> bool:
     return bool(lan_up or wifi_up)
 
 
+def _sync_player_for_ap(ap_enabled: bool, source: str) -> None:
+    cfg = ensure_config()
+    service_name = str(cfg.get("player_service_name") or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
+    action = "stop" if ap_enabled else "start"
+    try:
+        player_service_action(action, service_name=service_name)
+    except NetControlError as exc:
+        log_event(
+            "ap",
+            "Watchdog could not sync player service with AP mode",
+            level="warning",
+            data={
+                "source": source,
+                "action": action,
+                "service_name": service_name,
+                "error": exc.detail or exc.message,
+            },
+        )
+
+
 def _run_check_once() -> None:
     info = get_network_info()
     if _has_uplink(info):
@@ -56,6 +77,7 @@ def _run_check_once() -> None:
         pass
 
     set_ap_enabled(True)
+    _sync_player_for_ap(True, source="connectivity_watchdog_auto_ap")
     ap_after = get_ap_status()
     log_event(
         "ap",

@@ -31,6 +31,7 @@ from app.core.netcontrol import (
     get_network_info,
     portal_update,
     portal_update_status,
+    player_service_action,
     restart_portal_service,
     set_ap_enabled,
     get_bluetooth_status,
@@ -150,11 +151,33 @@ def _disable_ap_after_wifi_uplink(ifname: str = "wlan0", reason: str = "") -> di
     try:
         set_ap_enabled(False, ifname=ifname, profile=profile)
         result["disabled"] = True
+        result["player_sync"] = _sync_player_with_ap_mode(False, source="wifi_uplink_disable_ap")
         log_event("ap", "AP disabled after Wi-Fi uplink", data={**result, "profile": profile})
     except NetControlError as exc:
         result["error"] = exc.detail or exc.message
         log_event("ap", "Failed to disable AP after Wi-Fi uplink", level="warning", data={**result, "profile": profile})
     return result
+
+
+def _sync_player_with_ap_mode(ap_enabled: bool, source: str = "") -> dict:
+    cfg = ensure_config()
+    service_name = str(cfg.get("player_service_name") or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
+    action = "stop" if ap_enabled else "start"
+    result = {"ok": False, "action": action, "service_name": service_name, "source": source, "error": ""}
+    try:
+        payload = player_service_action(action, service_name=service_name)
+        result["ok"] = bool(payload.get("ok"))
+        result["message"] = str(payload.get("message") or "")
+        return result
+    except NetControlError as exc:
+        result["error"] = exc.detail or exc.message
+        log_event(
+            "ap",
+            "Failed to sync player service with AP mode",
+            level="warning",
+            data={"source": source, "action": action, "service_name": service_name, "error": result["error"]},
+        )
+        return result
 
 
 def _norm_profiles(cfg: dict) -> list[dict]:
@@ -525,6 +548,7 @@ def api_network_info():
                         level="warning",
                         data={"reason": "missing_lan_and_wifi_uplink"},
                     )
+                    _sync_player_with_ap_mode(True, source="network_info_auto_ap")
                     ap_status = get_ap_status()
                 setup_mode["ap"] = ap_status
             except NetControlError as exc:
@@ -1102,8 +1126,9 @@ def api_network_ap_toggle():
     profile = (data.get("profile") or "jm-hotspot").strip()
     try:
         result = set_ap_enabled(bool(data["enabled"]), ifname=ifname, profile=profile)
+        player_sync = _sync_player_with_ap_mode(bool(result.get("enabled")), source="api_network_ap_toggle")
         log_event("ap", "AP hotspot toggled", data={"enabled": result.get("enabled", False), "ifname": ifname, "profile": profile})
-        return _ok(result)
+        return _ok({**result, "player_sync": player_sync})
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
