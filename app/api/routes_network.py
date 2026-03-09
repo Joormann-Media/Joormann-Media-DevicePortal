@@ -131,6 +131,32 @@ def _wps_phase_from_status(status: dict, wps_state: dict) -> dict:
     }
 
 
+def _disable_ap_after_wifi_uplink(ifname: str = "wlan0", reason: str = "") -> dict:
+    result = {"attempted": False, "disabled": False, "was_enabled": False, "ifname": ifname, "reason": reason}
+    try:
+        ap_status = get_ap_status(ifname=ifname)
+    except NetControlError as exc:
+        result["error"] = exc.detail or exc.message
+        log_event("ap", "Could not read AP status after Wi-Fi uplink", level="warning", data=result)
+        return result
+
+    enabled = bool(ap_status.get("enabled"))
+    result["was_enabled"] = enabled
+    if not enabled:
+        return result
+
+    profile = (ap_status.get("profile") or "jm-hotspot").strip() or "jm-hotspot"
+    result["attempted"] = True
+    try:
+        set_ap_enabled(False, ifname=ifname, profile=profile)
+        result["disabled"] = True
+        log_event("ap", "AP disabled after Wi-Fi uplink", data={**result, "profile": profile})
+    except NetControlError as exc:
+        result["error"] = exc.detail or exc.message
+        log_event("ap", "Failed to disable AP after Wi-Fi uplink", level="warning", data={**result, "profile": profile})
+    return result
+
+
 def _norm_profiles(cfg: dict) -> list[dict]:
     profs = cfg.get("wifi_profiles")
     if not isinstance(profs, list):
@@ -1494,6 +1520,7 @@ def api_network_wifi_wps_status():
         set_wps_state({"active": False, "ifname": ifname, "finished_at_ts": time.time(), "result": phase["phase"]})
     if phase["phase"] == "connected":
         connected_ssid = (status.get("ssid") or "").strip()
+        ap_fallback = _disable_ap_after_wifi_uplink(ifname=ifname, reason="wps_connected")
         if connected_ssid:
             try:
                 wifi_profile_set(connected_ssid, PREFERRED_WIFI_PRIORITY, True)
@@ -1516,11 +1543,14 @@ def api_network_wifi_wps_status():
                     log_event("wps", "Could not persist connected SSID after WPS", level="warning", data={"ssid": connected_ssid, "detail": err})
             except Exception as exc:
                 log_event("wps", "Post-WPS config update failed", level="warning", data={"ssid": connected_ssid, "detail": str(exc)})
+    else:
+        ap_fallback = {"attempted": False, "disabled": False, "was_enabled": False, "ifname": ifname, "reason": ""}
     return _ok(
         {
             "ifname": ifname,
             "wps": {**phase, "target_ssid": wps_state.get("target_ssid", ""), "target_bssid": wps_state.get("target_bssid", "")},
             "wifi": status,
+            "ap_fallback": ap_fallback,
         }
     )
 
@@ -1578,7 +1608,8 @@ def api_wifi_connect():
     if not ok:
         return _error("config_write_failed", "Connected Wi-Fi but failed to persist profile", status=500, detail=err)
     log_event("wifi", "Connected to Wi-Fi network", data={"ssid": ssid, "ifname": ifname})
-    return _ok({**result, "persisted": True})
+    ap_fallback = _disable_ap_after_wifi_uplink(ifname=ifname, reason="wifi_connect")
+    return _ok({**result, "persisted": True, "ap_fallback": ap_fallback})
 
 
 @bp_network.post("/api/network/wifi/connect")
