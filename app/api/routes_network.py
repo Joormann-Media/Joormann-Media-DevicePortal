@@ -486,6 +486,11 @@ def api_network_info():
             try:
                 ap_status = get_ap_status()
                 if not bool(ap_status.get("active")):
+                    try:
+                        set_wifi_enabled(True)
+                    except NetControlError:
+                        # Continue with AP activation attempt; script may recover itself.
+                        pass
                     set_ap_enabled(True)
                     setup_mode["ap_auto_enabled"] = True
                     log_event(

@@ -4,7 +4,7 @@ import os
 import threading
 import time
 
-from app.core.netcontrol import NetControlError, get_ap_status, get_network_info, set_ap_enabled
+from app.core.netcontrol import NetControlError, get_ap_status, get_network_info, set_ap_enabled, set_wifi_enabled
 from app.core.network_events import log_event
 
 _thread_lock = threading.Lock()
@@ -47,6 +47,13 @@ def _run_check_once() -> None:
     ap = get_ap_status()
     if bool(ap.get("active")):
         return
+
+    # Ensure radio/interface is enabled before trying hotspot profile activation.
+    try:
+        set_wifi_enabled(True)
+    except NetControlError:
+        # Continue; set_ap_enabled may still recover depending on device state.
+        pass
 
     set_ap_enabled(True)
     ap_after = get_ap_status()
