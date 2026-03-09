@@ -67,6 +67,16 @@ def _is_ap_request() -> bool:
     return False
 
 
+def _is_local_display_request() -> bool:
+    remote_addr = (request.remote_addr or "").strip()
+    if not remote_addr:
+        return False
+    try:
+        return ipaddress.ip_address(remote_addr).is_loopback
+    except ValueError:
+        return False
+
+
 def _login_template_name() -> str:
     return "login_ap.html" if _is_ap_request() else "login.html"
 
@@ -77,6 +87,10 @@ def _force_local_auth_mode(setup_mode: dict) -> bool:
 
 @bp_auth.get("/login")
 def login_page():
+    setup_mode = detect_connectivity_setup_mode()
+    if bool(setup_mode.get("active")) and _is_local_display_request():
+        return redirect(url_for("ui.ap_display"))
+
     if is_authenticated():
         next_url = _safe_next(request.args.get("next") or "/")
         if _is_ap_request() and next_url == "/":
@@ -85,7 +99,6 @@ def login_page():
 
     cfg = ensure_config()
     dev = ensure_device()
-    setup_mode = detect_connectivity_setup_mode()
     force_local_auth = _force_local_auth_mode(setup_mode)
     if not force_local_auth:
         refresh_link_targets_from_panel(cfg, dev)
