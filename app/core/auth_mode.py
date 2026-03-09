@@ -154,17 +154,27 @@ def linked_user_ids_from_config(cfg: dict) -> list[int]:
     return ids
 
 
-def resolve_auth_mode(cfg: dict) -> dict:
+def resolve_auth_mode(cfg: dict, *, force_local: bool = False, force_reason: str = "") -> dict:
     panel_state = cfg.get("panel_link_state") if isinstance(cfg.get("panel_link_state"), dict) else {}
     linked = bool(panel_state.get("linked"))
     base = str(cfg.get("admin_base_url") or "").strip()
     user_ids = linked_user_ids_from_config(cfg)
 
-    if linked and base and user_ids:
+    if linked and base and user_ids and not force_local:
         return {
             "mode": "panel_remote",
             "reason": "panel_linked_with_user_links",
             "panel_linked": True,
+            "panel_base_url": base,
+            "linked_user_ids": user_ids,
+        }
+
+    if force_local:
+        reason = force_reason or "forced_local_mode"
+        return {
+            "mode": "local_system",
+            "reason": reason,
+            "panel_linked": linked,
             "panel_base_url": base,
             "linked_user_ids": user_ids,
         }

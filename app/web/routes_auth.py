@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, redirect, render_template, request, sessio
 from app.core.auth_local import LocalAuthError, authenticate_local_user, list_interactive_users
 from app.core.auth_mode import refresh_link_targets_from_panel, resolve_auth_mode
 from app.core.auth_panel import PanelAuthError, authenticate_via_panel, complete_panel_two_factor
+from app.core.connectivity_mode import detect_connectivity_setup_mode
 from app.core.auth_session import (
     clear_pending_panel_2fa,
     current_session,
@@ -46,8 +47,14 @@ def login_page():
 
     cfg = ensure_config()
     dev = ensure_device()
-    refresh_link_targets_from_panel(cfg, dev)
-    mode_info = resolve_auth_mode(cfg)
+    setup_mode = detect_connectivity_setup_mode()
+    if not bool(setup_mode.get("active")):
+        refresh_link_targets_from_panel(cfg, dev)
+    mode_info = resolve_auth_mode(
+        cfg,
+        force_local=bool(setup_mode.get("active")),
+        force_reason="connectivity_setup_mode",
+    )
     dev_mode = _is_dev_mode()
     pending_2fa = get_pending_panel_2fa() if mode_info["mode"] == "panel_remote" else {}
     return render_template(
@@ -62,6 +69,7 @@ def login_page():
         twofa_required=bool(pending_2fa),
         twofa_user=(pending_2fa.get("display_name") or pending_2fa.get("username") or "") if isinstance(pending_2fa, dict) else "",
         dev_mode=dev_mode,
+        connectivity_setup_mode=setup_mode,
     )
 
 
@@ -72,8 +80,14 @@ def login_submit():
 
     cfg = ensure_config()
     dev = ensure_device()
-    refresh_link_targets_from_panel(cfg, dev)
-    mode_info = resolve_auth_mode(cfg)
+    setup_mode = detect_connectivity_setup_mode()
+    if not bool(setup_mode.get("active")):
+        refresh_link_targets_from_panel(cfg, dev)
+    mode_info = resolve_auth_mode(
+        cfg,
+        force_local=bool(setup_mode.get("active")),
+        force_reason="connectivity_setup_mode",
+    )
     dev_mode = _is_dev_mode()
 
     username = (request.form.get("username") or request.form.get("_username") or "").strip()
@@ -81,6 +95,8 @@ def login_submit():
     next_url = _safe_next(request.form.get("next") or request.args.get("next") or "/")
     mode_override = (request.form.get("auth_mode_override") or "").strip()
     submit_mode = mode_override if mode_override in {"local_system", "panel_remote"} else mode_info["mode"]
+    if bool(setup_mode.get("active")):
+        submit_mode = "local_system"
 
     if not username or not password:
         return render_template(
@@ -95,6 +111,7 @@ def login_submit():
             twofa_required=False,
             twofa_user="",
             dev_mode=dev_mode,
+            connectivity_setup_mode=setup_mode,
         ), 400
 
     try:
@@ -126,6 +143,7 @@ def login_submit():
                     twofa_required=True,
                     twofa_user=str(pending_2fa.get("display_name") or pending_2fa.get("username") or username),
                     dev_mode=dev_mode,
+                    connectivity_setup_mode=setup_mode,
                 ), 200
             login_user(
                 username=str(result.get("username") or username),
@@ -154,6 +172,7 @@ def login_submit():
             twofa_required=has_pending_panel_2fa(),
             twofa_user="",
             dev_mode=dev_mode,
+            connectivity_setup_mode=setup_mode,
         ), 401
 
     return redirect(next_url)
@@ -165,7 +184,12 @@ def login_submit_2fa():
         return redirect(_safe_next(request.form.get("next") or request.args.get("next") or "/"))
 
     cfg = ensure_config()
-    mode_info = resolve_auth_mode(cfg)
+    setup_mode = detect_connectivity_setup_mode()
+    mode_info = resolve_auth_mode(
+        cfg,
+        force_local=bool(setup_mode.get("active")),
+        force_reason="connectivity_setup_mode",
+    )
     dev_mode = _is_dev_mode()
     next_url = _safe_next(request.form.get("next") or request.args.get("next") or "/")
     if mode_info["mode"] != "panel_remote":
@@ -187,6 +211,7 @@ def login_submit_2fa():
             twofa_required=False,
             twofa_user="",
             dev_mode=dev_mode,
+            connectivity_setup_mode=setup_mode,
         ), 401
 
     code = (request.form.get("otp_code") or request.form.get("_auth_code") or "").strip()
@@ -205,6 +230,7 @@ def login_submit_2fa():
             twofa_required=True,
             twofa_user=str(pending_2fa.get("display_name") or pending_2fa.get("username") or ""),
             dev_mode=dev_mode,
+            connectivity_setup_mode=setup_mode,
         ), 401
 
     login_user(
@@ -228,8 +254,14 @@ def logout_submit():
 def api_auth_mode():
     cfg = ensure_config()
     dev = ensure_device()
-    refresh_link_targets_from_panel(cfg, dev)
-    mode_info = resolve_auth_mode(cfg)
+    setup_mode = detect_connectivity_setup_mode()
+    if not bool(setup_mode.get("active")):
+        refresh_link_targets_from_panel(cfg, dev)
+    mode_info = resolve_auth_mode(
+        cfg,
+        force_local=bool(setup_mode.get("active")),
+        force_reason="connectivity_setup_mode",
+    )
     return jsonify(
         ok=True,
         mode=mode_info["mode"],
@@ -239,6 +271,7 @@ def api_auth_mode():
         linked_user_ids=list(mode_info.get("linked_user_ids") or []),
         linked_user_count=len(mode_info.get("linked_user_ids") or []),
         panel_base_url=str(mode_info.get("panel_base_url") or ""),
+        connectivity_setup_mode=setup_mode,
     )
 
 
@@ -246,8 +279,14 @@ def api_auth_mode():
 def api_auth_status():
     cfg = ensure_config()
     dev = ensure_device()
-    refresh_link_targets_from_panel(cfg, dev)
-    mode_info = resolve_auth_mode(cfg)
+    setup_mode = detect_connectivity_setup_mode()
+    if not bool(setup_mode.get("active")):
+        refresh_link_targets_from_panel(cfg, dev)
+    mode_info = resolve_auth_mode(
+        cfg,
+        force_local=bool(setup_mode.get("active")),
+        force_reason="connectivity_setup_mode",
+    )
     auth = current_session()
     return jsonify(
         ok=True,
@@ -255,14 +294,20 @@ def api_auth_status():
         auth=auth,
         mode=mode_info["mode"],
         mode_label=_mode_human(mode_info["mode"]),
+        connectivity_setup_mode=setup_mode,
     )
 
 
 @bp_auth.get("/api/auth/local-users")
 def api_auth_local_users():
     cfg = ensure_config()
-    mode_info = resolve_auth_mode(cfg)
+    setup_mode = detect_connectivity_setup_mode()
+    mode_info = resolve_auth_mode(
+        cfg,
+        force_local=bool(setup_mode.get("active")),
+        force_reason="connectivity_setup_mode",
+    )
     if mode_info["mode"] != "local_system":
-        return jsonify(ok=True, users=[], count=0, mode=mode_info["mode"])
+        return jsonify(ok=True, users=[], count=0, mode=mode_info["mode"], connectivity_setup_mode=setup_mode)
     users = list_interactive_users()
-    return jsonify(ok=True, users=users, count=len(users), mode=mode_info["mode"])
+    return jsonify(ok=True, users=users, count=len(users), mode=mode_info["mode"], connectivity_setup_mode=setup_mode)

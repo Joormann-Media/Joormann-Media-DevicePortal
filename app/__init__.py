@@ -13,6 +13,7 @@ from app.api.routes_status import bp_status
 from app.api.routes_stream import bp_stream
 from app.core.auth_mode import resolve_auth_mode
 from app.core.auth_session import is_authenticated
+from app.core.connectivity_mode import detect_connectivity_setup_mode
 from app.core.connectivity_watchdog import start_connectivity_watchdog
 from app.core.config import ensure_config
 from app.core.device import ensure_device
@@ -79,7 +80,12 @@ def create_app() -> Flask:
         if is_authenticated():
             return None
 
-        mode_info = resolve_auth_mode(ensure_config())
+        setup_mode = detect_connectivity_setup_mode()
+        mode_info = resolve_auth_mode(
+            ensure_config(),
+            force_local=bool(setup_mode.get("active")),
+            force_reason="connectivity_setup_mode",
+        )
         if path.startswith("/api/"):
             return (
                 jsonify(
@@ -88,6 +94,7 @@ def create_app() -> Flask:
                     detail="Bitte zuerst im DevicePortal einloggen.",
                     auth_mode=mode_info.get("mode", "local_system"),
                     auth_reason=mode_info.get("reason", ""),
+                    connectivity_setup_mode=setup_mode,
                 ),
                 401,
             )
