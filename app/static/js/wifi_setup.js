@@ -81,9 +81,66 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
+  function collapseMeshScanNetworks(networks) {
+    if (!Array.isArray(networks)) return [];
+    const grouped = new Map();
+
+    for (const raw of networks) {
+      const item = raw && typeof raw === "object" ? raw : {};
+      const ssid = String(item.ssid || "").trim();
+      const hidden = !ssid || ssid === "<hidden>";
+      const key = hidden ? `hidden:${String(item.bssid || "").trim().toLowerCase() || Math.random().toString(36).slice(2)}` : `ssid:${ssid.toLowerCase()}`;
+      const signal = Number.isFinite(Number(item.signal)) ? Number(item.signal) : 0;
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          ...item,
+          ssid: ssid || "<hidden>",
+          signal,
+          in_use: !!item.in_use,
+          mesh_nodes: 1,
+          _securities: new Set([(item.security || "OPEN").toString().trim() || "OPEN"]),
+        });
+        continue;
+      }
+
+      const current = grouped.get(key);
+      current.mesh_nodes += 1;
+      current._securities.add((item.security || "OPEN").toString().trim() || "OPEN");
+
+      const better =
+        (!!item.in_use && !current.in_use) ||
+        (!!item.in_use === !!current.in_use && signal > Number(current.signal || 0));
+      if (better) {
+        grouped.set(key, {
+          ...current,
+          ...item,
+          ssid: ssid || "<hidden>",
+          signal,
+          in_use: !!item.in_use,
+          mesh_nodes: current.mesh_nodes,
+          _securities: current._securities,
+        });
+      }
+    }
+
+    const result = [];
+    for (const entry of grouped.values()) {
+      result.push({
+        ...entry,
+        security: Array.from(entry._securities).filter(Boolean).join(" "),
+      });
+    }
+    result.sort((a, b) => {
+      if (!!a.in_use !== !!b.in_use) return a.in_use ? -1 : 1;
+      return Number(b.signal || 0) - Number(a.signal || 0);
+    });
+    return result;
+  }
+
   function renderScanList(payload) {
     const data = payload.data || {};
-    const networks = Array.isArray(data.networks) ? data.networks : [];
+    const networks = collapseMeshScanNetworks(Array.isArray(data.networks) ? data.networks : []);
     const host = q("wifi-setup-scan-list");
     host.innerHTML = "";
     if (!networks.length) {
@@ -109,7 +166,8 @@
 
       const meta = document.createElement("div");
       meta.className = "text-secondary mb-2";
-      meta.textContent = `Security: ${net.security || "OPEN"}`;
+      const meshInfo = Number(net.mesh_nodes || 1) > 1 ? ` | Mesh-Knoten: ${Number(net.mesh_nodes || 1)}` : "";
+      meta.textContent = `Security: ${net.security || "OPEN"}${meshInfo}`;
 
       const actions = document.createElement("div");
       actions.className = "d-flex gap-2";

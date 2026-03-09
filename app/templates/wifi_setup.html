@@ -23,10 +23,14 @@
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
         <div>
           <h1 class="h4 mb-1">WLAN Setup</h1>
-          <div class="small text-secondary">Nur WLAN-Konfiguration für den AP/Setup-Modus.</div>
+          <div class="small text-secondary">WLAN verwalten (im AP-Setup und im normalen Browser nutzbar).</div>
         </div>
         <div class="d-flex align-items-center gap-2">
-          <span class="badge text-bg-warning text-dark">AP Setup</span>
+          {% if connectivity_setup_mode is defined and connectivity_setup_mode.active %}
+          <span class="badge text-bg-warning text-dark">AP Setup aktiv</span>
+          {% else %}
+          <span class="badge text-bg-secondary">WLAN Manager</span>
+          {% endif %}
           <span class="badge text-bg-light border text-dark">{{ hostname }} / {{ ip }}</span>
           <form method="post" action="{{ url_for('auth.logout_submit') }}" class="d-inline">
             <button type="submit" class="btn btn-outline-secondary btn-sm">Logout</button>

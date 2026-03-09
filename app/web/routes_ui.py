@@ -98,10 +98,11 @@ def index():
 def wifi_setup():
     cfg = ensure_config()
     setup_mode = detect_connectivity_setup_mode()
+    ap_request = _is_ap_request()
     auth_mode = resolve_auth_mode(
         cfg,
-        force_local=True,
-        force_reason="ap_wifi_setup_page",
+        force_local=bool(setup_mode.get("active")) or ap_request,
+        force_reason="wifi_setup_page",
     )
     auth_state = current_session()
 
@@ -111,6 +112,7 @@ def wifi_setup():
         ip=get_ip(),
         auth_mode=auth_mode,
         connectivity_setup_mode=setup_mode,
+        ap_request=ap_request,
         auth_state=auth_state,
     )
 
