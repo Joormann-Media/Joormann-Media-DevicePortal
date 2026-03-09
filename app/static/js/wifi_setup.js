@@ -1,4 +1,6 @@
 (() => {
+  let wifiRadioEnabled = null;
+
   function q(id) {
     return document.getElementById(id);
   }
@@ -218,7 +220,17 @@
 
   function renderKnownProfiles(payload) {
     const data = payload.data || {};
-    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+    const unmanagedFallback = (Array.isArray(data.unmanaged) ? data.unmanaged : [])
+      .map((item) => ({
+        ssid: item.name || "",
+        priority: Number.isFinite(item.priority) ? item.priority : 0,
+        autoconnect: !!item.autoconnect,
+        nm: { uuid: item.uuid || "" },
+      }))
+      .filter((item) => item.ssid);
+    const profiles = (Array.isArray(data.profiles) && data.profiles.length)
+      ? data.profiles
+      : ((Array.isArray(data.configured) && data.configured.length) ? data.configured : unmanagedFallback);
     const host = q("wifi-setup-known-list");
     host.innerHTML = "";
 
@@ -289,6 +301,14 @@
     }
   }
 
+  function renderRadioState(enabled) {
+    wifiRadioEnabled = !!enabled;
+    const el = q("wifi-setup-radio-status");
+    if (el) {
+      el.textContent = wifiRadioEnabled ? "AN" : "AUS";
+    }
+  }
+
   async function refreshWifiStatus() {
     const payload = await fetchJson("/api/network/wifi/status");
     renderWifiStatus(payload);
@@ -302,6 +322,33 @@
   async function refreshKnownProfiles() {
     const payload = await fetchJson("/api/wifi/profiles");
     renderKnownProfiles(payload);
+  }
+
+  async function refreshRadioState() {
+    const payload = await fetchJson("/api/network/info");
+    const data = payload.data || {};
+    const interfaces = data.interfaces || {};
+    const wifi = interfaces.wifi || {};
+    renderRadioState(!!wifi.enabled);
+  }
+
+  async function toggleWifiRadio(enabled) {
+    await fetchJson("/api/network/wifi/toggle", {
+      method: "POST",
+      body: { enabled: !!enabled },
+    });
+    toast(enabled ? "WLAN Adapter eingeschaltet." : "WLAN Adapter ausgeschaltet.", "success");
+    await refreshAll();
+  }
+
+  async function requestReboot() {
+    const ok = window.confirm("Raspberry Pi jetzt neu starten?");
+    if (!ok) return;
+    await fetchJson("/api/system/power", {
+      method: "POST",
+      body: { action: "reboot" },
+    });
+    toast("Neustart wurde angefordert.", "success");
   }
 
   async function refreshWpsAndLogs() {
@@ -337,6 +384,7 @@
   }
 
   async function refreshAll() {
+    await refreshRadioState();
     await refreshWifiStatus();
     await refreshScan();
     await refreshKnownProfiles();
@@ -358,6 +406,9 @@
     q("btn-wifi-setup-connect").addEventListener("click", () => run(manualConnect));
     q("btn-wifi-setup-wps").addEventListener("click", () => run(startWps));
     q("btn-wifi-setup-wps-refresh").addEventListener("click", () => run(refreshWpsAndLogs));
+    q("btn-wifi-setup-radio-on").addEventListener("click", () => run(() => toggleWifiRadio(true)));
+    q("btn-wifi-setup-radio-off").addEventListener("click", () => run(() => toggleWifiRadio(false)));
+    q("btn-wifi-setup-reboot").addEventListener("click", () => run(requestReboot));
   }
 
   window.addEventListener("DOMContentLoaded", async () => {
