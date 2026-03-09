@@ -452,10 +452,54 @@ def _network_security_catalog(cfg: dict, network_info: dict, bt_paired: list[dic
     }
 
 
+def _has_uplink(network_info: dict) -> bool:
+    interfaces = (network_info or {}).get("interfaces") or {}
+    lan = interfaces.get("lan") or {}
+    wifi = interfaces.get("wifi") or {}
+
+    lan_up = bool(lan.get("carrier")) or bool(_norm_text(lan.get("ip")))
+    wifi_up = bool(wifi.get("connected"))
+    return bool(lan_up or wifi_up)
+
+
 @bp_network.get("/api/network/info")
 def api_network_info():
     try:
         info = get_network_info()
+        setup_mode_active = not _has_uplink(info)
+        setup_mode = {
+            "active": setup_mode_active,
+            "reason": "missing_lan_and_wifi_uplink" if setup_mode_active else "uplink_available",
+            "message": (
+                "Kein LAN/WLAN-Uplink erkannt. AP/Hotspot wird als Setup-Fallback aktiv gehalten."
+                if setup_mode_active
+                else "Uplink verfügbar."
+            ),
+            "ap_auto_enable_attempted": False,
+            "ap_auto_enabled": False,
+            "ap_error": "",
+            "ap": {},
+        }
+
+        if setup_mode_active:
+            setup_mode["ap_auto_enable_attempted"] = True
+            try:
+                ap_status = get_ap_status()
+                if not bool(ap_status.get("active")):
+                    set_ap_enabled(True)
+                    setup_mode["ap_auto_enabled"] = True
+                    log_event(
+                        "ap",
+                        "AP auto-enabled because no LAN/WLAN uplink is available",
+                        level="warning",
+                        data={"reason": "missing_lan_and_wifi_uplink"},
+                    )
+                    ap_status = get_ap_status()
+                setup_mode["ap"] = ap_status
+            except NetControlError as exc:
+                setup_mode["ap_error"] = f"{exc.code}: {exc.message}"
+
+        info["connectivity_setup_mode"] = setup_mode
         cfg = ensure_config()
         profile = _get_network_security_profile(cfg)
         try:

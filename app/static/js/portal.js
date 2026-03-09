@@ -50,6 +50,13 @@
     network: null,
     storage: null,
   };
+  const connectivitySetupState = {
+    active: false,
+    reason: "",
+    message: "",
+    ap: {},
+  };
+  let connectivitySetupFocusDone = false;
 
   const REQUEST_TIMEOUTS = {
     panelUrlTestMs: 15000,
@@ -232,6 +239,62 @@
     const num = Number(value || 0);
     if (!Number.isFinite(num)) return 0;
     return Math.max(0, Math.min(100, Math.round(num)));
+  }
+
+  function applyConnectivitySetupMode(payload) {
+    const setup = payload && typeof payload === "object" ? payload : {};
+    const active = !!setup.active;
+    connectivitySetupState.active = active;
+    connectivitySetupState.reason = String(setup.reason || "");
+    connectivitySetupState.message = String(setup.message || "");
+    connectivitySetupState.ap = (setup.ap && typeof setup.ap === "object") ? setup.ap : {};
+
+    for (const el of document.querySelectorAll("[data-connectivity-setup-hide='1']")) {
+      el.classList.toggle("d-none", active);
+    }
+
+    const banner = q("connectivity-setup-banner");
+    if (banner) {
+      banner.classList.toggle("d-none", !active);
+    }
+
+    const inline = q("network-setup-inline");
+    if (inline) {
+      inline.classList.toggle("d-none", !active);
+    }
+
+    const ssid = String(connectivitySetupState.ap.ssid || "").trim() || "jm-hotspot";
+    const url = String(connectivitySetupState.ap.portal_url || "").trim() || "http://192.168.4.1";
+    const ssidEl = q("connectivity-setup-ssid");
+    const urlEl = q("connectivity-setup-url");
+    if (ssidEl) ssidEl.textContent = ssid;
+    if (urlEl) urlEl.textContent = url;
+
+    const applyBtn = q("btn-wifi-profiles-apply");
+    if (applyBtn) {
+      applyBtn.classList.toggle("d-none", active);
+    }
+
+    if (!active) {
+      connectivitySetupFocusDone = false;
+      return;
+    }
+
+    if (!connectivitySetupFocusDone) {
+      const systemTab = q("system-tab");
+      const wifiSubTab = q("system-sub-wifi-tab");
+      if (systemTab && window.bootstrap && window.bootstrap.Tab) {
+        window.bootstrap.Tab.getOrCreateInstance(systemTab).show();
+      } else if (systemTab) {
+        systemTab.click();
+      }
+      if (wifiSubTab && window.bootstrap && window.bootstrap.Tab) {
+        window.bootstrap.Tab.getOrCreateInstance(wifiSubTab).show();
+      } else if (wifiSubTab) {
+        wifiSubTab.click();
+      }
+      connectivitySetupFocusDone = true;
+    }
   }
 
   function updateLocalVersion(update) {
@@ -1342,6 +1405,7 @@
     const bt = (data.interfaces || {}).bluetooth || {};
     const routes = data.routes || {};
     const tailscale = data.tailscale || {};
+    applyConnectivitySetupMode(data.connectivity_setup_mode || {});
 
     q("net-hostname").textContent = data.hostname || "-";
     q("net-gateway").textContent = routes.gateway || "-";
@@ -2879,7 +2943,11 @@
       delBtn.className = "btn btn-outline-danger btn-sm";
       delBtn.textContent = "Löschen";
       delBtn.addEventListener("click", () => run(() => wifiProfileDelete(ssid, item?.nm?.uuid || "")));
-      actions.append(upBtn, wpsBtn, prefBtn, delBtn);
+      if (connectivitySetupState.active) {
+        actions.append(upBtn, wpsBtn);
+      } else {
+        actions.append(upBtn, wpsBtn, prefBtn, delBtn);
+      }
       row.append(top, actions);
       host.append(row);
     }

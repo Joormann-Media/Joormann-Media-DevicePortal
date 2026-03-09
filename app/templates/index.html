@@ -18,6 +18,16 @@
 <body class="portal-body">
   <div class="container py-4 py-lg-5">
     <div id="alert-host" class="alert-host"></div>
+    <div id="connectivity-setup-banner" class="alert alert-warning d-none mb-3" role="alert">
+      <div class="fw-semibold mb-1">Setup-Modus aktiv</div>
+      <div class="small mb-1">
+        Kein LAN/WLAN-Uplink erkannt. Der Hotspot wurde als Fallback aktiviert.
+      </div>
+      <div class="small">
+        Verbinde dich mit <strong id="connectivity-setup-ssid">Hotspot</strong> und öffne
+        <code id="connectivity-setup-url">http://192.168.4.1</code>.
+      </div>
+    </div>
 
     <section class="portal-hero p-4 p-lg-5 mb-4">
       <div class="row align-items-center g-4">
@@ -343,14 +353,19 @@
       <div class="tab-pane fade" id="network-pane" role="tabpanel" aria-labelledby="network-tab">
         <div class="row g-3">
           <div class="col-12">
+            <div id="network-setup-inline" class="alert alert-warning py-2 mb-0 d-none">
+              <strong>Setup-Modus:</strong> Bitte WLAN scannen, SSID auswählen/Passwort eingeben oder WPS starten.
+            </div>
+          </div>
+          <div class="col-12">
             <div class="portal-card p-3">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h2 class="h5 mb-0">Netzwerk Übersicht</h2>
                 <div class="d-flex gap-2">
                   <button id="btn-refresh-network" class="btn btn-dark btn-sm">Refresh Network Info</button>
                   <button id="btn-wps" class="btn btn-outline-primary btn-sm">WPS starten</button>
-                  <button id="btn-wifi-toggle" class="btn btn-outline-secondary btn-sm">Wi-Fi Toggle</button>
-                  <button id="btn-lan-toggle" class="btn btn-outline-secondary btn-sm">LAN Toggle</button>
+                  <button id="btn-wifi-toggle" class="btn btn-outline-secondary btn-sm" data-connectivity-setup-hide="1">Wi-Fi Toggle</button>
+                  <button id="btn-lan-toggle" class="btn btn-outline-secondary btn-sm" data-connectivity-setup-hide="1">LAN Toggle</button>
                 </div>
               </div>
               <div class="mt-2 small text-secondary">
@@ -365,7 +380,7 @@
             </div>
           </div>
 
-          <div class="col-12 col-lg-4">
+          <div class="col-12 col-lg-4" data-connectivity-setup-hide="1">
             <div class="portal-card p-3 h-100">
               <h3 class="h6">LAN</h3>
               <dl class="portal-kv mb-0">
@@ -399,7 +414,7 @@
             </div>
           </div>
 
-          <div class="col-12 col-lg-4">
+          <div class="col-12 col-lg-4" data-connectivity-setup-hide="1">
             <div class="portal-card p-3 h-100">
               <h3 class="h6">System Netz</h3>
               <dl class="portal-kv mb-0">
