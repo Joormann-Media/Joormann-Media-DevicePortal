@@ -173,27 +173,56 @@
 
       const actions = document.createElement("div");
       actions.className = "d-flex gap-2";
+      const inlineConnect = document.createElement("div");
+      inlineConnect.className = "mt-2 d-none";
+      const inlineRow = document.createElement("div");
+      inlineRow.className = "d-flex flex-wrap gap-2";
+      const inlinePw = document.createElement("input");
+      inlinePw.type = "password";
+      inlinePw.className = "form-control form-control-sm";
+      inlinePw.style.maxWidth = "320px";
+      inlinePw.placeholder = "Passwort (leer für OPEN/WPS)";
+      const inlineSubmit = document.createElement("button");
+      inlineSubmit.className = "btn btn-primary btn-sm";
+      inlineSubmit.textContent = "Jetzt verbinden";
+      const inlineCancel = document.createElement("button");
+      inlineCancel.className = "btn btn-outline-secondary btn-sm";
+      inlineCancel.textContent = "Abbrechen";
+      inlineRow.append(inlinePw, inlineSubmit, inlineCancel);
+      inlineConnect.append(inlineRow);
 
       const connectBtn = document.createElement("button");
       connectBtn.className = "btn btn-outline-primary btn-sm";
       connectBtn.textContent = "Verbinden";
       connectBtn.addEventListener("click", async () => {
+        const ssid = net.ssid || "";
+        if (!ssid || ssid === "<hidden>") {
+          toast("Hidden SSID bitte manuell unten eintragen.", "secondary");
+          return;
+        }
+        inlineConnect.classList.remove("d-none");
+        inlinePw.focus();
+      });
+
+      inlineSubmit.addEventListener("click", async () => {
         try {
           const ssid = net.ssid || "";
-          if (!ssid || ssid === "<hidden>") {
-            toast("Hidden SSID bitte manuell unten eintragen.", "secondary");
-            return;
-          }
-          const pw = window.prompt(`Passwort für \"${ssid}\" (leer für open/WPS):`, "") || "";
+          const pw = inlinePw.value || "";
           await fetchJson("/api/wifi/connect", {
             method: "POST",
             body: { ssid, password: pw, ifname: "wlan0", hidden: false },
           });
           toast(`WLAN verbunden/angefragt: ${ssid}`, "success");
+          inlineConnect.classList.add("d-none");
+          inlinePw.value = "";
           await refreshAll();
         } catch (err) {
           toast(err.message || String(err), "danger");
         }
+      });
+      inlineCancel.addEventListener("click", () => {
+        inlineConnect.classList.add("d-none");
+        inlinePw.value = "";
       });
 
       const wpsBtn = document.createElement("button");
@@ -213,7 +242,7 @@
       });
 
       actions.append(connectBtn, wpsBtn);
-      row.append(top, meta, actions);
+      row.append(top, meta, actions, inlineConnect);
       host.append(row);
     }
   }

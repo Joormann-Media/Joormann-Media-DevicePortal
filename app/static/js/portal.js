@@ -2895,6 +2895,23 @@
 
       const actions = document.createElement("div");
       actions.className = "d-flex gap-2";
+      const inlineConnect = document.createElement("div");
+      inlineConnect.className = "mt-2 d-none";
+      const inlineRow = document.createElement("div");
+      inlineRow.className = "d-flex flex-wrap gap-2";
+      const inlinePw = document.createElement("input");
+      inlinePw.type = "password";
+      inlinePw.className = "form-control form-control-sm";
+      inlinePw.style.maxWidth = "320px";
+      inlinePw.placeholder = "Passwort (leer für OPEN/WPS)";
+      const inlineSubmit = document.createElement("button");
+      inlineSubmit.className = "btn btn-primary btn-sm";
+      inlineSubmit.textContent = "Jetzt verbinden";
+      const inlineCancel = document.createElement("button");
+      inlineCancel.className = "btn btn-outline-secondary btn-sm";
+      inlineCancel.textContent = "Abbrechen";
+      inlineRow.append(inlinePw, inlineSubmit, inlineCancel);
+      inlineConnect.append(inlineRow);
       const selectBtn = document.createElement("button");
       selectBtn.className = "btn btn-outline-dark btn-sm";
       selectBtn.textContent = "WPS Ziel";
@@ -2905,13 +2922,29 @@
       const connectBtn = document.createElement("button");
       connectBtn.className = "btn btn-outline-primary btn-sm";
       connectBtn.textContent = "Verbinden";
-      connectBtn.addEventListener("click", () => run(() => connectSsid(item.ssid || "")));
+      connectBtn.addEventListener("click", () => {
+        if (!item.ssid || item.ssid === "<hidden>") {
+          toast("Hidden SSID bitte manuell hinzufügen.", "secondary");
+          return;
+        }
+        inlineConnect.classList.remove("d-none");
+        inlinePw.focus();
+      });
+      inlineSubmit.addEventListener("click", () => run(async () => {
+        await connectSsid(item.ssid || "", inlinePw.value || "");
+        inlineConnect.classList.add("d-none");
+        inlinePw.value = "";
+      }));
+      inlineCancel.addEventListener("click", () => {
+        inlineConnect.classList.add("d-none");
+        inlinePw.value = "";
+      });
       const wpsBtn = document.createElement("button");
       wpsBtn.className = "btn btn-outline-secondary btn-sm";
       wpsBtn.textContent = "WPS";
       wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: item.ssid || "", bssid: item.bssid || "" })));
       actions.append(selectBtn, connectBtn, wpsBtn);
-      row.append(top, meta, actions);
+      row.append(top, meta, actions, inlineConnect);
       host.append(row);
     }
   }
