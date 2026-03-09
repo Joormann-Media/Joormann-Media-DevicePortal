@@ -32,7 +32,7 @@
           <span class="badge text-bg-secondary">WLAN Manager</span>
           {% endif %}
           <span class="badge text-bg-light border text-dark">{{ hostname }} / {{ ip }}</span>
-          <button id="btn-wifi-setup-wps-hero" class="btn btn-outline-primary btn-sm">WPS starten</button>
+          <button type="button" id="btn-wifi-setup-wps-hero" class="btn btn-outline-primary btn-sm">WPS starten</button>
           <form method="post" action="{{ url_for('auth.logout_submit') }}" class="d-inline">
             <button type="submit" class="btn btn-outline-secondary btn-sm">Logout</button>
           </form>
@@ -50,7 +50,7 @@
         <section class="portal-card p-3 h-100">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h2 class="h6 mb-0">Aktueller WLAN-Status</h2>
-            <button id="btn-wifi-setup-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+            <button type="button" id="btn-wifi-setup-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
           </div>
           <dl class="portal-kv mb-2">
             <dt>Interface</dt><dd id="wifi-setup-ifname">-</dd>
@@ -68,7 +68,7 @@
         <section class="portal-card p-3 h-100">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h2 class="h6 mb-0">WLAN Netze</h2>
-            <button id="btn-wifi-setup-scan" class="btn btn-outline-dark btn-sm">Scan</button>
+            <button type="button" id="btn-wifi-setup-scan" class="btn btn-outline-dark btn-sm">Scan</button>
           </div>
           <div id="wifi-setup-scan-list" class="list-group list-group-flush small">
             <div class="text-secondary">Noch kein Scan ausgeführt.</div>
@@ -80,7 +80,7 @@
         <section class="portal-card p-3 h-100">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h2 class="h6 mb-0">Bekannte WLANs</h2>
-            <button id="btn-wifi-setup-known-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+            <button type="button" id="btn-wifi-setup-known-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
           </div>
           <div id="wifi-setup-known-list" class="list-group list-group-flush small">
             <div class="text-secondary">Noch keine bekannten WLAN-Profile geladen.</div>
@@ -95,9 +95,9 @@
             WLAN-Adapter Status: <strong id="wifi-setup-radio-status">-</strong>
           </div>
           <div class="d-flex flex-wrap gap-2">
-            <button id="btn-wifi-setup-radio-on" class="btn btn-outline-success btn-sm">WLAN Adapter EIN</button>
-            <button id="btn-wifi-setup-radio-off" class="btn btn-outline-warning btn-sm">WLAN Adapter AUS</button>
-            <button id="btn-wifi-setup-reboot" class="btn btn-outline-danger btn-sm">Raspi Neustart</button>
+            <button type="button" id="btn-wifi-setup-radio-on" class="btn btn-outline-success btn-sm">WLAN Adapter EIN</button>
+            <button type="button" id="btn-wifi-setup-radio-off" class="btn btn-outline-warning btn-sm">WLAN Adapter AUS</button>
+            <button type="button" id="btn-wifi-setup-reboot" class="btn btn-outline-danger btn-sm">Raspi Neustart</button>
           </div>
         </section>
       </div>
@@ -113,7 +113,7 @@
               <input id="wifi-setup-manual-password" class="form-control form-control-sm" type="password" placeholder="Passwort (optional)">
             </div>
             <div class="col-12 d-grid">
-              <button id="btn-wifi-setup-connect" class="btn btn-outline-primary btn-sm">Verbinden & speichern</button>
+              <button type="button" id="btn-wifi-setup-connect" class="btn btn-outline-primary btn-sm">Verbinden & speichern</button>
             </div>
           </div>
         </section>
@@ -124,8 +124,8 @@
           <h2 class="h6 mb-2">WPS</h2>
           <div class="small text-secondary mb-2">Vorher am Router WPS-Taste drücken, dann hier WPS starten.</div>
           <div class="d-flex gap-2 mb-2">
-            <button id="btn-wifi-setup-wps" class="btn btn-outline-primary btn-sm">WPS starten</button>
-            <button id="btn-wifi-setup-wps-refresh" class="btn btn-outline-secondary btn-sm">WPS Status</button>
+            <button type="button" id="btn-wifi-setup-wps" class="btn btn-outline-primary btn-sm">WPS starten</button>
+            <button type="button" id="btn-wifi-setup-wps-refresh" class="btn btn-outline-secondary btn-sm">WPS Status</button>
           </div>
           <pre id="wifi-setup-log" class="code-block mb-0" style="max-height:220px; overflow:auto;">-</pre>
         </section>

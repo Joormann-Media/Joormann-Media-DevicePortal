@@ -27,15 +27,35 @@
   }
 
   async function fetchJson(url, options = {}) {
+    const timeoutMs = Number(options.timeoutMs || 0);
     const opts = {
       headers: { Accept: "application/json" },
       ...options,
     };
+    delete opts.timeoutMs;
     if (opts.body && typeof opts.body !== "string") {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(opts.body);
     }
-    const res = await fetch(url, opts);
+    let timeoutHandle = null;
+    if (timeoutMs > 0 && typeof AbortController !== "undefined") {
+      const controller = new AbortController();
+      opts.signal = controller.signal;
+      timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
+    }
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (err) {
+      if (err && typeof err === "object" && err.name === "AbortError") {
+        throw new Error("Zeitüberschreitung beim Server-Request.");
+      }
+      throw new Error("Netzwerkverbindung unterbrochen (AP/WLAN Wechsel).");
+    } finally {
+      if (timeoutHandle !== null) {
+        window.clearTimeout(timeoutHandle);
+      }
+    }
     const txt = await res.text();
     let payload = {};
     try {
@@ -184,15 +204,18 @@
       inlinePw.style.maxWidth = "320px";
       inlinePw.placeholder = "Passwort (leer für OPEN/WPS)";
       const inlineSubmit = document.createElement("button");
+      inlineSubmit.type = "button";
       inlineSubmit.className = "btn btn-primary btn-sm";
       inlineSubmit.textContent = "Jetzt verbinden";
       const inlineCancel = document.createElement("button");
+      inlineCancel.type = "button";
       inlineCancel.className = "btn btn-outline-secondary btn-sm";
       inlineCancel.textContent = "Abbrechen";
       inlineRow.append(inlinePw, inlineSubmit, inlineCancel);
       inlineConnect.append(inlineRow);
 
       const connectBtn = document.createElement("button");
+      connectBtn.type = "button";
       connectBtn.className = "btn btn-outline-primary btn-sm";
       connectBtn.textContent = "Verbinden";
       connectBtn.addEventListener("click", async () => {
@@ -227,6 +250,7 @@
       });
 
       const wpsBtn = document.createElement("button");
+      wpsBtn.type = "button";
       wpsBtn.className = "btn btn-outline-secondary btn-sm";
       wpsBtn.textContent = "WPS";
       wpsBtn.addEventListener("click", () => run(() => startWps({ ssid: net.ssid || "", bssid: "" }, "btn-wifi-setup-wps")));
@@ -281,6 +305,7 @@
       actions.className = "d-flex gap-2 mt-2";
 
       const connectBtn = document.createElement("button");
+      connectBtn.type = "button";
       connectBtn.className = "btn btn-outline-primary btn-sm";
       connectBtn.textContent = "Verbinden";
       connectBtn.addEventListener("click", async () => {
@@ -297,6 +322,7 @@
       });
 
       const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
       deleteBtn.className = "btn btn-outline-danger btn-sm";
       deleteBtn.textContent = "Löschen";
       deleteBtn.addEventListener("click", async () => {
@@ -414,6 +440,7 @@
     try {
       let triggerError = null;
       const payloadBody = { ifname: "wlan0" };
+      payloadBody.async_safe = true;
       if (selectedWpsTarget && selectedWpsTarget.ssid) {
         payloadBody.target_ssid = selectedWpsTarget.ssid;
       }

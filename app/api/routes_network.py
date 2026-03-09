@@ -205,7 +205,7 @@ def _norm_profiles(cfg: dict) -> list[dict]:
     return list(unique.values())
 
 
-def _is_ap_client_request() -> bool:
+def _is_ap_client_request(ifname: str = "wlan0") -> bool:
     remote_addr = (request.remote_addr or "").strip()
     if not remote_addr:
         return False
@@ -213,7 +213,30 @@ def _is_ap_client_request() -> bool:
         remote_ip = ipaddress.ip_address(remote_addr)
     except ValueError:
         return False
-    return remote_ip in ipaddress.ip_network("192.168.4.0/24")
+    if remote_ip.is_loopback:
+        return False
+
+    candidate_networks: list[ipaddress._BaseNetwork] = []
+    for cidr in ("192.168.4.0/24", "10.42.0.0/24"):
+        try:
+            candidate_networks.append(ipaddress.ip_network(cidr, strict=False))
+        except ValueError:
+            pass
+
+    try:
+        ap_status = get_ap_status(ifname=ifname)
+    except NetControlError:
+        ap_status = {}
+
+    ap_ip = str((ap_status or {}).get("ip") or "").strip()
+    if ap_ip:
+        try:
+            # AP scripts expose IP only; use /24 as sane default for hotspot subnets.
+            candidate_networks.append(ipaddress.ip_network(f"{ap_ip}/24", strict=False))
+        except ValueError:
+            pass
+
+    return any(remote_ip in net for net in candidate_networks)
 
 
 def _run_wps_start_async(ifname: str, target_bssid: str, target_ssid: str) -> None:
