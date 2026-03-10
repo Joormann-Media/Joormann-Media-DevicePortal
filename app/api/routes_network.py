@@ -369,6 +369,19 @@ def _norm_mac(value: object) -> str:
     return _norm_text(value).upper()
 
 
+def _is_unknown_connection_detail(detail: str) -> bool:
+    text = (detail or "").strip().lower()
+    if not text:
+        return False
+    markers = (
+        "unknown connection",
+        "unknown connections",
+        "unbekannte verbindung",
+        "nicht gefunden",
+    )
+    return any(marker in text for marker in markers)
+
+
 def _normalize_network_security(raw: object) -> dict:
     data = raw if isinstance(raw, dict) else {}
     trusted_wifi_raw = data.get("trusted_wifi")
@@ -1885,11 +1898,17 @@ def api_wifi_profiles_add():
     except NetControlError as exc:
         connect_error = exc.detail or exc.message
 
+    profile_sync_warning = ""
     try:
         wifi_profile_set(ssid=ssid, priority=priority, autoconnect=autoconnect)
     except NetControlError as exc:
-        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
-        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+        detail = exc.detail or exc.message
+        if _is_unknown_connection_detail(detail):
+            profile_sync_warning = "Profil ist im Portal gespeichert, aber in NetworkManager noch nicht vorhanden (SSID derzeit evtl. nicht erreichbar)."
+            log_event("wifi", "Wi-Fi profile saved in portal config without NM profile", level="warning", data={"ssid": ssid, "detail": detail})
+        else:
+            status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+            return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
     cfg = ensure_config()
     profiles = _norm_profiles(cfg)
@@ -1908,6 +1927,11 @@ def api_wifi_profiles_add():
     payload = {"ssid": ssid, "priority": priority, "autoconnect": autoconnect}
     if connect_error:
         payload["warning"] = f"Profil gespeichert, Verbindung nicht bestätigt: {connect_error}"
+    if profile_sync_warning:
+        payload["warning"] = f"{payload.get('warning', '')} {profile_sync_warning}".strip()
+        payload["nm_profile_synced"] = False
+    else:
+        payload["nm_profile_synced"] = True
     return _ok(payload)
 
 
@@ -1972,16 +1996,22 @@ def api_wifi_profiles_prefer():
     if not found:
         profiles.append({"ssid": ssid, "priority": PREFERRED_WIFI_PRIORITY, "autoconnect": True})
 
+    profile_sync_warning = ""
     try:
         wifi_profile_set(ssid=ssid, priority=PREFERRED_WIFI_PRIORITY, autoconnect=True)
     except NetControlError as exc:
-        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
-        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+        detail = exc.detail or exc.message
+        if _is_unknown_connection_detail(detail):
+            profile_sync_warning = "Bevorzugung im Portal gespeichert; NetworkManager-Profil fehlt aktuell."
+            log_event("wifi", "Preferred Wi-Fi saved without NM profile", level="warning", data={"ssid": ssid, "detail": detail})
+        else:
+            status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+            return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
     ok, err = _save_wifi_profiles(cfg, profiles, preferred=ssid)
     if not ok:
         return _error("config_write_failed", "Preferred profile updated but config write failed", status=500, detail=err)
-    return _ok({"preferred_ssid": ssid, "profiles": profiles})
+    return _ok({"preferred_ssid": ssid, "profiles": profiles, "nm_profile_synced": not bool(profile_sync_warning), "warning": profile_sync_warning})
 
 
 @bp_network.post("/api/wifi/profiles/up")
