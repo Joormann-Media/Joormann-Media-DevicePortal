@@ -74,6 +74,12 @@ from app.core.storage_state import (
 )
 from app.core.timeutil import utc_now
 from app.core.state import update_state
+from app.core.sentinel_manager import (
+    SentinelManagerError,
+    get_status as sentinels_status,
+    install_sentinel as install_sentinel_module,
+    uninstall_sentinel as uninstall_sentinel_module,
+)
 
 bp_network = Blueprint("network", __name__)
 storage_fm = StorageFileManagerService()
@@ -2150,6 +2156,86 @@ def api_system_settings_update():
             "message": "System settings updated",
         }
     )
+
+
+@bp_network.get("/api/network/security/sentinels/status")
+def api_network_security_sentinels_status():
+    cfg = ensure_config()
+    settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+    webhook_url = str((settings or {}).get("webhook_url") or "")
+    try:
+        payload = sentinels_status(webhook_url=webhook_url)
+        return _ok(payload)
+    except SentinelManagerError as exc:
+        status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/security/sentinels/webhook")
+def api_network_security_sentinels_webhook():
+    data = request.get_json(force=True, silent=True) or {}
+    webhook_url = str(data.get("webhook_url") or "").strip()
+    if not webhook_url:
+        return _error("invalid_payload", "Field 'webhook_url' is required", status=400)
+    if not webhook_url.lower().startswith(("http://", "https://")):
+        return _error("invalid_payload", "Field 'webhook_url' must start with http:// or https://", status=400)
+
+    cfg = ensure_config()
+    settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+    settings["webhook_url"] = webhook_url
+    settings["updated_at"] = utc_now()
+    cfg["sentinel_settings"] = settings
+    cfg["updated_at"] = utc_now()
+    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist sentinel webhook URL", status=500, detail=err)
+
+    try:
+        payload = sentinels_status(webhook_url=webhook_url)
+        return _ok({"message": "Webhook URL gespeichert.", **payload})
+    except SentinelManagerError as exc:
+        status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/security/sentinels/install")
+def api_network_security_sentinels_install():
+    data = request.get_json(force=True, silent=True) or {}
+    slug = str(data.get("slug") or "").strip()
+    if not slug:
+        return _error("invalid_payload", "Field 'slug' is required", status=400)
+
+    cfg = ensure_config()
+    settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+    webhook_url = str((settings or {}).get("webhook_url") or "").strip()
+    if not webhook_url:
+        return _error("invalid_payload", "Please save a webhook URL first.", status=400)
+
+    try:
+        payload = install_sentinel_module(slug=slug, webhook_url=webhook_url)
+        return _ok({"message": f"Sentinel '{slug}' installiert.", **payload.get("status", {})})
+    except SentinelManagerError as exc:
+        status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/security/sentinels/uninstall")
+def api_network_security_sentinels_uninstall():
+    data = request.get_json(force=True, silent=True) or {}
+    slug = str(data.get("slug") or "").strip()
+    if not slug:
+        return _error("invalid_payload", "Field 'slug' is required", status=400)
+
+    cfg = ensure_config()
+    settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+    webhook_url = str((settings or {}).get("webhook_url") or "").strip()
+
+    try:
+        payload = uninstall_sentinel_module(slug=slug, webhook_url=webhook_url)
+        return _ok({"message": f"Sentinel '{slug}' entfernt.", **payload.get("status", {})})
+    except SentinelManagerError as exc:
+        status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
 @bp_network.post("/api/system/hostname/preview")

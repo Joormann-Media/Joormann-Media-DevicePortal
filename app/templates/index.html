@@ -558,6 +558,41 @@
               </div>
             </div>
           </div>
+          <div class="col-12 col-xl-4">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                <h2 class="h5 mb-0">Sentinel Webhook</h2>
+                <button id="btn-sentinel-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+              </div>
+              <div class="small text-secondary mb-2">
+                Webhook-Ziel für alle installierten Sentinels. Muss vor Installation gesetzt werden.
+              </div>
+              <label class="form-label form-label-sm mb-1" for="sentinel-webhook-url">Discord/Webhook URL</label>
+              <input id="sentinel-webhook-url" type="url" class="form-control form-control-sm mb-2" placeholder="https://discord.com/api/webhooks/...">
+              <div class="d-flex gap-2 mb-2">
+                <button id="btn-sentinel-webhook-save" class="btn btn-outline-primary btn-sm">Webhook speichern</button>
+              </div>
+              <dl class="portal-kv mb-0">
+                <dt>Quelle</dt><dd id="sentinel-source-dir">-</dd>
+                <dt>Config</dt><dd id="sentinel-config-path">-</dd>
+                <dt>Status</dt><dd id="sentinel-source-status">-</dd>
+              </dl>
+            </div>
+          </div>
+          <div class="col-12 col-xl-8">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                <h2 class="h5 mb-0">Sentinel Module</h2>
+                <span id="sentinel-count-badge" class="badge text-bg-secondary">0 Module</span>
+              </div>
+              <div class="small text-secondary mb-2">
+                Module werden lokal installiert und mit systemd (bzw. PAM für SSH Sentinel) aktiviert.
+              </div>
+              <div id="sentinel-list" class="list-group list-group-flush">
+                <div class="text-secondary small">Keine Sentinel-Daten geladen.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

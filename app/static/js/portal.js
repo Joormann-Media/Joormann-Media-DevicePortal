@@ -44,6 +44,13 @@
       assessment: null,
       catalog: null,
     },
+    sentinels: {
+      webhookUrl: "",
+      sourceDir: "",
+      sourceError: "",
+      configPath: "",
+      items: [],
+    },
   };
   const statusDashboardState = {
     status: null,
@@ -1229,6 +1236,13 @@
       perimeterToggle.checked = portalSecurityState.networkSecurity.enabled;
     }
     renderNetworkSecurityUi();
+
+    const rawSentinel = (cfg && cfg.sentinel_settings && typeof cfg.sentinel_settings === "object") ? cfg.sentinel_settings : {};
+    portalSecurityState.sentinels.webhookUrl = String(rawSentinel.webhook_url || "");
+    const webhookInput = q("sentinel-webhook-url");
+    if (webhookInput && !webhookInput.value) {
+      webhookInput.value = portalSecurityState.sentinels.webhookUrl;
+    }
   }
 
   function renderPanelApiKeyStatus(cfg) {
@@ -3791,6 +3805,145 @@
     toast("Storage-Sicherheitseinstellung gespeichert.", "success");
   }
 
+  function renderSentinelsUi() {
+    const state = portalSecurityState.sentinels || {};
+    const items = Array.isArray(state.items) ? state.items : [];
+    const sourceDirEl = q("sentinel-source-dir");
+    const sourceStatusEl = q("sentinel-source-status");
+    const configPathEl = q("sentinel-config-path");
+    const listEl = q("sentinel-list");
+    const countBadge = q("sentinel-count-badge");
+    const webhookInput = q("sentinel-webhook-url");
+    if (webhookInput && document.activeElement !== webhookInput) {
+      webhookInput.value = String(state.webhookUrl || "");
+    }
+    if (sourceDirEl) {
+      sourceDirEl.textContent = state.sourceDir || "-";
+    }
+    if (configPathEl) {
+      configPathEl.textContent = state.configPath || "-";
+    }
+    if (sourceStatusEl) {
+      sourceStatusEl.textContent = state.sourceError ? `Fehler: ${state.sourceError}` : "bereit";
+    }
+    if (countBadge) {
+      countBadge.textContent = `${items.length} Module`;
+      countBadge.classList.remove("text-bg-secondary", "text-bg-success");
+      countBadge.classList.add(items.length ? "text-bg-success" : "text-bg-secondary");
+    }
+    if (!listEl) return;
+    if (!items.length) {
+      listEl.innerHTML = '<div class="text-secondary small">Keine Sentinel-Module gefunden.</div>';
+      return;
+    }
+
+    listEl.innerHTML = "";
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "list-group-item d-flex justify-content-between align-items-start gap-2";
+
+      const left = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "fw-semibold";
+      title.textContent = String(item.name || item.slug || "-");
+      const desc = document.createElement("div");
+      desc.className = "small text-secondary";
+      desc.textContent = String(item.description || "");
+      const meta = document.createElement("div");
+      meta.className = "small mt-1";
+      const parts = [];
+      parts.push(`mode: ${item.install_mode || "-"}`);
+      parts.push(`state: ${item.state || "-"}`);
+      if (item.service_name) parts.push(`service: ${item.service_name}`);
+      if (item.timer_name) parts.push(`timer: ${item.timer_name}`);
+      meta.textContent = parts.join(" | ");
+      left.append(title, desc, meta);
+
+      const right = document.createElement("div");
+      right.className = "d-flex flex-column gap-1 align-items-end";
+
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      if (item.installed) {
+        badge.classList.add(item.active ? "text-bg-success" : "text-bg-warning", "text-dark");
+        badge.textContent = item.active ? "aktiv" : "installiert";
+      } else {
+        badge.classList.add("text-bg-secondary");
+        badge.textContent = "nicht installiert";
+      }
+
+      const installBtn = document.createElement("button");
+      installBtn.type = "button";
+      installBtn.className = "btn btn-outline-success btn-sm";
+      installBtn.textContent = "Installieren";
+      installBtn.dataset.action = "install";
+      installBtn.dataset.slug = String(item.slug || "");
+      installBtn.disabled = !!item.installed;
+
+      const uninstallBtn = document.createElement("button");
+      uninstallBtn.type = "button";
+      uninstallBtn.className = "btn btn-outline-danger btn-sm";
+      uninstallBtn.textContent = "Entfernen";
+      uninstallBtn.dataset.action = "uninstall";
+      uninstallBtn.dataset.slug = String(item.slug || "");
+      uninstallBtn.disabled = !item.installed;
+
+      right.append(badge, installBtn, uninstallBtn);
+      row.append(left, right);
+      listEl.appendChild(row);
+    }
+  }
+
+  function applySentinelPayload(data) {
+    const payload = data || {};
+    portalSecurityState.sentinels.webhookUrl = String(payload.webhook_url || "");
+    portalSecurityState.sentinels.sourceDir = String(payload.source_dir || "");
+    portalSecurityState.sentinels.sourceError = String(payload.source_error || "");
+    portalSecurityState.sentinels.configPath = String(payload.config_path || "");
+    portalSecurityState.sentinels.items = Array.isArray(payload.sentinels) ? payload.sentinels : [];
+    renderSentinelsUi();
+  }
+
+  async function refreshSentinelStatus() {
+    const payload = await fetchJson("/api/network/security/sentinels/status", { cache: "no-store", timeoutMs: 12000 });
+    applySentinelPayload(payload.data || {});
+    toast("Sentinel-Status aktualisiert.", "success");
+  }
+
+  async function saveSentinelWebhook() {
+    const webhookUrl = String(q("sentinel-webhook-url")?.value || "").trim();
+    if (!webhookUrl) {
+      throw new Error("Bitte zuerst eine Webhook URL eintragen.");
+    }
+    const payload = await fetchJson("/api/network/security/sentinels/webhook", {
+      method: "POST",
+      body: { webhook_url: webhookUrl },
+      timeoutMs: 12000,
+    });
+    applySentinelPayload(payload.data || {});
+    toast(payload.message || "Webhook URL gespeichert.", "success");
+  }
+
+  async function installSentinel(slug) {
+    const payload = await fetchJson("/api/network/security/sentinels/install", {
+      method: "POST",
+      body: { slug },
+      timeoutMs: 60000,
+    });
+    applySentinelPayload(payload.data || {});
+    toast(payload.message || `Sentinel ${slug} installiert.`, "success");
+  }
+
+  async function uninstallSentinel(slug) {
+    const payload = await fetchJson("/api/network/security/sentinels/uninstall", {
+      method: "POST",
+      body: { slug },
+      timeoutMs: 60000,
+    });
+    applySentinelPayload(payload.data || {});
+    toast(payload.message || `Sentinel ${slug} entfernt.`, "success");
+  }
+
   function renderNetworkSecurityList(hostId, rows, kind) {
     const host = q(hostId);
     if (!host) return;
@@ -4433,6 +4586,8 @@
     q("btn-security-trust-lan").addEventListener("click", () => run(() => trustCurrentNetwork("lan")));
     q("btn-security-trust-bt").addEventListener("click", () => run(() => trustCurrentNetwork("bluetooth")));
     q("btn-security-ap-disable").addEventListener("click", () => run(() => toggleAp(false)));
+    q("btn-sentinel-refresh").addEventListener("click", () => run(refreshSentinelStatus));
+    q("btn-sentinel-webhook-save").addEventListener("click", () => run(saveSentinelWebhook));
     q("btn-hostname-rename-save").addEventListener("click", () => run(saveHostnameRename));
     q("hostname-rename-input").addEventListener("input", () => {
       if (hostnameRenameState.previewTimer) {
@@ -4607,6 +4762,20 @@
         run(() => removeTrustedNetworkMarker(kind, key));
       });
     }
+    q("sentinel-list").addEventListener("click", (event) => {
+      const btn = event.target && event.target.closest ? event.target.closest("button[data-action][data-slug]") : null;
+      if (!btn) return;
+      const action = String(btn.dataset.action || "").trim();
+      const slug = String(btn.dataset.slug || "").trim();
+      if (!slug) return;
+      if (action === "install") {
+        run(() => installSentinel(slug));
+        return;
+      }
+      if (action === "uninstall") {
+        run(() => uninstallSentinel(slug));
+      }
+    });
     for (const radio of document.querySelectorAll('input[name="setup-link-type"]')) {
       radio.addEventListener("change", () => {
         setupWizardState.linkType = getSetupLinkType();
@@ -4671,6 +4840,7 @@
     await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
     await run(refreshApClients);
+    await run(refreshSentinelStatus);
     await run(loadLastPortalUpdateStatus);
     flushPersistedUpdateResultFlash();
     startApPolling();

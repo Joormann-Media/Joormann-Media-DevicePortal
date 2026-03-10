@@ -63,6 +63,10 @@ DEFAULT_CONFIG: dict = {
     'player_service_name': 'joormann-media-deviceplayer.service',
     'player_service_user': '',
     'player_auto_update_with_portal': True,
+    'sentinel_settings': {
+        'webhook_url': '',
+        'updated_at': None,
+    },
 }
 
 
@@ -199,6 +203,17 @@ def ensure_config() -> dict:
             if key not in cfg['panel_api_key_bootstrap']:
                 cfg['panel_api_key_bootstrap'][key] = value
                 changed = True
+    if not isinstance(cfg.get('sentinel_settings'), dict):
+        cfg['sentinel_settings'] = dict(DEFAULT_CONFIG['sentinel_settings'])
+        changed = True
+    else:
+        ss = cfg['sentinel_settings']
+        if 'webhook_url' not in ss or not isinstance(ss.get('webhook_url'), str):
+            ss['webhook_url'] = str(ss.get('webhook_url') or '')
+            changed = True
+        if 'updated_at' not in ss:
+            ss['updated_at'] = None
+            changed = True
     if changed:
         cfg['updated_at'] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
