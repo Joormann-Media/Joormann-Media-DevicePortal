@@ -14,6 +14,20 @@ from app.core.paths import CONFIG_PATH
 from app.core.auth_session import is_authenticated
 from app.core.systeminfo import get_hostname, get_ip
 from app.core.timeutil import utc_now
+from app.core.netcontrol import (
+    NetControlError,
+    player_service_action,
+    player_update,
+    portal_update,
+    restart_portal_service,
+    system_power_action,
+)
+from app.core.sentinel_manager import (
+    SentinelManagerError,
+    get_status as sentinels_status,
+    install_sentinel as install_sentinel_module,
+    uninstall_sentinel as uninstall_sentinel_module,
+)
 
 bp_sync = Blueprint("sync", __name__)
 
@@ -186,6 +200,159 @@ def _build_portal_field_updates(cfg: dict, dev: dict) -> dict:
     return updates
 
 
+def _local_stream_sync(params: dict) -> tuple[bool, dict]:
+    host = (request.host or "").strip()
+    port = ""
+    if ":" in host:
+        _, _, host_port = host.rpartition(":")
+        if host_port.isdigit():
+            port = host_port
+
+    base = f"http://127.0.0.1:{port}" if port else "http://127.0.0.1"
+    url = f"{base}/api/stream/sync"
+    payload = {}
+    if isinstance(params, dict):
+        for key in ("streamSlug", "streamName", "storageDeviceId", "admin_base_url"):
+            value = params.get(key)
+            if value is not None:
+                payload[key] = value
+
+    code, resp, err = http_post_json(url, payload, timeout=120)
+    if code is None:
+        return False, {"error": str(err or "stream_sync_failed")}
+
+    if code < 200 or code >= 300 or not isinstance(resp, dict) or not bool(resp.get("ok")):
+        detail = "stream_sync_failed"
+        if isinstance(resp, dict):
+            detail = str(resp.get("detail") or resp.get("message") or resp.get("error") or detail)
+        return False, {"status": code, "error": detail, "response": resp if isinstance(resp, dict) else {}}
+
+    return True, resp
+
+
+def _run_admin_actions(cfg: dict, actions: list[dict], triggered_by: str) -> list[dict]:
+    results: list[dict] = []
+    for item in actions:
+        if not isinstance(item, dict):
+            continue
+
+        action = str(item.get("action") or item.get("name") or "").strip().lower()
+        params = item.get("params") if isinstance(item.get("params"), dict) else {}
+        result: dict = {
+            "action": action,
+            "ok": False,
+            "message": "",
+            "data": {},
+        }
+
+        try:
+            if action in {"system.reboot", "reboot"}:
+                payload = system_power_action(action="reboot")
+                result.update(ok=True, message="Reboot angefordert.", data=payload or {})
+
+            elif action in {"system.portal_restart", "portal.restart", "portal_restart"}:
+                payload = restart_portal_service(service_name="device-portal.service")
+                result.update(ok=True, message="Portal-Neustart angefordert.", data=payload or {})
+
+            elif action in {"player.restart", "player_restart"}:
+                payload = player_service_action("restart", "joormann-media-deviceplayer.service")
+                result.update(ok=True, message="Player-Neustart angefordert.", data=payload or {})
+
+            elif action in {"system.portal_update", "portal.update", "portal_update"}:
+                payload = portal_update(service_name="device-portal.service")
+                result.update(ok=True, message="Portal-Update gestartet.", data=payload or {})
+
+            elif action in {"player.update", "player_update"}:
+                repo_link = str(
+                    params.get("player_repo_link")
+                    or params.get("player_repo_dir")
+                    or cfg.get("player_repo_link")
+                    or cfg.get("player_repo_dir")
+                    or ""
+                ).strip()
+                service_name = str(params.get("player_service_name") or cfg.get("player_service_name") or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
+                service_user = str(params.get("player_service_user") or cfg.get("player_service_user") or "").strip()
+                if not repo_link:
+                    raise RuntimeError("player_repo_missing")
+                payload = player_update(repo_link, service_user=service_user, service_name=service_name)
+                result.update(ok=True, message="Player-Update gestartet.", data=payload or {})
+
+            elif action in {"stream.sync", "stream_sync"}:
+                ok, payload = _local_stream_sync(params)
+                if not ok:
+                    raise RuntimeError(str(payload.get("error") or "stream_sync_failed"))
+                result.update(ok=True, message="Stream/Playlist-Sync gestartet.", data=payload)
+
+            elif action in {"sentinel.install", "sentinel_install"}:
+                slug = str(params.get("slug") or "").strip()
+                if not slug:
+                    raise RuntimeError("sentinel_slug_missing")
+                settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+                webhook_url = str((settings or {}).get("webhook_url") or "").strip()
+                payload = install_sentinel_module(slug=slug, webhook_url=webhook_url)
+                result.update(ok=True, message=f"Sentinel '{slug}' installiert.", data=payload or {})
+
+            elif action in {"sentinel.uninstall", "sentinel_uninstall"}:
+                slug = str(params.get("slug") or "").strip()
+                if not slug:
+                    raise RuntimeError("sentinel_slug_missing")
+                settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+                webhook_url = str((settings or {}).get("webhook_url") or "").strip()
+                payload = uninstall_sentinel_module(slug=slug, webhook_url=webhook_url)
+                result.update(ok=True, message=f"Sentinel '{slug}' entfernt.", data=payload or {})
+
+            elif action in {"sentinel.webhook_save", "sentinel_webhook_save"}:
+                webhook_url = str(params.get("webhook_url") or "").strip()
+                if not webhook_url:
+                    raise RuntimeError("sentinel_webhook_missing")
+                settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+                settings["webhook_url"] = webhook_url
+                settings["updated_at"] = utc_now()
+                cfg["sentinel_settings"] = settings
+                cfg["updated_at"] = utc_now()
+                ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+                if not ok:
+                    raise RuntimeError(str(err or "config_write_failed"))
+                payload = sentinels_status(webhook_url=webhook_url)
+                result.update(ok=True, message="Sentinel Webhook gespeichert.", data=payload or {})
+
+            elif action in {"sentinel.enable", "sentinel.disable", "sentinel.set_enabled", "sentinel_set_enabled"}:
+                enabled = params.get("enabled")
+                if action in {"sentinel.enable"}:
+                    enabled = True
+                elif action in {"sentinel.disable"}:
+                    enabled = False
+
+                if not isinstance(enabled, bool):
+                    raise RuntimeError("sentinel_enabled_bool_required")
+
+                profile = cfg.get("network_security") if isinstance(cfg.get("network_security"), dict) else {}
+                profile["enabled"] = enabled
+                profile["updated_at"] = utc_now()
+                cfg["network_security"] = profile
+                cfg["updated_at"] = utc_now()
+                ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+                if not ok:
+                    raise RuntimeError(str(err or "config_write_failed"))
+                result.update(ok=True, message=("Sentinel-Sicherheitsmodus aktiviert." if enabled else "Sentinel-Sicherheitsmodus deaktiviert."), data={"enabled": enabled})
+
+            else:
+                result.update(ok=False, message=f"unknown_action:{action}")
+
+        except NetControlError as exc:
+            result.update(ok=False, message=exc.message or exc.code, data={"code": exc.code, "detail": exc.detail or ""})
+        except SentinelManagerError as exc:
+            result.update(ok=False, message=exc.message or exc.code, data={"code": exc.code, "detail": exc.detail or ""})
+        except Exception as exc:
+            result.update(ok=False, message=str(exc) or "action_failed")
+
+        result["triggered_by"] = triggered_by
+        result["at"] = utc_now()
+        results.append(result)
+
+    return results
+
+
 def _pull_config_from_admin(cfg: dict, dev: dict) -> tuple[bool, dict, str]:
     base = _safe_base_url(cfg.get("admin_base_url", ""))
     if not base:
@@ -315,6 +482,35 @@ def api_sync_run():
     force_pull = _bool(data.get("pullConfig") or data.get("pull_config") or True, default=True)
     direction = str(data.get("direction") or "bidirectional").strip().lower()
     triggered_by = str(data.get("triggeredBy") or data.get("triggered_by") or "portal").strip() or "portal"
+    actions_only = _bool(data.get("actionsOnly") or data.get("actions_only"), default=False)
+    raw_actions = data.get("actions")
+    requested_actions: list[dict] = []
+    if isinstance(raw_actions, dict):
+        requested_actions = [raw_actions]
+    elif isinstance(raw_actions, list):
+        requested_actions = [item for item in raw_actions if isinstance(item, dict)]
+
+    if requested_actions and actions_only:
+        action_results = _run_admin_actions(cfg, requested_actions, triggered_by)
+        ok_all = all(bool(item.get("ok")) for item in action_results) if action_results else False
+
+        state["last_sync_at"] = utc_now()
+        state["last_sync_direction"] = "admin_to_portal"
+        state["last_sync_triggered_by"] = triggered_by
+        state["last_sync_status"] = "success" if ok_all else "partial_error"
+        state["last_sync_message"] = "Aktionen ausgeführt." if ok_all else "Mindestens eine Aktion ist fehlgeschlagen."
+        state["last_error"] = "" if ok_all else "admin_actions_partial_error"
+        cfg["updated_at"] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+
+        return jsonify(
+            ok=ok_all,
+            message=state["last_sync_message"],
+            data={
+                "action_results": action_results,
+                "sync_state": state,
+            },
+        ), (200 if ok_all else 502)
 
     if force_pull or not isinstance(state.get("profile"), dict) or not state.get("profile"):
         ok, pull_data, error = _pull_config_from_admin(cfg, dev)
@@ -375,6 +571,9 @@ def api_sync_run():
         "applied": list(filtered_updates.keys()),
         "skipped": [key for key in field_updates.keys() if key not in filtered_updates],
     }
+
+    if requested_actions:
+        report["admin_actions"] = _run_admin_actions(cfg, requested_actions, triggered_by)
 
     ok_push, push_resp, push_error = _push_report_to_admin(cfg, dev, report)
     state["last_sync_at"] = utc_now()
