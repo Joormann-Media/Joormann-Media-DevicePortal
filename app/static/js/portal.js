@@ -1506,10 +1506,65 @@
     }
   }
 
+  function renderSyncStatus(payload) {
+    const data = payload && typeof payload === "object" ? payload : {};
+    const put = (id, value) => {
+      const el = q(id);
+      if (el) el.textContent = value;
+    };
+    const enabled = !!data.enabled;
+    put("sync-status-enabled", enabled ? "ja" : "nein");
+    put("sync-status-last-at", data.last_sync_at || "-");
+    put("sync-status-last-status", data.last_sync_status || "-");
+    put("sync-status-last-direction", data.last_sync_direction || "-");
+    put("sync-status-last-trigger", data.last_sync_triggered_by || "-");
+    put("sync-status-last-message", data.last_sync_message || data.last_error || "-");
+
+    const rules = Array.isArray(data.rules) ? data.rules : [];
+    const groups = Array.from(
+      new Set(
+        rules
+          .filter((rule) => !!(rule && rule.enabled))
+          .map((rule) => String(rule.groupName || rule.group_name || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    put("sync-status-groups", groups.length ? groups.join(", ") : "-");
+  }
+
+  async function refreshSyncStatus() {
+    const payload = await fetchJson("/api/sync/status", { cache: "no-store" });
+    renderSyncStatus(payload.data || {});
+    return payload;
+  }
+
+  async function pullSyncConfig() {
+    const payload = await fetchJson("/api/sync/pull-config", {
+      method: "POST",
+      body: {},
+      timeoutMs: 15000,
+    });
+    toast(payload.message || "Sync-Konfiguration aktualisiert.", "success");
+    await refreshSyncStatus();
+  }
+
+  async function runPortalSyncNow() {
+    const payload = await fetchJson("/api/sync/run", {
+      method: "POST",
+      body: {
+        direction: "bidirectional",
+        pullConfig: true,
+        triggeredBy: "portal_ui_manual",
+      },
+      timeoutMs: 30000,
+    });
+    toast(payload.message || "Synchronisierung erfolgreich.", "success");
+    await refreshSyncStatus();
+  }
+
   async function refreshStatus() {
     const data = await fetchJson("/api/status", { cache: "no-store" });
     renderStatus(data);
-    await refreshPanelFlagsLive();
     return data;
   }
 
@@ -4533,7 +4588,10 @@
         openSetupWizard();
       }
     });
-    q("btn-link-refresh-status").addEventListener("click", () => run(refreshState));
+    q("btn-link-refresh-status").addEventListener("click", () => run(async () => {
+      await refreshState();
+      await refreshPanelFlagsLive();
+    }));
     q("btn-display-refresh").addEventListener("click", () => run(refreshStatus));
     q("btn-link-register").addEventListener("click", () => run(panelRegister));
     q("btn-link-assign").addEventListener("click", () => openSetupWizard("assign"));
@@ -4554,6 +4612,14 @@
     q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
     q("btn-panel-sync-check").addEventListener("click", () => run(panelSyncCheck));
     q("btn-panel-sync-now").addEventListener("click", () => run(panelSyncNow));
+    const syncRefreshBtn = q("btn-sync-refresh-config");
+    if (syncRefreshBtn) {
+      syncRefreshBtn.addEventListener("click", () => run(pullSyncConfig));
+    }
+    const syncRunBtn = q("btn-sync-run-now");
+    if (syncRunBtn) {
+      syncRunBtn.addEventListener("click", () => run(runPortalSyncNow));
+    }
 
     els.btnWifiToggle.addEventListener("click", () => run(toggleWifi));
     els.btnBtToggle.addEventListener("click", () => run(toggleBluetooth));
@@ -4828,6 +4894,8 @@
     initRefs();
     bindButtons();
     await run(refreshStatus);
+    await run(refreshPanelFlagsLive);
+    await run(refreshSyncStatus);
     await run(panelSyncCheck);
     await run(refreshNetwork);
     await run(refreshWifiScan);

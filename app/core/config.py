@@ -58,6 +58,19 @@ DEFAULT_CONFIG: dict = {
         'last_ack_at': None,
         'last_error': '',
     },
+    'panel_sync': {
+        'enabled': False,
+        'profile': {},
+        'rules': [],
+        'last_sync_at': None,
+        'last_sync_status': None,
+        'last_sync_message': '',
+        'last_sync_direction': None,
+        'last_sync_triggered_by': None,
+        'last_pull_at': None,
+        'last_push_at': None,
+        'last_error': '',
+    },
     'player_repo_link': '',
     'player_repo_dir': '',
     'player_service_name': 'joormann-media-deviceplayer.service',
@@ -202,6 +215,14 @@ def ensure_config() -> dict:
         for key, value in DEFAULT_CONFIG['panel_api_key_bootstrap'].items():
             if key not in cfg['panel_api_key_bootstrap']:
                 cfg['panel_api_key_bootstrap'][key] = value
+                changed = True
+    if not isinstance(cfg.get('panel_sync'), dict):
+        cfg['panel_sync'] = dict(DEFAULT_CONFIG['panel_sync'])
+        changed = True
+    else:
+        for key, value in DEFAULT_CONFIG['panel_sync'].items():
+            if key not in cfg['panel_sync']:
+                cfg['panel_sync'][key] = value
                 changed = True
     if not isinstance(cfg.get('sentinel_settings'), dict):
         cfg['sentinel_settings'] = dict(DEFAULT_CONFIG['sentinel_settings'])

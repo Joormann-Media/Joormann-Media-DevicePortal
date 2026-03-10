@@ -9,6 +9,7 @@ from werkzeug.exceptions import HTTPException
 from app.api.routes_network import bp_network
 from app.api.routes_panel import bp_panel
 from app.api.routes_plan import bp_plan
+from app.api.routes_sync import bp_sync
 from app.api.routes_status import bp_status
 from app.api.routes_stream import bp_stream
 from app.core.auth_mode import resolve_auth_mode
@@ -48,6 +49,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(bp_status)
     app.register_blueprint(bp_panel)
+    app.register_blueprint(bp_sync)
     app.register_blueprint(bp_plan)
     app.register_blueprint(bp_network)
     app.register_blueprint(bp_stream)
@@ -70,6 +72,7 @@ def create_app() -> Flask:
             "/api/auth/status",
             "/api/auth/local-users",
             "/api/panel/admin-sync-payload",
+            "/api/sync/run",
         }
         if path in public_exact or path.startswith("/static/"):
             return None
