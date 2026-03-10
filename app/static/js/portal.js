@@ -3474,6 +3474,118 @@
     toast("Player-Repo Link gespeichert", "success");
   }
 
+  function overlayNum(id, fallback = 0) {
+    const raw = String(q(id)?.value || "").trim();
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  function overlayStr(id, fallback = "") {
+    const raw = String(q(id)?.value || "").trim();
+    return raw || fallback;
+  }
+
+  function overlayChecked(id, fallback = true) {
+    const el = q(id);
+    return el ? !!el.checked : fallback;
+  }
+
+  function renderOverlayState(payload) {
+    const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+    const path = String(payload?.path || "-");
+    const pretty = JSON.stringify(data, null, 2);
+    const pathEl = q("overlay-state-path");
+    if (pathEl) pathEl.textContent = path;
+    const pre = q("overlay-state-json");
+    if (pre) pre.textContent = pretty || "{}";
+  }
+
+  async function refreshOverlayState() {
+    const payload = await fetchJson("/api/player/overlay/state");
+    renderOverlayState(payload);
+    return payload;
+  }
+
+  async function saveOverlayFlash() {
+    const payload = {
+      id: overlayStr("overlay-flash-id", ""),
+      enabled: overlayChecked("overlay-flash-enabled", true),
+      title: overlayStr("overlay-flash-title", ""),
+      message: overlayStr("overlay-flash-message", ""),
+      durationMs: overlayNum("overlay-flash-duration", 5000),
+      position: overlayStr("overlay-flash-position", "top"),
+      rotation: overlayNum("overlay-flash-rotation", 0),
+      backgroundColor: overlayStr("overlay-flash-bg", "#111111"),
+      textColor: overlayStr("overlay-flash-fg", "#ffffff"),
+      accentColor: overlayStr("overlay-flash-accent", "#0d6efd"),
+      fontSize: overlayNum("overlay-flash-font", 32),
+      padding: overlayNum("overlay-flash-padding", 24),
+      opacity: overlayNum("overlay-flash-opacity", 0.95),
+    };
+    await fetchJson("/api/player/overlay/flash", { method: "POST", body: payload });
+    await refreshOverlayState();
+    toast("Flash gespeichert", "success");
+  }
+
+  async function saveOverlayTicker() {
+    const payload = {
+      id: overlayStr("overlay-ticker-id", ""),
+      enabled: overlayChecked("overlay-ticker-enabled", true),
+      text: overlayStr("overlay-ticker-text", ""),
+      position: overlayStr("overlay-ticker-position", "bottom"),
+      rotation: overlayNum("overlay-ticker-rotation", 0),
+      speedPxPerSecond: overlayNum("overlay-ticker-speed", 120),
+      height: overlayNum("overlay-ticker-height", 72),
+      paddingX: overlayNum("overlay-ticker-padding-x", 24),
+      backgroundColor: overlayStr("overlay-ticker-bg", "#000000"),
+      textColor: overlayStr("overlay-ticker-fg", "#ffffff"),
+      fontSize: overlayNum("overlay-ticker-font", 34),
+      opacity: overlayNum("overlay-ticker-opacity", 0.90),
+    };
+    await fetchJson("/api/player/overlay/ticker", { method: "POST", body: payload });
+    await refreshOverlayState();
+    toast("Ticker gespeichert", "success");
+  }
+
+  async function saveOverlayPopup() {
+    const payload = {
+      id: overlayStr("overlay-popup-id", ""),
+      enabled: overlayChecked("overlay-popup-enabled", true),
+      title: overlayStr("overlay-popup-title", ""),
+      message: overlayStr("overlay-popup-message", ""),
+      durationMs: overlayNum("overlay-popup-duration", 8000),
+      position: overlayStr("overlay-popup-position", "center"),
+      imagePath: overlayStr("overlay-popup-image-path", ""),
+      backgroundColor: overlayStr("overlay-popup-bg", "#ffffff"),
+      textColor: overlayStr("overlay-popup-fg", "#111111"),
+      accentColor: overlayStr("overlay-popup-accent", "#dc3545"),
+      width: overlayNum("overlay-popup-width", 800),
+      height: overlayNum("overlay-popup-height", 420),
+      padding: overlayNum("overlay-popup-padding", 24),
+      opacity: overlayNum("overlay-popup-opacity", 1.0),
+    };
+    await fetchJson("/api/player/overlay/popup", { method: "POST", body: payload });
+    await refreshOverlayState();
+    toast("Popup gespeichert", "success");
+  }
+
+  async function clearOverlayCategory(category) {
+    await fetchJson("/api/player/overlay/clear", {
+      method: "POST",
+      body: { category },
+    });
+    await refreshOverlayState();
+    toast(`${category} geleert`, "success");
+  }
+
+  async function resetOverlayState() {
+    const confirmed = window.confirm("Alle Overlay-Einträge wirklich zurücksetzen?");
+    if (!confirmed) return;
+    await fetchJson("/api/player/overlay/reset", { method: "POST" });
+    await refreshOverlayState();
+    toast("Overlay-Status zurückgesetzt", "success");
+  }
+
   function renderStreamPlayerUpdateStatus(data) {
     const logEl = q("stream-player-update-log");
     if (!logEl) return;
@@ -4763,6 +4875,14 @@
     q("btn-fix-tailscale-dns").addEventListener("click", () => run(fixTailscaleDns));
     q("btn-system-refresh-network").addEventListener("click", () => run(refreshNetwork));
     q("btn-system-refresh-network-radio").addEventListener("click", () => run(refreshNetwork));
+    q("btn-overlay-refresh").addEventListener("click", () => run(refreshOverlayState));
+    q("btn-overlay-save-flash").addEventListener("click", () => run(saveOverlayFlash));
+    q("btn-overlay-save-ticker").addEventListener("click", () => run(saveOverlayTicker));
+    q("btn-overlay-save-popup").addEventListener("click", () => run(saveOverlayPopup));
+    q("btn-overlay-clear-flash").addEventListener("click", () => run(() => clearOverlayCategory("flash")));
+    q("btn-overlay-clear-tickers").addEventListener("click", () => run(() => clearOverlayCategory("tickers")));
+    q("btn-overlay-clear-popups").addEventListener("click", () => run(() => clearOverlayCategory("popups")));
+    q("btn-overlay-reset-all").addEventListener("click", () => run(resetOverlayState));
 
     q("btn-confirm-unlink").addEventListener("click", async () => {
       const modal = bootstrap.Modal.getOrCreateInstance(q("unlinkModal"));
@@ -4910,6 +5030,7 @@
     await run(refreshApClients);
     await run(refreshSentinelStatus);
     await run(loadLastPortalUpdateStatus);
+    await run(refreshOverlayState);
     flushPersistedUpdateResultFlash();
     startApPolling();
     startStoragePolling();

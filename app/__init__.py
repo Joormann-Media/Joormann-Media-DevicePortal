@@ -7,6 +7,7 @@ from flask import Flask, jsonify, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
 
 from app.api.routes_network import bp_network
+from app.api.routes_overlay import bp_overlay
 from app.api.routes_panel import bp_panel
 from app.api.routes_plan import bp_plan
 from app.api.routes_sync import bp_sync
@@ -53,6 +54,7 @@ def create_app() -> Flask:
     app.register_blueprint(bp_plan)
     app.register_blueprint(bp_network)
     app.register_blueprint(bp_stream)
+    app.register_blueprint(bp_overlay)
     app.register_blueprint(bp_auth)
     app.register_blueprint(bp_ui)
 

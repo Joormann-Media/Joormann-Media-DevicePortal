@@ -888,6 +888,16 @@
               Sync & Update
             </button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="system-sub-overlay-tab" data-bs-toggle="tab" data-bs-target="#system-sub-overlay" type="button" role="tab">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+              Player Overlay
+            </button>
+          </li>
         </ul>
 
         <div class="tab-content">
@@ -1171,6 +1181,133 @@
                     <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
                   </div>
                   <pre id="stream-player-update-log" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height:220px; overflow:auto;">Kein Player-Update gestartet.</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-pane fade" id="system-sub-overlay" role="tabpanel" aria-labelledby="system-sub-overlay-tab">
+            <div class="row g-3">
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <h3 class="h6 mb-2">Flash Message</h3>
+                  <div class="row g-2">
+                    <div class="col-12 col-md-5"><input id="overlay-flash-id" class="form-control form-control-sm" placeholder="id (z. B. flash-1)"></div>
+                    <div class="col-12 col-md-7"><input id="overlay-flash-title" class="form-control form-control-sm" placeholder="Titel"></div>
+                    <div class="col-12"><textarea id="overlay-flash-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
+                    <div class="col-6 col-md-4"><input id="overlay-flash-duration" class="form-control form-control-sm" type="number" value="5000" min="500" max="120000" step="100"></div>
+                    <div class="col-6 col-md-4">
+                      <select id="overlay-flash-position" class="form-select form-select-sm">
+                        <option value="top">top</option>
+                        <option value="center">center</option>
+                        <option value="bottom">bottom</option>
+                      </select>
+                    </div>
+                    <div class="col-6 col-md-4"><input id="overlay-flash-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
+                    <div class="col-4"><input id="overlay-flash-bg" class="form-control form-control-sm" value="#111111"></div>
+                    <div class="col-4"><input id="overlay-flash-fg" class="form-control form-control-sm" value="#ffffff"></div>
+                    <div class="col-4"><input id="overlay-flash-accent" class="form-control form-control-sm" value="#0d6efd"></div>
+                    <div class="col-4"><input id="overlay-flash-font" class="form-control form-control-sm" type="number" value="32" min="12" max="140"></div>
+                    <div class="col-4"><input id="overlay-flash-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+                    <div class="col-4"><input id="overlay-flash-opacity" class="form-control form-control-sm" type="number" value="0.95" min="0.05" max="1" step="0.05"></div>
+                    <div class="col-12">
+                      <div class="form-check form-switch">
+                        <input id="overlay-flash-enabled" class="form-check-input" type="checkbox" checked>
+                        <label class="form-check-label" for="overlay-flash-enabled">enabled</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 mt-2">
+                    <button id="btn-overlay-save-flash" class="btn btn-outline-primary btn-sm">Flash speichern</button>
+                    <button id="btn-overlay-clear-flash" class="btn btn-outline-secondary btn-sm">Flash leeren</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <h3 class="h6 mb-2">Ticker</h3>
+                  <div class="row g-2">
+                    <div class="col-12 col-md-5"><input id="overlay-ticker-id" class="form-control form-control-sm" placeholder="id (z. B. ticker-1)"></div>
+                    <div class="col-12 col-md-7"><input id="overlay-ticker-text" class="form-control form-control-sm" placeholder="Text"></div>
+                    <div class="col-6 col-md-3">
+                      <select id="overlay-ticker-position" class="form-select form-select-sm">
+                        <option value="bottom">bottom</option>
+                        <option value="top">top</option>
+                      </select>
+                    </div>
+                    <div class="col-6 col-md-3"><input id="overlay-ticker-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
+                    <div class="col-6 col-md-3"><input id="overlay-ticker-speed" class="form-control form-control-sm" type="number" value="120" min="10" max="800"></div>
+                    <div class="col-6 col-md-3"><input id="overlay-ticker-height" class="form-control form-control-sm" type="number" value="72" min="24" max="320"></div>
+                    <div class="col-4"><input id="overlay-ticker-padding-x" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+                    <div class="col-4"><input id="overlay-ticker-bg" class="form-control form-control-sm" value="#000000"></div>
+                    <div class="col-4"><input id="overlay-ticker-fg" class="form-control form-control-sm" value="#ffffff"></div>
+                    <div class="col-6"><input id="overlay-ticker-font" class="form-control form-control-sm" type="number" value="34" min="12" max="160"></div>
+                    <div class="col-6"><input id="overlay-ticker-opacity" class="form-control form-control-sm" type="number" value="0.90" min="0.05" max="1" step="0.05"></div>
+                    <div class="col-12">
+                      <div class="form-check form-switch">
+                        <input id="overlay-ticker-enabled" class="form-check-input" type="checkbox" checked>
+                        <label class="form-check-label" for="overlay-ticker-enabled">enabled</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 mt-2">
+                    <button id="btn-overlay-save-ticker" class="btn btn-outline-primary btn-sm">Ticker speichern</button>
+                    <button id="btn-overlay-clear-tickers" class="btn btn-outline-secondary btn-sm">Ticker leeren</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <h3 class="h6 mb-2">Popup</h3>
+                  <div class="row g-2">
+                    <div class="col-12 col-md-5"><input id="overlay-popup-id" class="form-control form-control-sm" placeholder="id (z. B. popup-1)"></div>
+                    <div class="col-12 col-md-7"><input id="overlay-popup-title" class="form-control form-control-sm" placeholder="Titel"></div>
+                    <div class="col-12"><textarea id="overlay-popup-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
+                    <div class="col-6 col-md-4"><input id="overlay-popup-duration" class="form-control form-control-sm" type="number" value="8000" min="500" max="120000" step="100"></div>
+                    <div class="col-6 col-md-4">
+                      <select id="overlay-popup-position" class="form-select form-select-sm">
+                        <option value="center">center</option>
+                        <option value="top-left">top-left</option>
+                        <option value="top-right">top-right</option>
+                        <option value="bottom-left">bottom-left</option>
+                        <option value="bottom-right">bottom-right</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-4"><input id="overlay-popup-image-path" class="form-control form-control-sm" placeholder="imagePath (optional)"></div>
+                    <div class="col-4"><input id="overlay-popup-bg" class="form-control form-control-sm" value="#ffffff"></div>
+                    <div class="col-4"><input id="overlay-popup-fg" class="form-control form-control-sm" value="#111111"></div>
+                    <div class="col-4"><input id="overlay-popup-accent" class="form-control form-control-sm" value="#dc3545"></div>
+                    <div class="col-4"><input id="overlay-popup-width" class="form-control form-control-sm" type="number" value="800" min="180" max="3840"></div>
+                    <div class="col-4"><input id="overlay-popup-height" class="form-control form-control-sm" type="number" value="420" min="120" max="2160"></div>
+                    <div class="col-4"><input id="overlay-popup-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+                    <div class="col-12"><input id="overlay-popup-opacity" class="form-control form-control-sm" type="number" value="1.0" min="0.05" max="1" step="0.05"></div>
+                    <div class="col-12">
+                      <div class="form-check form-switch">
+                        <input id="overlay-popup-enabled" class="form-check-input" type="checkbox" checked>
+                        <label class="form-check-label" for="overlay-popup-enabled">enabled</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 mt-2">
+                    <button id="btn-overlay-save-popup" class="btn btn-outline-primary btn-sm">Popup speichern</button>
+                    <button id="btn-overlay-clear-popups" class="btn btn-outline-secondary btn-sm">Popups leeren</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-xl-6">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <h3 class="h6 mb-0">Overlay State</h3>
+                    <span id="overlay-state-path" class="badge text-bg-light border text-dark">-</span>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button id="btn-overlay-refresh" class="btn btn-outline-secondary btn-sm">Overlay-Status laden</button>
+                    <button id="btn-overlay-reset-all" class="btn btn-outline-danger btn-sm">Alles zurücksetzen</button>
+                  </div>
+                  <pre id="overlay-state-json" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height: 320px; overflow:auto;">-</pre>
                 </div>
               </div>
             </div>
