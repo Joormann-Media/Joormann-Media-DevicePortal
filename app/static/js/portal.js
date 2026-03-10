@@ -3522,7 +3522,11 @@
       padding: overlayNum("overlay-flash-padding", 24),
       opacity: overlayNum("overlay-flash-opacity", 0.95),
     };
-    await fetchJson("/api/player/overlay/flash", { method: "POST", body: payload });
+    const response = await fetchJson("/api/player/overlay/flash", { method: "POST", body: payload });
+    if (!payload.id && response?.item?.id) {
+      const idEl = q("overlay-flash-id");
+      if (idEl) idEl.value = String(response.item.id);
+    }
     await refreshOverlayState();
     toast("Flash gespeichert", "success");
   }
@@ -3542,7 +3546,11 @@
       fontSize: overlayNum("overlay-ticker-font", 34),
       opacity: overlayNum("overlay-ticker-opacity", 0.90),
     };
-    await fetchJson("/api/player/overlay/ticker", { method: "POST", body: payload });
+    const response = await fetchJson("/api/player/overlay/ticker", { method: "POST", body: payload });
+    if (!payload.id && response?.item?.id) {
+      const idEl = q("overlay-ticker-id");
+      if (idEl) idEl.value = String(response.item.id);
+    }
     await refreshOverlayState();
     toast("Ticker gespeichert", "success");
   }
@@ -3564,7 +3572,11 @@
       padding: overlayNum("overlay-popup-padding", 24),
       opacity: overlayNum("overlay-popup-opacity", 1.0),
     };
-    await fetchJson("/api/player/overlay/popup", { method: "POST", body: payload });
+    const response = await fetchJson("/api/player/overlay/popup", { method: "POST", body: payload });
+    if (!payload.id && response?.item?.id) {
+      const idEl = q("overlay-popup-id");
+      if (idEl) idEl.value = String(response.item.id);
+    }
     await refreshOverlayState();
     toast("Popup gespeichert", "success");
   }

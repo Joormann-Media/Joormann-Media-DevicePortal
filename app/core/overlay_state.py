@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 from app.core.jsonio import read_json, write_json
@@ -185,7 +186,10 @@ def upsert_category_item(category_key: str, item: dict) -> tuple[dict, Path]:
 
     item_id = _norm_str(item.get("id"), "")
     if item_id == "":
-        item_id = f"{category_key.rstrip('s')}-{len(rows) + 1}"
+        base = category_key.rstrip("s")
+        if base.endswith("e"):
+            base = base[:-1]
+        item_id = f"{base}-{uuid.uuid4().hex[:10]}"
         item["id"] = item_id
 
     replaced = False
