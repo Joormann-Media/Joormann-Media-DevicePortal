@@ -259,7 +259,12 @@ def _run_admin_actions(cfg: dict, actions: list[dict], triggered_by: str) -> lis
                 result.update(ok=True, message="Player-Neustart angefordert.", data=payload or {})
 
             elif action in {"system.portal_update", "portal.update", "portal_update"}:
-                payload = portal_update(service_name="device-portal.service")
+                source = str(params.get("portal_update_url") or cfg.get("portal_update_url") or "").strip()
+                if source:
+                    cfg["portal_update_url"] = source
+                    cfg["updated_at"] = utc_now()
+                    write_json(CONFIG_PATH, cfg, mode=0o600)
+                payload = portal_update(service_name="device-portal.service", update_source=source)
                 result.update(ok=True, message="Portal-Update gestartet.", data=payload or {})
 
             elif action in {"player.update", "player_update"}:

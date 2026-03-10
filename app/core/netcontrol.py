@@ -885,14 +885,15 @@ def disable_tailscale_dns_override() -> dict:
     }
 
 
-def portal_update(service_name: str = "device-portal.service") -> dict:
+def portal_update(service_name: str = "device-portal.service", update_source: str = "") -> dict:
     repo_dir = str(REPO_ROOT.resolve())
     service_name = (service_name or "device-portal.service").strip() or "device-portal.service"
     service_user = _service_user_from_systemd(service_name) or getpass.getuser()
     update_dir = str(_update_dir())
+    source = (update_source or "").strip()
     rc, out, err = _run_script(
         "portal_update.sh",
-        ["start", repo_dir, service_user, service_name, update_dir],
+        ["start", repo_dir, service_user, service_name, update_dir, source],
         timeout=25,
         use_sudo=True,
     )
@@ -909,6 +910,7 @@ def portal_update(service_name: str = "device-portal.service") -> dict:
         "repo_dir": parsed.get("repo_dir", repo_dir),
         "service_user": parsed.get("service_user", service_user),
         "service_name": parsed.get("service_name", service_name),
+        "update_source": parsed.get("update_source", source),
         "git_status": parsed.get("git_status", "unknown"),
         "restart_scheduled": parsed.get("restart_scheduled", "false").lower() == "true",
         "job_id": parsed.get("job_id", ""),

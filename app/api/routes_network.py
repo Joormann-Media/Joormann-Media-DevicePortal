@@ -2296,7 +2296,9 @@ def api_system_hostname_rename():
 @bp_network.post("/api/system/portal/update")
 def api_system_portal_update():
     try:
-        result = portal_update(service_name="device-portal.service")
+        cfg = ensure_config()
+        source = str(cfg.get("portal_update_url") or "").strip()
+        result = portal_update(service_name="device-portal.service", update_source=source)
         log_event("system", "Portal update triggered", data={"git_status": result.get("git_status", "unknown")})
         return _ok(result)
     except NetControlError as exc:

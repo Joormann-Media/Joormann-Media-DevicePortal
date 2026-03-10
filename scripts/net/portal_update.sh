@@ -132,11 +132,13 @@ if [[ "${LEGACY_MODE}" == "true" ]]; then
   SERVICE_USER="${2:-}"
   SERVICE_NAME="${3:-device-portal.service}"
   UPDATE_DIR="${4:-/tmp/deviceportal-updates}"
+  UPDATE_SOURCE="${5:-}"
 else
   REPO_DIR="${1:-}"
   SERVICE_USER="${2:-}"
   SERVICE_NAME="${3:-device-portal.service}"
   UPDATE_DIR="${4:-/tmp/deviceportal-updates}"
+  UPDATE_SOURCE="${5:-}"
 fi
 
 if [[ -z "${REPO_DIR}" || -z "${SERVICE_USER}" ]]; then
@@ -182,6 +184,7 @@ git_status=unknown
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+update_source=${UPDATE_SOURCE}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=${STARTED_AT}
@@ -246,6 +249,19 @@ EOF
   fi
 
   echo "[runtime] local runtime backup mode active (no git stash for var/data)"
+
+  if [[ -n "${UPDATE_SOURCE}" ]]; then
+    CURRENT_ORIGIN="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git remote get-url origin" 2>/dev/null || true)"
+    if [[ "${CURRENT_ORIGIN}" != "${UPDATE_SOURCE}" ]]; then
+      echo "[git] set origin to update source: ${UPDATE_SOURCE}"
+      SET_REMOTE_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git remote set-url origin \"${UPDATE_SOURCE}\"" 2>&1)"
+      SET_REMOTE_RC=$?
+      if [[ ${SET_REMOTE_RC} -ne 0 ]]; then
+        echo "[git] failed to set origin"
+        echo "${SET_REMOTE_OUT}"
+      fi
+    fi
+  fi
 
   GIT_OUT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git pull --ff-only" 2>&1)"
   GIT_RC=$?
