@@ -12,7 +12,15 @@ from app.core.fingerprint import collect_fingerprint, ensure_fingerprint
 from app.core.gitinfo import get_update_info
 from app.core.httpclient import http_get_json, http_get_text, http_post_json
 from app.core.jsonio import write_json
-from app.core.netcontrol import NetControlError, get_ap_clients, get_ap_status, get_network_info, get_wifi_status
+from app.core.netcontrol import (
+    NetControlError,
+    get_ap_clients,
+    get_ap_status,
+    get_bluetooth_status,
+    get_network_info,
+    get_wifi_status,
+    player_service_action,
+)
 from app.core.paths import CONFIG_PATH
 from app.core.state import update_state
 from app.core.storage_state import get_storage_state
@@ -290,6 +298,7 @@ def _storage_snapshot(storage_info: dict) -> dict:
 def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: str) -> dict:
     net_info = _safe_call({}, get_network_info)
     wifi_status = _safe_call({}, lambda: get_wifi_status(ifname='wlan0'))
+    bt_status = _safe_call({}, get_bluetooth_status)
     ap_status = _safe_call({}, lambda: get_ap_status(ifname='wlan0', profile='jm-hotspot'))
     ap_clients = _safe_call({'clients': []}, lambda: get_ap_clients(ifname='wlan0'))
     storage_info = _safe_call({}, get_storage_state)
@@ -359,6 +368,7 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
     network = {
         'network_info': net_info if isinstance(net_info, dict) else {},
         'wifi': wifi_status if isinstance(wifi_status, dict) else {},
+        'bluetooth': bt_status if isinstance(bt_status, dict) else {},
         'ap': {
             'active': bool((ap_status or {}).get('active')) if isinstance(ap_status, dict) else False,
             'status': ap_status if isinstance(ap_status, dict) else {},
@@ -370,6 +380,46 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
 
     storage = _storage_snapshot(storage_info if isinstance(storage_info, dict) else {})
     software = _software_snapshot(update_info if isinstance(update_info, dict) else {}, net_info if isinstance(net_info, dict) else {}, storage_info if isinstance(storage_info, dict) else {})
+    stream_storage_target = '/mnt/deviceportal/media'
+    if isinstance(storage_info, dict):
+        internal = storage_info.get('internal')
+        if isinstance(internal, dict) and bool(internal.get('mounted')) and bool(internal.get('allow_media_storage', False)):
+            stream_storage_target = str(internal.get('mount_path') or stream_storage_target)
+        else:
+            known = storage_info.get('known')
+            if isinstance(known, list):
+                for item in known:
+                    if not isinstance(item, dict):
+                        continue
+                    if not bool(item.get('mounted')) or not bool(item.get('allow_media_storage', False)):
+                        continue
+                    mount_path = str(item.get('current_mount_path') or item.get('mount_path') or '').strip()
+                    if mount_path:
+                        stream_storage_target = mount_path
+                        break
+
+    stream = {
+        'selected_stream_slug': str(cfg.get('selected_stream_slug') or '').strip(),
+        'selected_stream_name': str(cfg.get('selected_stream_name') or '').strip(),
+        'selected_stream_updated_at': str(cfg.get('selected_stream_updated_at') or '').strip(),
+        'stream_manifest_version': str(cfg.get('stream_manifest_version') or '').strip(),
+        'stream_manifest_sha256': str(cfg.get('stream_manifest_sha256') or '').strip(),
+        'stream_last_sync_at': str(cfg.get('stream_last_sync_at') or '').strip(),
+        'stream_asset_count': int(cfg.get('stream_asset_count') or 0),
+        'storage_target': stream_storage_target,
+    }
+
+    player_service_name = str(cfg.get('player_service_name') or 'joormann-media-deviceplayer.service').strip() or 'joormann-media-deviceplayer.service'
+    player_status = _safe_call({}, lambda: player_service_action('status', player_service_name))
+    stream_player = {
+        'service_name': player_service_name,
+        'service_user': str(cfg.get('player_service_user') or '').strip(),
+        'repo_url': str(cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '').strip(),
+        'status': 'active' if bool((player_status or {}).get('active')) else ('inactive' if isinstance(player_status, dict) and player_status != {} else 'unknown'),
+        'active': bool((player_status or {}).get('active')) if isinstance(player_status, dict) else False,
+        'substate': str((player_status or {}).get('substate') or '').strip() if isinstance(player_status, dict) else '',
+        'last_message': str((player_status or {}).get('message') or '').strip() if isinstance(player_status, dict) else '',
+    }
 
     return {
         'panelBaseUrl': _safe_base_url(cfg.get('admin_base_url', '')),
@@ -403,6 +453,8 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         'primaryDisplay': (display_info.get('primary_display') if isinstance(display_info, dict) and isinstance(display_info.get('primary_display'), dict) else {}),
         'displaySummary': (display_info.get('display_summary') if isinstance(display_info, dict) and isinstance(display_info.get('display_summary'), dict) else {}),
         'software': software,
+        'stream': stream,
+        'stream_player': stream_player,
         'portal': {
             'update': update_info if isinstance(update_info, dict) else {},
             'linkState': cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {},
