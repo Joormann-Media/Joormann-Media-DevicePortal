@@ -439,6 +439,8 @@
 
     try {
       let triggerError = null;
+      let triggerAccepted = false;
+      let disconnectExpected = false;
       const payloadBody = { ifname: "wlan0" };
       payloadBody.async_safe = true;
       if (selectedWpsTarget && selectedWpsTarget.ssid) {
@@ -453,9 +455,14 @@
           body: payloadBody,
           timeoutMs: 20000,
         });
+        triggerAccepted = true;
+        disconnectExpected = !!(payload && payload.data && payload.data.ap_disconnect_expected);
         const message = payload.message || "WPS wurde gestartet. Bitte jetzt innerhalb von 2 Minuten am Router die WPS-Taste druecken.";
         const hint = payload.hint || "Je nach Router kann die Verbindung 30-120 Sekunden dauern.";
         toast(`${message} ${hint}`.trim(), "success");
+        if (disconnectExpected) {
+          toast("AP-WLAN wird beim Umschalten auf das Ziel-WLAN kurz getrennt. Das ist erwartet.", "secondary");
+        }
       } catch (err) {
         triggerError = err instanceof Error ? err : new Error(String(err));
         const msg = triggerError.message || "Unbekannter Fehler";
@@ -468,13 +475,30 @@
         );
       }
 
-      await refreshWifiStatus();
-      await refreshWpsAndLogs();
+      try {
+        await refreshWifiStatus();
+        await refreshWpsAndLogs();
+      } catch (err) {
+        if (triggerAccepted && disconnectExpected) {
+          toast("WPS läuft im Hintergrund. Bitte jetzt mit dem Ziel-WLAN verbinden und die Seite neu öffnen.", "secondary");
+          return;
+        }
+        throw err;
+      }
       let connected = false;
       for (let i = 0; i < 10; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 6000));
-        const payload = await refreshWifiStatus();
-        await refreshWpsAndLogs();
+        let payload;
+        try {
+          payload = await refreshWifiStatus();
+          await refreshWpsAndLogs();
+        } catch (err) {
+          if (triggerAccepted && disconnectExpected) {
+            toast("Netzwechsel erkannt. WPS läuft weiter im Hintergrund.", "secondary");
+            return;
+          }
+          throw err;
+        }
         const wifi = (payload.data || {});
         if (wifi.connected) {
           toast(`WLAN verbunden: ${wifi.ssid || "SSID unbekannt"}`, "success");

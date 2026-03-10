@@ -267,8 +267,9 @@ def _is_ap_client_request(ifname: str = "wlan0") -> bool:
 
 
 def _run_wps_start_async(ifname: str, target_bssid: str, target_ssid: str) -> None:
-    # Give the HTTP response a short head start so AP clients do not lose the request mid-flight.
-    time.sleep(0.8)
+    # Give the HTTP response a head start so AP clients receive the success payload
+    # before wlan0 switches away from hotspot mode.
+    time.sleep(2.0)
     try:
         result = start_wps(ifname=ifname, target_bssid=target_bssid, target_ssid=target_ssid)
         log_event("wps", result.get("message", "WPS started (async)"), data={"iface": ifname, "code": result.get("code", "ok"), "async": True})
@@ -1574,7 +1575,13 @@ def api_network_wps():
                 message="WPS wird gestartet.",
                 details="AP-safe async mode",
                 hint="Bitte jetzt am Router die WPS-Taste drücken; Status wird laufend aktualisiert.",
-                data={"iface": ifname, "code": "wps_start_async", "async": True},
+                data={
+                    "iface": ifname,
+                    "code": "wps_start_async",
+                    "async": True,
+                    "ap_disconnect_expected": bool(ap_active),
+                    "reconnect_hint": "Bei AP-Betrieb trennt sich die Seite kurz, sobald wlan0 auf das Ziel-WLAN umschaltet.",
+                },
             ),
             200,
         )
