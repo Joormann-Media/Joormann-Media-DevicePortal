@@ -833,27 +833,9 @@
           </div>
 
           <div class="border rounded p-3 mt-3">
-            <div class="small text-uppercase text-secondary mb-2">Player Repo Link & Install/Update</div>
-            <div class="row g-2 mb-2">
-              <div class="col-12 col-lg-7">
-                <label for="stream-player-repo-dir" class="form-label form-label-sm mb-1">Player Repo Link (URL oder lokaler Pfad)</label>
-                <input id="stream-player-repo-dir" type="text" class="form-control form-control-sm" placeholder="https://github.com/.../Joormann-Media-DevicePlayer.git">
-              </div>
-              <div class="col-12 col-lg-3">
-                <label for="stream-player-service-name" class="form-label form-label-sm mb-1">Service</label>
-                <input id="stream-player-service-name" type="text" class="form-control form-control-sm" value="joormann-media-deviceplayer.service">
-              </div>
-              <div class="col-12 col-lg-2">
-                <label for="stream-player-service-user" class="form-label form-label-sm mb-1">User</label>
-                <input id="stream-player-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
-              </div>
+            <div class="small text-secondary">
+              Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
             </div>
-            <div class="d-flex flex-wrap gap-2 mb-2">
-              <button id="btn-stream-player-repo-save" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
-              <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
-              <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
-            </div>
-            <pre id="stream-player-update-log" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height:220px; overflow:auto;">Kein Player-Update gestartet.</pre>
           </div>
         </div>
       </div>
@@ -903,7 +885,7 @@
                 <path d="M3 22v-6h6"></path>
                 <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
               </svg>
-              Update
+              Sync & Update
             </button>
           </li>
         </ul>
@@ -911,30 +893,6 @@
         <div class="tab-content">
           <div class="tab-pane fade show active" id="system-sub-general" role="tabpanel" aria-labelledby="system-sub-general-tab">
             <div class="row g-3">
-              <div class="col-12">
-                <div class="portal-card p-4">
-                  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                    <div>
-                      <h2 class="h5 mb-1">Portal Sync</h2>
-                      <p class="text-secondary mb-0">Konfigurierter Feld-Sync mit dem Adminpanel inklusive Richtungen und letztem Lauf.</p>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2">
-                      <button id="btn-sync-refresh-config" class="btn btn-outline-secondary btn-sm">Sync-Konfiguration aktualisieren</button>
-                      <button id="btn-sync-run-now" class="btn btn-outline-primary btn-sm">Jetzt synchronisieren</button>
-                    </div>
-                  </div>
-                  <dl class="portal-kv mb-0">
-                    <dt>Sync aktiv</dt><dd id="sync-status-enabled">-</dd>
-                    <dt>Letzter Sync</dt><dd id="sync-status-last-at">-</dd>
-                    <dt>Status</dt><dd id="sync-status-last-status">-</dd>
-                    <dt>Richtung</dt><dd id="sync-status-last-direction">-</dd>
-                    <dt>Auslöser</dt><dd id="sync-status-last-trigger">-</dd>
-                    <dt>Letzte Meldung</dt><dd id="sync-status-last-message">-</dd>
-                    <dt>Aktive Feldgruppen</dt><dd id="sync-status-groups">-</dd>
-                  </dl>
-                </div>
-              </div>
-
               <div class="col-12 col-xl-7">
                 <div class="portal-card p-4">
                   <h2 class="h5">System Einstellungen</h2>
@@ -1153,6 +1111,29 @@
 
           <div class="tab-pane fade" id="system-sub-update" role="tabpanel" aria-labelledby="system-sub-update-tab">
             <div class="row g-3">
+              <div class="col-12">
+                <div class="portal-card p-4">
+                  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                      <h2 class="h5 mb-1">Portal Sync</h2>
+                      <p class="text-secondary mb-0">Konfigurierter Feld-Sync mit dem Adminpanel inklusive Richtungen und letztem Lauf.</p>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-sync-refresh-config" class="btn btn-outline-secondary btn-sm">Sync-Konfiguration aktualisieren</button>
+                      <button id="btn-sync-run-now" class="btn btn-outline-primary btn-sm">Jetzt synchronisieren</button>
+                    </div>
+                  </div>
+                  <dl class="portal-kv mb-0">
+                    <dt>Sync aktiv</dt><dd id="sync-status-enabled">-</dd>
+                    <dt>Letzter Sync</dt><dd id="sync-status-last-at">-</dd>
+                    <dt>Status</dt><dd id="sync-status-last-status">-</dd>
+                    <dt>Richtung</dt><dd id="sync-status-last-direction">-</dd>
+                    <dt>Auslöser</dt><dd id="sync-status-last-trigger">-</dd>
+                    <dt>Letzte Meldung</dt><dd id="sync-status-last-message">-</dd>
+                    <dt>Aktive Feldgruppen</dt><dd id="sync-status-groups">-</dd>
+                  </dl>
+                </div>
+              </div>
               <div class="col-12 col-xl-7">
                 <div class="portal-card p-4">
                   <h3 class="h6">Portal Update</h3>
@@ -1164,6 +1145,32 @@
                 <div class="portal-card p-4 h-100">
                   <h3 class="h6">Letztes Update</h3>
                   <pre id="system-update-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="portal-card p-4">
+                  <h3 class="h6 mb-2">Player Update</h3>
+                  <div class="small text-secondary mb-2">Player Repo konfigurieren und Install/Update direkt ausführen.</div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12 col-lg-7">
+                      <label for="stream-player-repo-dir" class="form-label form-label-sm mb-1">Player Repo Link (URL oder lokaler Pfad)</label>
+                      <input id="stream-player-repo-dir" type="text" class="form-control form-control-sm" placeholder="https://github.com/.../Joormann-Media-DevicePlayer.git">
+                    </div>
+                    <div class="col-12 col-lg-3">
+                      <label for="stream-player-service-name" class="form-label form-label-sm mb-1">Service</label>
+                      <input id="stream-player-service-name" type="text" class="form-control form-control-sm" value="joormann-media-deviceplayer.service">
+                    </div>
+                    <div class="col-12 col-lg-2">
+                      <label for="stream-player-service-user" class="form-label form-label-sm mb-1">User</label>
+                      <input id="stream-player-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button id="btn-stream-player-repo-save" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
+                    <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
+                    <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
+                  </div>
+                  <pre id="stream-player-update-log" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height:220px; overflow:auto;">Kein Player-Update gestartet.</pre>
                 </div>
               </div>
             </div>
