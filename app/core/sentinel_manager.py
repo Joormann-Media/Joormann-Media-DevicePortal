@@ -123,7 +123,10 @@ def _source_dir_candidates() -> list[Path]:
     portal_root = Path(__file__).resolve().parents[2]
     candidates.extend(
         [
+            # Preferred: bundled sentinel sources inside the DevicePortal repo.
+            portal_root / "resources" / "sentinels",
             portal_root.parent / "Joormann-Media-DeviceSentinels" / "sentinels",
+            portal_root.parent / "projects" / "Joormann-Media-DeviceSentinels" / "sentinels",
             Path("/opt/joormann-media/Joormann-Media-DeviceSentinels/sentinels"),
             Path("/opt/device-sentinels/sentinels"),
             Path("/opt/sentinels/src"),
