@@ -25,6 +25,8 @@ Konfigurierbarer, sicherer Feld-Sync mit dem Adminpanel.
 - Zusätzliche Parameter:
   - `writeMode`: `replace` (default) | `merge`
   - `includePopups`: `true|false` (default `true`)
+  - `flashAutoClear`: `true|false` (default `true`)  
+    Bei `true` werden aktive Flash-IDs nach der konfigurierten Gesamtdauer (Summe `durationMs` + kleiner Puffer) automatisch wieder aus `overlay-state.json` entfernt.
 - Orientation aus Admin (`horizontal|vertical|rotated_right|rotated_left`) wird serverseitig auf `rotation` gemappt.
 
 ## Ablauf

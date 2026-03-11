@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hmac
+import threading
+import time
 
 from flask import Blueprint, jsonify, request
 
@@ -37,6 +39,7 @@ from app.core.sentinel_manager import (
 )
 
 bp_sync = Blueprint("sync", __name__)
+_overlay_flash_autoclear_lock = threading.Lock()
 
 
 def _bool(value: object, default: bool = False) -> bool:
@@ -99,14 +102,30 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
         next_state["tickers"] = list(current_state.get("tickers") or []) if isinstance(current_state.get("tickers"), list) else []
         next_state["popups"] = list(current_state.get("popups") or []) if isinstance(current_state.get("popups"), list) else []
 
+    flash_ids_for_autoclear: list[str] = []
+    flash_autoclear_delay_ms = 0
+
     flashes = overlay_state.get("flashMessages")
     if isinstance(flashes, list):
         parsed: list[dict] = []
+        enabled_durations: list[int] = []
         for row in flashes:
             if not isinstance(row, dict):
                 continue
-            parsed.append(_normalize_overlay_item_with_orientation(row, "flash"))
+            normalized = _normalize_overlay_item_with_orientation(row, "flash")
+            parsed.append(normalized)
+            if bool(normalized.get("enabled")):
+                flash_id = str(normalized.get("id") or "").strip()
+                if flash_id:
+                    flash_ids_for_autoclear.append(flash_id)
+                try:
+                    enabled_durations.append(max(500, int(normalized.get("durationMs") or 5000)))
+                except Exception:
+                    enabled_durations.append(5000)
         next_state["flashMessages"] = parsed if write_mode == "replace" else (next_state["flashMessages"] + parsed)
+        if enabled_durations:
+            # One full cycle across active flashes, plus a small tail.
+            flash_autoclear_delay_ms = min(600000, max(500, sum(enabled_durations) + 750))
 
     tickers = overlay_state.get("tickers")
     if isinstance(tickers, list):
@@ -131,15 +150,56 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
     if not ok:
         return False, {"error": str(err or "overlay_write_failed"), "path": str(path)}
 
+    flash_autoclear = _bool(params.get("flashAutoClear"), default=True)
+    if flash_autoclear and flash_ids_for_autoclear and flash_autoclear_delay_ms > 0:
+        _schedule_overlay_flash_autoclear(flash_ids_for_autoclear, flash_autoclear_delay_ms)
+
     return True, {
         "message": "Overlay-State angewendet.",
         "path": str(path),
         "writeMode": write_mode,
         "includePopups": include_popups,
+        "flashAutoClear": flash_autoclear,
+        "flashAutoClearDelayMs": flash_autoclear_delay_ms if flash_autoclear else 0,
         "flashCount": len(next_state["flashMessages"]),
         "tickerCount": len(next_state["tickers"]),
         "popupCount": len(next_state["popups"]),
     }
+
+
+def _schedule_overlay_flash_autoclear(flash_ids: list[str], delay_ms: int) -> None:
+    unique_ids = [str(item).strip() for item in flash_ids if str(item).strip()]
+    if not unique_ids:
+        return
+    delay_seconds = max(0.5, float(delay_ms) / 1000.0)
+
+    def _worker() -> None:
+        try:
+            time.sleep(delay_seconds)
+            with _overlay_flash_autoclear_lock:
+                state, _ = read_overlay_state()
+                rows = state.get("flashMessages")
+                if not isinstance(rows, list):
+                    return
+                id_set = set(unique_ids)
+                next_rows = []
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    row_id = str(row.get("id") or "").strip()
+                    if row_id in id_set:
+                        continue
+                    next_rows.append(row)
+                if len(next_rows) == len(rows):
+                    return
+                state["flashMessages"] = next_rows
+                write_overlay_state(state)
+        except Exception:
+            # Intentional no-op: overlay autoclear must never break sync flow.
+            return
+
+    thread = threading.Thread(target=_worker, name="overlay-flash-autoclear", daemon=True)
+    thread.start()
 
 
 def _ensure_sync_state(cfg: dict) -> dict:
