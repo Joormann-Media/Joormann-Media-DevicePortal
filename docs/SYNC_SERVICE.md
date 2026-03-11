@@ -9,6 +9,24 @@ Konfigurierbarer, sicherer Feld-Sync mit dem Adminpanel.
 - `POST /api/sync/pull-config`
 - `POST /api/sync/run`
 
+## Admin-Actions über `/api/sync/run`
+- `actionsOnly=true` + `actions=[...]` führt nur Admin-Remote-Aktionen aus.
+- Unterstützt u. a.:
+  - `system.reboot`
+  - `system.portal_restart`
+  - `player.restart`
+  - `system.portal_update`
+  - `player.update`
+  - `stream.sync`
+  - `overlay.apply`
+
+### `overlay.apply`
+- Erwartet `params.overlayState` (JSON mit `flashMessages`, `tickers`, optional `popups`)
+- Zusätzliche Parameter:
+  - `writeMode`: `replace` (default) | `merge`
+  - `includePopups`: `true|false` (default `true`)
+- Orientation aus Admin (`horizontal|vertical|rotated_right|rotated_left`) wird serverseitig auf `rotation` gemappt.
+
 ## Ablauf
 1. Portal zieht Sync-Konfiguration vom Admin (`/api/device/link/sync-config`).
 2. Admin->Portal Felder werden lokal angewendet (z. B. Stream, Flags, Sentinel Webhook).

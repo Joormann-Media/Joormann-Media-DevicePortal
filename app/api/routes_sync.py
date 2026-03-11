@@ -14,6 +14,13 @@ from app.core.paths import CONFIG_PATH
 from app.core.auth_session import is_authenticated
 from app.core.systeminfo import get_hostname, get_ip
 from app.core.timeutil import utc_now
+from app.core.overlay_state import (
+    read_overlay_state,
+    sanitize_flash,
+    sanitize_ticker,
+    sanitize_popup,
+    write_overlay_state,
+)
 from app.core.netcontrol import (
     NetControlError,
     player_service_action,
@@ -40,6 +47,99 @@ def _bool(value: object, default: bool = False) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return default
+
+
+def _orientation_to_rotation(value: object) -> int:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "horizontal": 0,
+        "vertical": 90,
+        "rotated_right": 90,
+        "rotated_left": -90,
+        "upside_down": 180,
+    }
+    return mapping.get(raw, 0)
+
+
+def _normalize_overlay_item_with_orientation(item: dict, item_type: str) -> dict:
+    payload = dict(item)
+    has_rotation = payload.get("rotation") is not None
+    if not has_rotation and "orientation" in payload:
+        payload["rotation"] = _orientation_to_rotation(payload.get("orientation"))
+
+    if item_type == "flash":
+        return sanitize_flash(payload)
+    if item_type == "ticker":
+        return sanitize_ticker(payload)
+    if item_type == "popup":
+        return sanitize_popup(payload)
+    return payload
+
+
+def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
+    overlay_state = params.get("overlayState") if isinstance(params.get("overlayState"), dict) else {}
+    if not overlay_state:
+        return False, {"error": "overlay_state_missing"}
+
+    include_popups = _bool(params.get("includePopups"), default=True)
+    write_mode = str(params.get("writeMode") or "replace").strip().lower()
+    if write_mode not in {"replace", "merge"}:
+        write_mode = "replace"
+
+    current_state, _ = read_overlay_state()
+    next_state = {
+        "updatedAt": utc_now(),
+        "flashMessages": [],
+        "tickers": [],
+        "popups": [],
+    }
+
+    if write_mode == "merge":
+        next_state["flashMessages"] = list(current_state.get("flashMessages") or []) if isinstance(current_state.get("flashMessages"), list) else []
+        next_state["tickers"] = list(current_state.get("tickers") or []) if isinstance(current_state.get("tickers"), list) else []
+        next_state["popups"] = list(current_state.get("popups") or []) if isinstance(current_state.get("popups"), list) else []
+
+    flashes = overlay_state.get("flashMessages")
+    if isinstance(flashes, list):
+        parsed: list[dict] = []
+        for row in flashes:
+            if not isinstance(row, dict):
+                continue
+            parsed.append(_normalize_overlay_item_with_orientation(row, "flash"))
+        next_state["flashMessages"] = parsed if write_mode == "replace" else (next_state["flashMessages"] + parsed)
+
+    tickers = overlay_state.get("tickers")
+    if isinstance(tickers, list):
+        parsed = []
+        for row in tickers:
+            if not isinstance(row, dict):
+                continue
+            parsed.append(_normalize_overlay_item_with_orientation(row, "ticker"))
+        next_state["tickers"] = parsed if write_mode == "replace" else (next_state["tickers"] + parsed)
+
+    if include_popups:
+        popups = overlay_state.get("popups")
+        if isinstance(popups, list):
+            parsed = []
+            for row in popups:
+                if not isinstance(row, dict):
+                    continue
+                parsed.append(_normalize_overlay_item_with_orientation(row, "popup"))
+            next_state["popups"] = parsed if write_mode == "replace" else (next_state["popups"] + parsed)
+
+    ok, err, path = write_overlay_state(next_state)
+    if not ok:
+        return False, {"error": str(err or "overlay_write_failed"), "path": str(path)}
+
+    return True, {
+        "message": "Overlay-State angewendet.",
+        "path": str(path),
+        "writeMode": write_mode,
+        "includePopups": include_popups,
+        "flashCount": len(next_state["flashMessages"]),
+        "tickerCount": len(next_state["tickers"]),
+        "popupCount": len(next_state["popups"]),
+    }
 
 
 def _ensure_sync_state(cfg: dict) -> dict:
@@ -287,6 +387,12 @@ def _run_admin_actions(cfg: dict, actions: list[dict], triggered_by: str) -> lis
                 if not ok:
                     raise RuntimeError(str(payload.get("error") or "stream_sync_failed"))
                 result.update(ok=True, message="Stream/Playlist-Sync gestartet.", data=payload)
+
+            elif action in {"overlay.apply", "overlay_apply"}:
+                ok, payload = _apply_overlay_state_from_admin(params)
+                if not ok:
+                    raise RuntimeError(str(payload.get("error") or "overlay_apply_failed"))
+                result.update(ok=True, message="Overlay-Konfiguration angewendet.", data=payload)
 
             elif action in {"sentinel.install", "sentinel_install"}:
                 slug = str(params.get("slug") or "").strip()
