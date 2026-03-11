@@ -13,6 +13,7 @@ import requests
 from flask import Blueprint, jsonify, request
 
 from app.core.config import _safe_base_url, ensure_config
+from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
 from app.core.httpclient import http_get_json, http_post_json
 from app.core.jsonio import write_json
@@ -257,6 +258,9 @@ def _write_player_source_file(
     manifest_version: str,
     manifest_sha256: str,
     asset_count: int,
+    display_rotation_degrees: int = 0,
+    display_mount_orientation: str = "unknown",
+    display_content_orientation: str = "landscape",
 ) -> None:
     payload = {
         'version': 1,
@@ -273,6 +277,11 @@ def _write_player_source_file(
             'version': manifest_version,
             'sha256': manifest_sha256,
             'asset_count': int(asset_count),
+        },
+        'display': {
+            'rotation_degrees': int(display_rotation_degrees),
+            'mount_orientation': str(display_mount_orientation or 'unknown'),
+            'content_orientation': str(display_content_orientation or 'landscape'),
         },
     }
     PLAYER_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -585,6 +594,11 @@ def api_stream_sync():
         cfg['stream_sync_error'] = ''
         cfg['updated_at'] = utc_now()
 
+        display_snapshot = get_display_snapshot(cfg)
+        primary_display = display_snapshot.get('primary_display') if isinstance(display_snapshot, dict) else {}
+        if not isinstance(primary_display, dict):
+            primary_display = {}
+
         _write_player_source_file(
             stream_slug=stream_slug,
             storage_device_id=storage_device_id,
@@ -594,6 +608,9 @@ def api_stream_sync():
             manifest_version=cfg['stream_manifest_version'],
             manifest_sha256=cfg['stream_manifest_sha256'],
             asset_count=len(rewritten_assets),
+            display_rotation_degrees=int(primary_display.get('rotation_degrees') or 0),
+            display_mount_orientation=str(primary_display.get('mount_orientation') or 'unknown'),
+            display_content_orientation=str(primary_display.get('content_orientation') or 'landscape'),
         )
 
         ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)

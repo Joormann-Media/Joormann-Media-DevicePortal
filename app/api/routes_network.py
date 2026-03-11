@@ -4,6 +4,7 @@ import ipaddress
 import threading
 import time
 import uuid
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
 
@@ -11,7 +12,7 @@ from app.core.config import ensure_config
 from app.core.device import ensure_device
 from app.core.display import DISPLAY_MOUNT_ORIENTATIONS, get_display_snapshot, normalize_mount_orientation, update_display_config
 from app.core.fingerprint import collect_fingerprint
-from app.core.jsonio import write_json
+from app.core.jsonio import read_json, write_json
 from app.core.network_events import (
     get_bt_pairing_state,
     get_wps_state,
@@ -58,7 +59,7 @@ from app.core.netcontrol import (
     wifi_request_dhcp,
     wifi_scan,
 )
-from app.core.paths import CONFIG_PATH
+from app.core.paths import CONFIG_PATH, DATA_DIR
 from app.core.storage_file_manager import StorageDeleteService, StorageFileManagerService
 from app.core.storage_state import (
     format_storage_device,
@@ -84,6 +85,7 @@ from app.core.sentinel_manager import (
 bp_network = Blueprint("network", __name__)
 storage_fm = StorageFileManagerService()
 storage_delete_service = StorageDeleteService(storage_fm)
+PLAYER_SOURCE_PATH = Path(DATA_DIR) / "player-source.json"
 
 
 def _ok(data: dict, status: int = 200):
@@ -96,6 +98,27 @@ def _error(code: str, message: str, status: int = 400, detail: str = ""):
     if detail:
         payload["detail"] = detail
     return jsonify(ok=False, success=False, message=message, data={}, error_code=code, error=payload), status
+
+
+def _update_player_source_display(snapshot: dict) -> tuple[bool, str]:
+    payload = read_json(str(PLAYER_SOURCE_PATH), None)
+    if not isinstance(payload, dict):
+        # Kein Stream aktiv bzw. kein Source-File vorhanden -> kein Fehlerfall.
+        return True, ""
+
+    primary = snapshot.get("primary_display") if isinstance(snapshot.get("primary_display"), dict) else {}
+    if not isinstance(primary, dict):
+        primary = {}
+
+    display = payload.get("display") if isinstance(payload.get("display"), dict) else {}
+    display["rotation_degrees"] = int(primary.get("rotation_degrees") or 0)
+    display["mount_orientation"] = str(primary.get("mount_orientation") or "unknown")
+    display["content_orientation"] = str(primary.get("content_orientation") or "landscape")
+    payload["display"] = display
+    payload["updated_at"] = utc_now()
+
+    ok, err = write_json(str(PLAYER_SOURCE_PATH), payload, mode=0o600)
+    return ok, err
 
 
 def _wps_phase_from_status(status: dict, wps_state: dict) -> dict:
@@ -956,12 +979,17 @@ def api_display_config():
         return _error("config_write_failed", "Could not persist display config", status=500, detail=write_err)
 
     snapshot = get_display_snapshot(cfg)
+    ps_ok, ps_err = _update_player_source_display(snapshot)
+    if not ps_ok:
+        return _error("player_source_write_failed", "Display-Update konnte nicht in player-source.json geschrieben werden.", status=500, detail=ps_err)
+
     return _ok(
         {
             "saved": True,
             "connector": connector,
             "display_config": updated_item,
             "display": snapshot,
+            "player_source_updated": True,
             "allowed_mount_orientations": list(DISPLAY_MOUNT_ORIENTATIONS),
         }
     )
