@@ -64,11 +64,35 @@ def _orientation_to_rotation(value: object) -> int:
     return mapping.get(raw, 0)
 
 
-def _normalize_overlay_item_with_orientation(item: dict, item_type: str) -> dict:
+def _normalize_rotation_degrees(value: object) -> int:
+    try:
+        raw = int(float(value))
+    except Exception:
+        raw = 0
+
+    normalized = raw % 360
+    if normalized < 0:
+        normalized += 360
+
+    if normalized >= 315 or normalized < 45:
+        return 0
+    if normalized >= 45 and normalized < 135:
+        return 90
+    if normalized >= 135 and normalized < 225:
+        return 180
+    return 270
+
+
+def _normalize_overlay_item_with_orientation(item: dict, item_type: str, display_rotation_degrees: int = 0) -> dict:
     payload = dict(item)
-    has_rotation = payload.get("rotation") is not None
-    if not has_rotation and "orientation" in payload:
-        payload["rotation"] = _orientation_to_rotation(payload.get("orientation"))
+    base_rotation = payload.get("rotation")
+    if base_rotation is None and "orientation" in payload:
+        base_rotation = _orientation_to_rotation(payload.get("orientation"))
+    try:
+        base_rotation_i = int(float(base_rotation)) if base_rotation is not None else 0
+    except Exception:
+        base_rotation_i = 0
+    payload["rotation"] = _normalize_rotation_degrees(base_rotation_i + int(display_rotation_degrees or 0))
 
     if item_type == "flash":
         return sanitize_flash(payload)
@@ -102,6 +126,17 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
         next_state["tickers"] = list(current_state.get("tickers") or []) if isinstance(current_state.get("tickers"), list) else []
         next_state["popups"] = list(current_state.get("popups") or []) if isinstance(current_state.get("popups"), list) else []
 
+    display_payload = overlay_state.get("display") if isinstance(overlay_state.get("display"), dict) else {}
+    display_rotation_degrees = _normalize_rotation_degrees(
+        display_payload.get("rotationDegrees")
+        if isinstance(display_payload, dict) and "rotationDegrees" in display_payload
+        else (
+            display_payload.get("rotation_degrees")
+            if isinstance(display_payload, dict)
+            else params.get("displayRotationDegrees")
+        )
+    )
+
     flash_ids_for_autoclear: list[str] = []
     flash_autoclear_delay_ms = 0
 
@@ -112,7 +147,7 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
         for row in flashes:
             if not isinstance(row, dict):
                 continue
-            normalized = _normalize_overlay_item_with_orientation(row, "flash")
+            normalized = _normalize_overlay_item_with_orientation(row, "flash", display_rotation_degrees)
             parsed.append(normalized)
             if bool(normalized.get("enabled")):
                 flash_id = str(normalized.get("id") or "").strip()
@@ -133,7 +168,7 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
         for row in tickers:
             if not isinstance(row, dict):
                 continue
-            parsed.append(_normalize_overlay_item_with_orientation(row, "ticker"))
+            parsed.append(_normalize_overlay_item_with_orientation(row, "ticker", display_rotation_degrees))
         next_state["tickers"] = parsed if write_mode == "replace" else (next_state["tickers"] + parsed)
 
     if include_popups:
@@ -143,7 +178,7 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
             for row in popups:
                 if not isinstance(row, dict):
                     continue
-                parsed.append(_normalize_overlay_item_with_orientation(row, "popup"))
+                parsed.append(_normalize_overlay_item_with_orientation(row, "popup", display_rotation_degrees))
             next_state["popups"] = parsed if write_mode == "replace" else (next_state["popups"] + parsed)
 
     ok, err, path = write_overlay_state(next_state)
@@ -161,6 +196,7 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
         "includePopups": include_popups,
         "flashAutoClear": flash_autoclear,
         "flashAutoClearDelayMs": flash_autoclear_delay_ms if flash_autoclear else 0,
+        "displayRotationDegrees": display_rotation_degrees,
         "flashCount": len(next_state["flashMessages"]),
         "tickerCount": len(next_state["tickers"]),
         "popupCount": len(next_state["popups"]),

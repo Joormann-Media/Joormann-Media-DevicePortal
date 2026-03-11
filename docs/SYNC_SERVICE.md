@@ -28,6 +28,7 @@ Konfigurierbarer, sicherer Feld-Sync mit dem Adminpanel.
   - `flashAutoClear`: `true|false` (default `true`)  
     Bei `true` werden aktive Flash-IDs nach der konfigurierten Gesamtdauer (Summe `durationMs` + kleiner Puffer) automatisch wieder aus `overlay-state.json` entfernt.
 - Orientation aus Admin (`horizontal|vertical|rotated_right|rotated_left`) wird serverseitig auf `rotation` gemappt.
+- Zusätzlich wird (wenn vorhanden) `overlayState.display.rotationDegrees` aus dem Admin berücksichtigt und auf Flash/Ticker-Rotation addiert.
 
 ## Ablauf
 1. Portal zieht Sync-Konfiguration vom Admin (`/api/device/link/sync-config`).
