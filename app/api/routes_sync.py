@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 import threading
 import time
 
@@ -85,6 +86,8 @@ def _normalize_rotation_degrees(value: object) -> int:
 
 def _normalize_overlay_item_with_orientation(item: dict, item_type: str, display_rotation_degrees: int = 0) -> dict:
     payload = dict(item)
+    # Popups can arrive with pre-rotated media from Adminpanel.
+    popup_pre_rotated = item_type == "popup" and _bool(payload.get("preRotated"), default=False)
     base_rotation = payload.get("rotation")
     if base_rotation is None and "orientation" in payload:
         base_rotation = _orientation_to_rotation(payload.get("orientation"))
@@ -92,7 +95,7 @@ def _normalize_overlay_item_with_orientation(item: dict, item_type: str, display
         base_rotation_i = int(float(base_rotation)) if base_rotation is not None else 0
     except Exception:
         base_rotation_i = 0
-    payload["rotation"] = _normalize_rotation_degrees(base_rotation_i + int(display_rotation_degrees or 0))
+    payload["rotation"] = 0 if popup_pre_rotated else _normalize_rotation_degrees(base_rotation_i + int(display_rotation_degrees or 0))
 
     if item_type == "flash":
         return sanitize_flash(payload)
@@ -178,7 +181,15 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
             for row in popups:
                 if not isinstance(row, dict):
                     continue
-                parsed.append(_normalize_overlay_item_with_orientation(row, "popup", display_rotation_degrees))
+                popup_row = dict(row)
+                # Backward-compatible mapping from Admin payload keys.
+                if not popup_row.get("title"):
+                    popup_row["title"] = str(popup_row.get("popupName") or "").strip()
+                if not popup_row.get("message"):
+                    popup_row["message"] = str(popup_row.get("popupContent") or "").strip()
+                if not popup_row.get("imagePath"):
+                    popup_row["imagePath"] = _extract_first_image_src(str(popup_row.get("popupContent") or ""))
+                parsed.append(_normalize_overlay_item_with_orientation(popup_row, "popup", display_rotation_degrees))
             next_state["popups"] = parsed if write_mode == "replace" else (next_state["popups"] + parsed)
 
     ok, err, path = write_overlay_state(next_state)
@@ -236,6 +247,16 @@ def _schedule_overlay_flash_autoclear(flash_ids: list[str], delay_ms: int) -> No
 
     thread = threading.Thread(target=_worker, name="overlay-flash-autoclear", daemon=True)
     thread.start()
+
+
+def _extract_first_image_src(content: str) -> str:
+    text = str(content or "").strip()
+    if text == "":
+        return ""
+    match = re.search(r"<img[^>]+src=['\"]([^'\"]+)['\"]", text, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    return str(match.group(1) or "").strip()
 
 
 def _ensure_sync_state(cfg: dict) -> dict:
@@ -628,6 +649,25 @@ def api_sync_fields():
     cfg = ensure_config()
     state = _ensure_sync_state(cfg)
     return jsonify(ok=True, data={"rules": state.get("rules") or []})
+
+
+@bp_sync.post("/api/sync/overlay/apply")
+def api_sync_overlay_apply():
+    cfg = ensure_config()
+    dev = ensure_device()
+    data = request.get_json(force=True, silent=True) or {}
+
+    if not is_authenticated():
+        auth_ok, auth_error = _can_run_without_session(data, cfg, dev)
+        if not auth_ok:
+            return jsonify(ok=False, message="Unauthorized", error=auth_error), 401
+
+    params = data.get("params") if isinstance(data.get("params"), dict) else data
+    ok, payload = _apply_overlay_state_from_admin(params if isinstance(params, dict) else {})
+    if not ok:
+        return jsonify(ok=False, message="Overlay apply failed.", error=str(payload.get("error") or "overlay_apply_failed"), data=payload), 400
+
+    return jsonify(ok=True, message="Overlay-Konfiguration angewendet.", data=payload)
 
 
 @bp_sync.post("/api/sync/pull-config")

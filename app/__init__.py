@@ -75,6 +75,7 @@ def create_app() -> Flask:
             "/api/auth/local-users",
             "/api/panel/admin-sync-payload",
             "/api/sync/run",
+            "/api/sync/overlay/apply",
         }
         if path in public_exact or path.startswith("/static/"):
             return None

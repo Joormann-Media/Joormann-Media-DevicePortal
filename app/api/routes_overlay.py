@@ -62,7 +62,14 @@ def api_overlay_ticker_save():
 def api_overlay_popup_save():
     data = _payload()
     item = sanitize_popup(data)
-    if not item.get("title") and not item.get("message") and not item.get("imagePath"):
+    if (
+        not item.get("title")
+        and not item.get("message")
+        and not item.get("popupContent")
+        and not item.get("imagePath")
+        and not item.get("imageUrl")
+        and not item.get("imageData")
+    ):
         return jsonify(ok=False, error="popup_content_required"), 400
 
     state, path = upsert_category_item("popups", item)

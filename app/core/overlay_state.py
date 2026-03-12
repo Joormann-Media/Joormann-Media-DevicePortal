@@ -156,17 +156,38 @@ def sanitize_ticker(payload: dict) -> dict:
 
 
 def sanitize_popup(payload: dict) -> dict:
-    position = _norm_str(payload.get("position"), "center")
-    if position not in {"center", "top-left", "top-right", "bottom-left", "bottom-right"}:
+    position = _norm_str(payload.get("position"), "center").lower()
+    if position not in {"center", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"}:
         position = "center"
+    trigger_mode = _norm_str(payload.get("triggerMode"), _norm_str(payload.get("trigger_mode"), "always")).lower()
+    if trigger_mode not in {"always", "interval", "cron", "event"}:
+        trigger_mode = "always"
+    interval_unit = _norm_str(payload.get("intervalUnit"), _norm_str(payload.get("interval_unit"), "")).lower()
+    if interval_unit not in {"", "minutes", "hours", "days"}:
+        interval_unit = "minutes"
+
     return {
         "id": _norm_str(payload.get("id"), ""),
         "enabled": _norm_bool(payload.get("enabled"), True),
         "title": _norm_str(payload.get("title"), ""),
         "message": _norm_str(payload.get("message"), ""),
+        "popupId": _norm_str(payload.get("popupId"), _norm_str(payload.get("popup_id"), "")),
+        "popupSlug": _norm_str(payload.get("popupSlug"), _norm_str(payload.get("popup_slug"), "")),
+        "popupName": _norm_str(payload.get("popupName"), _norm_str(payload.get("popup_name"), "")),
+        "popupContent": _norm_str(payload.get("popupContent"), _norm_str(payload.get("popup_content"), "")),
         "durationMs": _norm_int(payload.get("durationMs"), 8000, 500, 120000),
         "position": position,
+        "rotation": _norm_int(payload.get("rotation"), 0, -360, 360),
+        "preRotated": _norm_bool(payload.get("preRotated"), _norm_bool(payload.get("pre_rotated"), False)),
         "imagePath": _norm_str(payload.get("imagePath"), ""),
+        "imageUrl": _norm_str(payload.get("imageUrl"), _norm_str(payload.get("image_url"), "")),
+        "imageData": _norm_str(payload.get("imageData"), _norm_str(payload.get("image_data"), "")),
+        "imageMimeType": _norm_str(payload.get("imageMimeType"), _norm_str(payload.get("image_mime_type"), "")),
+        "triggerMode": trigger_mode,
+        "intervalValue": _norm_int(payload.get("intervalValue"), 0, 0, 10080),
+        "intervalUnit": interval_unit,
+        "scheduleCron": _norm_str(payload.get("scheduleCron"), _norm_str(payload.get("schedule_cron"), "")),
+        "eventKey": _norm_str(payload.get("eventKey"), _norm_str(payload.get("event_key"), "")),
         "backgroundColor": _color(payload.get("backgroundColor"), "#ffffff"),
         "textColor": _color(payload.get("textColor"), "#111111"),
         "accentColor": _color(payload.get("accentColor"), "#dc3545"),
