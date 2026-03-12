@@ -4,6 +4,7 @@ import hmac
 import re
 import threading
 import time
+from urllib.parse import urljoin
 
 from flask import Blueprint, jsonify, request
 
@@ -178,6 +179,7 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
         popups = overlay_state.get("popups")
         if isinstance(popups, list):
             parsed = []
+            source_base_url = str(params.get("sourceBaseUrl") or params.get("source_base_url") or "").strip()
             for row in popups:
                 if not isinstance(row, dict):
                     continue
@@ -186,9 +188,15 @@ def _apply_overlay_state_from_admin(params: dict) -> tuple[bool, dict]:
                 if not popup_row.get("title"):
                     popup_row["title"] = str(popup_row.get("popupName") or "").strip()
                 if not popup_row.get("message"):
-                    popup_row["message"] = str(popup_row.get("popupContent") or "").strip()
-                if not popup_row.get("imagePath"):
-                    popup_row["imagePath"] = _extract_first_image_src(str(popup_row.get("popupContent") or ""))
+                    popup_row["message"] = _strip_html_text(str(popup_row.get("popupContent") or ""))
+                image_ref = str(popup_row.get("imagePath") or "").strip()
+                if not image_ref:
+                    image_ref = _extract_first_image_src(str(popup_row.get("popupContent") or ""))
+                if not image_ref:
+                    image_ref = str(popup_row.get("imageUrl") or "").strip()
+                if image_ref.startswith("/") and source_base_url:
+                    image_ref = urljoin(source_base_url.rstrip("/") + "/", image_ref.lstrip("/"))
+                popup_row["imagePath"] = image_ref
                 parsed.append(_normalize_overlay_item_with_orientation(popup_row, "popup", display_rotation_degrees))
             next_state["popups"] = parsed if write_mode == "replace" else (next_state["popups"] + parsed)
 
@@ -257,6 +265,15 @@ def _extract_first_image_src(content: str) -> str:
     if not match:
         return ""
     return str(match.group(1) or "").strip()
+
+
+def _strip_html_text(content: str) -> str:
+    text = str(content or "").strip()
+    if text == "":
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def _ensure_sync_state(cfg: dict) -> dict:
