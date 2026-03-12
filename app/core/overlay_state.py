@@ -159,6 +159,9 @@ def sanitize_popup(payload: dict) -> dict:
     position = _norm_str(payload.get("position"), "center").lower()
     if position not in {"center", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"}:
         position = "center"
+    display_mode = _norm_str(payload.get("displayMode"), _norm_str(payload.get("display_mode"), "overlay")).lower()
+    if display_mode not in {"overlay", "playlist", "both"}:
+        display_mode = "overlay"
     trigger_mode = _norm_str(payload.get("triggerMode"), _norm_str(payload.get("trigger_mode"), "always")).lower()
     if trigger_mode not in {"always", "interval", "cron", "event"}:
         trigger_mode = "always"
@@ -169,13 +172,17 @@ def sanitize_popup(payload: dict) -> dict:
     return {
         "id": _norm_str(payload.get("id"), ""),
         "enabled": _norm_bool(payload.get("enabled"), True),
+        "assignmentId": _norm_str(payload.get("assignmentId"), _norm_str(payload.get("assignment_id"), "")),
         "title": _norm_str(payload.get("title"), ""),
         "message": _norm_str(payload.get("message"), ""),
         "popupId": _norm_str(payload.get("popupId"), _norm_str(payload.get("popup_id"), "")),
         "popupSlug": _norm_str(payload.get("popupSlug"), _norm_str(payload.get("popup_slug"), "")),
         "popupName": _norm_str(payload.get("popupName"), _norm_str(payload.get("popup_name"), "")),
         "popupContent": _norm_str(payload.get("popupContent"), _norm_str(payload.get("popup_content"), "")),
+        "displayMode": display_mode,
         "durationMs": _norm_int(payload.get("durationMs"), 8000, 500, 120000),
+        "displayDurationMs": _norm_int(payload.get("displayDurationMs"), _norm_int(payload.get("display_duration_ms"), _norm_int(payload.get("durationMs"), 8000, 500, 120000), 500, 120000), 500, 120000),
+        "displayDuration": _norm_int(payload.get("displayDuration"), _norm_int(payload.get("display_duration"), 8, 0, 86400), 0, 86400),
         "position": position,
         "rotation": _norm_int(payload.get("rotation"), 0, -360, 360),
         "preRotated": _norm_bool(payload.get("preRotated"), _norm_bool(payload.get("pre_rotated"), False)),
@@ -188,11 +195,17 @@ def sanitize_popup(payload: dict) -> dict:
         "intervalUnit": interval_unit,
         "scheduleCron": _norm_str(payload.get("scheduleCron"), _norm_str(payload.get("schedule_cron"), "")),
         "eventKey": _norm_str(payload.get("eventKey"), _norm_str(payload.get("event_key"), "")),
+        "transitionIn": _norm_str(payload.get("transitionIn"), _norm_str(payload.get("transition_in"), "")),
+        "transitionOut": _norm_str(payload.get("transitionOut"), _norm_str(payload.get("transition_out"), "")),
+        "transitionDurationMs": _norm_int(payload.get("transitionDurationMs"), _norm_int(payload.get("transition_duration_ms"), 2000, 0, 120000), 0, 120000),
+        "transitionDuration": _norm_int(payload.get("transitionDuration"), _norm_int(payload.get("transition_duration"), 2, 0, 120), 0, 120),
         "backgroundColor": _color(payload.get("backgroundColor"), "#ffffff"),
         "textColor": _color(payload.get("textColor"), "#111111"),
         "accentColor": _color(payload.get("accentColor"), "#dc3545"),
         "width": _norm_int(payload.get("width"), 800, 180, 3840),
         "height": _norm_int(payload.get("height"), 420, 120, 2160),
+        "offsetX": _norm_int(payload.get("offsetX"), _norm_int(payload.get("offset_x"), 0, -10000, 10000), -10000, 10000),
+        "offsetY": _norm_int(payload.get("offsetY"), _norm_int(payload.get("offset_y"), 0, -10000, 10000), -10000, 10000),
         "padding": _norm_int(payload.get("padding"), 24, 0, 240),
         "opacity": _norm_float(payload.get("opacity"), 1.0, 0.05, 1.0),
     }

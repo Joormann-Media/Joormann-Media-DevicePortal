@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
+from app.api import routes_panel
 from app.core.config import ensure_config
 from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_fingerprint
-from app.core.gitinfo import get_update_info
+from app.core.gitinfo import get_repo_update_info, get_update_info
 from app.core.state import get_state, update_state
 from app.core.systeminfo import format_uptime_human, parse_cpu_temp_c, parse_load_stats, parse_mem_stats_kb, parse_uptime_seconds
 
@@ -36,6 +37,9 @@ def api_status():
     dev_view = dict(dev)
     dev_view['auth_key'] = _mask_secret(dev_view.get('auth_key', ''))
 
+    player_repo_path = routes_panel._resolve_player_repo_path(cfg)
+    player_update = get_repo_update_info(player_repo_path)
+
     return jsonify(
         ok=True,
         config=cfg,
@@ -52,6 +56,7 @@ def api_status():
             "uptime_human": format_uptime_human(parse_uptime_seconds()),
         },
         app_update=get_update_info(),
+        player_update=player_update,
         state=state,
     )
 

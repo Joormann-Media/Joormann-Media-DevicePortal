@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+from pathlib import Path
 from urllib.parse import urlencode
 
 from flask import Blueprint, jsonify, request
@@ -9,7 +10,7 @@ from app.core.config import _panel_url, _safe_base_url, ensure_config
 from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint
-from app.core.gitinfo import get_update_info
+from app.core.gitinfo import get_repo_update_info, get_update_info
 from app.core.httpclient import http_get_json, http_get_text, http_post_json
 from app.core.jsonio import write_json
 from app.core.netcontrol import (
@@ -163,7 +164,7 @@ def _safe_call(default: object, fn):
         return default
 
 
-def _software_snapshot(update_info: dict, network_info: dict, storage_info: dict) -> list[dict]:
+def _software_snapshot(update_info: dict, player_update_info: dict, network_info: dict, storage_info: dict) -> list[dict]:
     tailscale = (network_info.get('tailscale') if isinstance(network_info, dict) else {}) or {}
     tailscale_present = bool(tailscale.get('present'))
     tailscale_ip = str(tailscale.get('ip') or '').strip()
@@ -192,6 +193,19 @@ def _software_snapshot(update_info: dict, network_info: dict, storage_info: dict
             'notes': str(update_info.get('error') or '').strip(),
         },
         {
+            'name': 'DevicePlayer',
+            'component': 'deviceplayer',
+            'category': 'player',
+            'type': 'git',
+            'status': 'update_available' if bool(player_update_info.get('available')) else ('unknown' if str(player_update_info.get('error') or '').strip() else 'installed'),
+            'version': str(player_update_info.get('local_version') or '').strip() or str(player_update_info.get('local_commit') or '').strip()[:12],
+            'source': 'player',
+            'notes': (
+                str(player_update_info.get('error') or '').strip()
+                or ('branch: ' + str(player_update_info.get('local_branch') or '').strip())
+            ),
+        },
+        {
             'name': 'Tailscale',
             'component': 'tailscale',
             'category': 'network',
@@ -213,6 +227,27 @@ def _software_snapshot(update_info: dict, network_info: dict, storage_info: dict
         },
     ]
     return items
+
+
+def _resolve_player_repo_path(cfg: dict) -> str:
+    raw = str(cfg.get('player_repo_dir') or cfg.get('player_repo_link') or '').strip()
+    if raw == '':
+        return ''
+
+    # Local path already configured.
+    if '://' not in raw and Path(raw).expanduser().exists():
+        return str(Path(raw).expanduser().resolve())
+
+    # URL-style config: infer clone target from update script convention.
+    if '://' in raw or raw.startswith('git@') or raw.startswith('ssh://'):
+        service_user = str(cfg.get('player_service_user') or '').strip()
+        repo_name = raw.rstrip('/').split('/')[-1].replace('.git', '').strip() or 'Joormann-Media-DevicePlayer'
+        if service_user:
+            inferred = Path(f"/home/{service_user}/projects/{repo_name}")
+            if inferred.exists():
+                return str(inferred.resolve())
+
+    return ''
 
 
 def _storage_snapshot(storage_info: dict) -> dict:
@@ -303,6 +338,8 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
     ap_clients = _safe_call({'clients': []}, lambda: get_ap_clients(ifname='wlan0'))
     storage_info = _safe_call({}, get_storage_state)
     update_info = _safe_call({}, get_update_info)
+    player_repo_path = _resolve_player_repo_path(cfg)
+    player_update_info = _safe_call({}, lambda: get_repo_update_info(player_repo_path))
     display_info = _safe_call({}, lambda: get_display_snapshot(cfg))
     memory = _safe_call({}, parse_mem_stats_kb)
     load = _safe_call({}, parse_load_stats)
@@ -379,7 +416,12 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
     }
 
     storage = _storage_snapshot(storage_info if isinstance(storage_info, dict) else {})
-    software = _software_snapshot(update_info if isinstance(update_info, dict) else {}, net_info if isinstance(net_info, dict) else {}, storage_info if isinstance(storage_info, dict) else {})
+    software = _software_snapshot(
+        update_info if isinstance(update_info, dict) else {},
+        player_update_info if isinstance(player_update_info, dict) else {},
+        net_info if isinstance(net_info, dict) else {},
+        storage_info if isinstance(storage_info, dict) else {},
+    )
     stream_storage_target = '/mnt/deviceportal/media'
     if isinstance(storage_info, dict):
         internal = storage_info.get('internal')
@@ -415,6 +457,10 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         'service_name': player_service_name,
         'service_user': str(cfg.get('player_service_user') or '').strip(),
         'repo_url': str(cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '').strip(),
+        'repo_path': player_repo_path,
+        'version': str((player_update_info or {}).get('local_version') or '').strip(),
+        'commit': str((player_update_info or {}).get('local_commit') or '').strip(),
+        'update': player_update_info if isinstance(player_update_info, dict) else {},
         'status': 'active' if bool((player_status or {}).get('active')) else ('inactive' if isinstance(player_status, dict) and player_status != {} else 'unknown'),
         'active': bool((player_status or {}).get('active')) if isinstance(player_status, dict) else False,
         'substate': str((player_status or {}).get('substate') or '').strip() if isinstance(player_status, dict) else '',
@@ -457,6 +503,7 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         'stream_player': stream_player,
         'portal': {
             'update': update_info if isinstance(update_info, dict) else {},
+            'playerUpdate': player_update_info if isinstance(player_update_info, dict) else {},
             'linkState': cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {},
             'registerPath': cfg.get('panel_register_path') or '',
             'pingPath': cfg.get('panel_ping_path') or '',

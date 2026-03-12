@@ -316,6 +316,18 @@
     return shortCommit || "-";
   }
 
+  function playerLocalVersion(update) {
+    const readable = String((update || {}).local_version || "").trim();
+    if (readable) return readable;
+    const shortCommit = String((update || {}).local_commit || "").trim().slice(0, 7);
+    return shortCommit || "-";
+  }
+
+  function playerRemoteShort(update) {
+    const shortCommit = String((update || {}).remote_commit || "").trim().slice(0, 7);
+    return shortCommit || "-";
+  }
+
   function getResolvedAdminBaseUrl() {
     const fromInput = String(els.adminBase?.value || "").trim();
     if (fromInput) return fromInput;
@@ -495,6 +507,7 @@
     const network = statusDashboardState.network || {};
     const storage = statusDashboardState.storage || {};
     const update = status.app_update || {};
+    const playerUpdate = status.player_update || {};
     const host = q("status-software-list");
     if (!host) return;
     clearNode(host);
@@ -517,6 +530,13 @@
         version: update.available ? `${localVersion} -> ${remoteShort}` : localVersion,
         state: update.available ? "update available" : (update.error ? "check failed" : "up to date"),
         badge: update.available ? "warning" : (update.error ? "secondary" : "success"),
+      },
+      {
+        name: "DevicePlayer",
+        type: "git",
+        version: playerUpdate.available ? `${playerLocalVersion(playerUpdate)} -> ${playerRemoteShort(playerUpdate)}` : playerLocalVersion(playerUpdate),
+        state: playerUpdate.available ? "update available" : (playerUpdate.error ? "check failed" : "installed"),
+        badge: playerUpdate.available ? "warning" : (playerUpdate.error ? "secondary" : "success"),
       },
       {
         name: "Tailscale",
@@ -1163,6 +1183,7 @@
     const linked = !!panel.linked;
     const online = !!state.hostname;
     const update = data.app_update || {};
+    const playerUpdate = data.player_update || {};
     statusDashboardState.status = data;
 
     setStatusBadge(linked, online);
@@ -1181,6 +1202,21 @@
       } else {
         updateBadge.classList.add("text-bg-success");
         updateBadge.textContent = `Up to date (${localVersion})`;
+      }
+    }
+    const playerBadge = q("hero-update-player");
+    if (playerBadge) {
+      playerBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
+      const localVersion = playerLocalVersion(playerUpdate);
+      if (playerUpdate.available) {
+        playerBadge.classList.add("text-bg-warning");
+        playerBadge.textContent = `Player Update verfügbar (${localVersion} -> ${playerRemoteShort(playerUpdate)})`;
+      } else if (playerUpdate.error) {
+        playerBadge.classList.add("text-bg-secondary");
+        playerBadge.textContent = "Player-Check nicht verfügbar";
+      } else {
+        playerBadge.classList.add("text-bg-success");
+        playerBadge.textContent = `Player up to date (${localVersion})`;
       }
     }
 
