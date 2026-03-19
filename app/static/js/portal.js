@@ -12,6 +12,9 @@
   let currentUpdateJobId = "";
   let streamPlayerUpdateJobId = "";
   let streamPlayerUpdatePollHandle = null;
+  let streamAudioVolumeDebounceHandle = null;
+  let streamAudioLastNonZeroVolume = 65;
+  let streamAudioMuted = false;
   let apClientsInitialized = false;
   let apKnownConnectedMacs = new Set();
   let storageInitialized = false;
@@ -3507,6 +3510,20 @@
     if (volumeInput && Number.isFinite(Number(data.volume))) {
       volumeInput.value = String(Number(data.volume));
     }
+    const vol = Number(data.volume);
+    if (Number.isFinite(vol)) {
+      const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+      const valueEl = q("stream-audio-volume-value");
+      if (valueEl) valueEl.textContent = String(clamped);
+      streamAudioMuted = clamped === 0;
+      if (clamped > 0) {
+        streamAudioLastNonZeroVolume = clamped;
+      }
+      const muteBtn = q("btn-stream-audio-mute");
+      if (muteBtn) {
+        muteBtn.textContent = streamAudioMuted ? "Ton an" : "Stumm";
+      }
+    }
   }
 
   async function refreshStreamAudioStatus() {
@@ -3565,13 +3582,52 @@
     toast(`Audio ${action}`, "success");
   }
 
-  async function streamAudioSetVolume() {
+  async function streamAudioSetVolume(options = {}) {
+    const notify = options.notify !== false;
+    const refresh = options.refresh !== false;
     const raw = String(q("stream-audio-volume")?.value || "").trim();
     const volume = Number(raw);
     if (!Number.isFinite(volume)) throw new Error("Lautstärke muss eine Zahl sein.");
-    await fetchJson("/api/stream/player/audio/volume", { method: "POST", body: { volume: Math.max(0, Math.min(100, Math.round(volume))) } });
-    await refreshStreamAudioStatus();
-    toast("Lautstärke gesetzt", "success");
+    const clamped = Math.max(0, Math.min(100, Math.round(volume)));
+    await fetchJson("/api/stream/player/audio/volume", { method: "POST", body: { volume: clamped } });
+    const valueEl = q("stream-audio-volume-value");
+    if (valueEl) valueEl.textContent = String(clamped);
+    if (clamped > 0) {
+      streamAudioLastNonZeroVolume = clamped;
+    }
+    streamAudioMuted = clamped === 0;
+    const muteBtn = q("btn-stream-audio-mute");
+    if (muteBtn) {
+      muteBtn.textContent = streamAudioMuted ? "Ton an" : "Stumm";
+    }
+    if (refresh) {
+      await refreshStreamAudioStatus();
+    }
+    if (notify) {
+      toast("Lautstärke gesetzt", "success");
+    }
+  }
+
+  function scheduleStreamAudioVolumeSet() {
+    if (streamAudioVolumeDebounceHandle) {
+      window.clearTimeout(streamAudioVolumeDebounceHandle);
+    }
+    streamAudioVolumeDebounceHandle = window.setTimeout(() => {
+      run(() => streamAudioSetVolume({ notify: false, refresh: false }));
+    }, 120);
+  }
+
+  async function toggleStreamAudioMute() {
+    const slider = q("stream-audio-volume");
+    const current = Number(slider?.value || 0);
+    if (!Number.isFinite(current)) {
+      throw new Error("Lautstärke ist ungültig.");
+    }
+    const target = current <= 0 ? Math.max(1, streamAudioLastNonZeroVolume || 65) : 0;
+    if (slider) {
+      slider.value = String(target);
+    }
+    await streamAudioSetVolume({ notify: true, refresh: true });
   }
 
   async function loadPlayerRepoConfig() {
@@ -4860,7 +4916,17 @@
     q("btn-stream-audio-pause").addEventListener("click", () => run(() => streamAudioAction("pause")));
     q("btn-stream-audio-resume").addEventListener("click", () => run(() => streamAudioAction("resume")));
     q("btn-stream-audio-stop").addEventListener("click", () => run(() => streamAudioAction("stop")));
-    q("btn-stream-audio-volume-set").addEventListener("click", () => run(streamAudioSetVolume));
+    q("btn-stream-audio-mute").addEventListener("click", () => run(toggleStreamAudioMute));
+    q("stream-audio-volume").addEventListener("input", () => {
+      const raw = String(q("stream-audio-volume")?.value || "").trim();
+      const vol = Number(raw);
+      if (!Number.isFinite(vol)) return;
+      const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+      const valueEl = q("stream-audio-volume-value");
+      if (valueEl) valueEl.textContent = String(clamped);
+      scheduleStreamAudioVolumeSet();
+    });
+    q("stream-audio-volume").addEventListener("change", () => run(() => streamAudioSetVolume({ notify: false, refresh: true })));
     q("stream-audio-file-select").addEventListener("change", () => {
       const selected = String(q("stream-audio-file-select")?.value || "").trim();
       if (selected) q("stream-audio-file-path").value = selected;
