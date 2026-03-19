@@ -6,7 +6,9 @@
 sudo ./install/setup_portal.sh "$(pwd)" djanebmb
 ```
 
-- installiert Python-Prereqs
+- installiert Basis-Pakete (`python3`, `python3-venv`, `python3-pip`, `curl`, `mpg123`)
+- installiert `raspotify` (falls noch nicht vorhanden)
+- führt auf Raspberry-Pi-Hosts optional `raspi-config nonint do_wifi_country DE` aus
 - erstellt/aktualisiert `.venv` im Repo und installiert `requirements.txt`
 - legt `<REPO_DIR>/var/data` und `<REPO_DIR>/var/assets` an
 - setzt `<REPO_DIR>/var/assets` auf den Service-User (Standard: aktueller `SUDO_USER`) damit Event-/WPS-State-Dateien schreibbar sind

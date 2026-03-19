@@ -15,6 +15,11 @@
   let streamAudioVolumeDebounceHandle = null;
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
+  let btDeviceState = {
+    devices: [],
+    scanDevices: [],
+    audioOutputs: { current_output: "", available_outputs: [] },
+  };
   let apClientsInitialized = false;
   let apKnownConnectedMacs = new Set();
   let storageInitialized = false;
@@ -48,7 +53,10 @@
       catalog: null,
     },
     sentinels: {
+      webhookMode: "discord",
       webhookUrl: "",
+      internalWebhookUrl: "",
+      internalWebhookSecret: "",
       sourceDir: "",
       sourceError: "",
       configPath: "",
@@ -98,6 +106,12 @@
     searchTimer: null,
     searchSeq: 0,
     existingDetected: false,
+  };
+  const runtimeWarmupState = {
+    viewmodel: null,
+    consumedPaths: new Set(),
+    modal: null,
+    initialized: false,
   };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
@@ -178,6 +192,160 @@
       throw new Error(suffix ? `${message} (${suffix})` : message);
     }
     return payload;
+  }
+
+  function deepGet(obj, path) {
+    let current = obj;
+    for (const key of path) {
+      if (!current || typeof current !== "object" || !(key in current)) {
+        return null;
+      }
+      current = current[key];
+    }
+    return current;
+  }
+
+  function readWarmupData(path) {
+    const model = runtimeWarmupState.viewmodel;
+    if (!model || typeof model !== "object") return null;
+    return deepGet(model, path);
+  }
+
+  function consumeWarmupData(path) {
+    const token = path.join(".");
+    if (runtimeWarmupState.consumedPaths.has(token)) return null;
+    const value = readWarmupData(path);
+    if (value === null || value === undefined) return null;
+    runtimeWarmupState.consumedPaths.add(token);
+    return value;
+  }
+
+  function setRuntimeWarmupProgress(percent, text, subtext = "") {
+    const pct = Math.max(0, Math.min(100, Number(percent || 0)));
+    const bar = q("runtime-warmup-progress");
+    const pctEl = q("runtime-warmup-percent");
+    const textEl = q("runtime-warmup-text");
+    const subtextEl = q("runtime-warmup-subtext");
+    if (bar) {
+      bar.style.width = `${pct}%`;
+      bar.textContent = `${pct}%`;
+    }
+    if (pctEl) pctEl.textContent = `${pct}%`;
+    if (textEl) textEl.textContent = text || "Runtime-Snapshot wird geladen…";
+    if (subtextEl) subtextEl.textContent = subtext || "";
+  }
+
+  function forceHideRuntimeWarmupModal() {
+    const modalEl = q("runtimeWarmupModal");
+    if (!modalEl) return;
+    try {
+      if (runtimeWarmupState.modal) {
+        runtimeWarmupState.modal.hide();
+      }
+    } catch (_) {
+      // Continue with hard DOM fallback.
+    }
+    modalEl.classList.remove("show");
+    modalEl.setAttribute("aria-hidden", "true");
+    modalEl.style.display = "none";
+    document.body.classList.remove("modal-open");
+    document.body.style.removeProperty("padding-right");
+    for (const backdrop of document.querySelectorAll(".modal-backdrop")) {
+      backdrop.remove();
+    }
+  }
+
+  function setupSessionCloseLogout() {
+    const logoutOnClose = () => {
+      try {
+        if (navigator && typeof navigator.sendBeacon === "function") {
+          navigator.sendBeacon("/logout", new Blob([], { type: "application/x-www-form-urlencoded;charset=UTF-8" }));
+          return;
+        }
+      } catch (_) {
+        // Fall through to fetch keepalive.
+      }
+      try {
+        fetch("/logout", {
+          method: "POST",
+          credentials: "same-origin",
+          keepalive: true,
+        }).catch(() => {});
+      } catch (_) {
+        // Ignore client shutdown errors.
+      }
+    };
+
+    window.addEventListener("pagehide", (event) => {
+      if (event && event.persisted) return;
+      logoutOnClose();
+    });
+  }
+
+  function applyWarmupViewModel(viewmodel) {
+    const model = viewmodel && typeof viewmodel === "object" ? viewmodel : {};
+    const legacy = (model.sections && model.sections.legacy && typeof model.sections.legacy === "object") ? model.sections.legacy : {};
+    const status = legacy.status;
+    const network = legacy.network;
+    const storage = legacy.storage;
+    const requirements = legacy.software_requirements;
+    const sentinels = legacy.sentinels_status;
+
+    if (status && typeof status === "object") {
+      renderStatus(status);
+    }
+    if (network && typeof network === "object") {
+      renderNetwork(network);
+    }
+    if (storage && typeof storage === "object") {
+      renderStorageStatus(storage);
+    }
+    if (requirements && typeof requirements === "object") {
+      renderSoftwareRequirementsSection(requirements);
+    }
+    if (sentinels && typeof sentinels === "object") {
+      applySentinelPayload(sentinels);
+    }
+  }
+
+  async function runRuntimeWarmupFlow() {
+    const modalEl = q("runtimeWarmupModal");
+    if (!modalEl || runtimeWarmupState.initialized) return;
+
+    runtimeWarmupState.initialized = true;
+    setRuntimeWarmupProgress(5, "Runtime-Snapshot wird vorbereitet…", "Session-Cache wird initialisiert.");
+
+    if (window.bootstrap && window.bootstrap.Modal) {
+      runtimeWarmupState.modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      runtimeWarmupState.modal.show();
+    }
+
+    try {
+      await fetchJson("/api/runtime/warmup", {
+        method: "POST",
+        body: { force: false },
+        timeoutMs: 45000,
+      });
+      setRuntimeWarmupProgress(65, "Runtime-Snapshot wurde erzeugt.", "ViewModel wird geladen.");
+
+      const viewPayload = await fetchJson("/api/runtime/viewmodel", {
+        cache: "no-store",
+        timeoutMs: 45000,
+      });
+      runtimeWarmupState.viewmodel = viewPayload.data || null;
+      applyWarmupViewModel(runtimeWarmupState.viewmodel);
+      setRuntimeWarmupProgress(100, "Portal ist bereit.", "Warmup abgeschlossen.");
+    } catch (err) {
+      setRuntimeWarmupProgress(100, "Warmup fehlgeschlagen.", "Portal läuft mit Legacy-Live-Calls weiter.");
+      toast(err && err.message ? err.message : "Runtime-Warmup fehlgeschlagen.", "danger");
+    } finally {
+      window.setTimeout(() => {
+        forceHideRuntimeWarmupModal();
+      }, 260);
+      window.setTimeout(() => {
+        forceHideRuntimeWarmupModal();
+      }, 1200);
+    }
   }
 
   function toast(message, type = "info") {
@@ -291,17 +459,11 @@
     }
 
     if (!connectivitySetupFocusDone) {
-      const systemTab = q("system-tab");
-      const wifiSubTab = q("system-sub-wifi-tab");
-      if (systemTab && window.bootstrap && window.bootstrap.Tab) {
-        window.bootstrap.Tab.getOrCreateInstance(systemTab).show();
-      } else if (systemTab) {
-        systemTab.click();
-      }
-      if (wifiSubTab && window.bootstrap && window.bootstrap.Tab) {
-        window.bootstrap.Tab.getOrCreateInstance(wifiSubTab).show();
-      } else if (wifiSubTab) {
-        wifiSubTab.click();
+      const networkTab = q("network-tab");
+      if (networkTab && window.bootstrap && window.bootstrap.Tab) {
+        window.bootstrap.Tab.getOrCreateInstance(networkTab).show();
+      } else if (networkTab) {
+        networkTab.click();
       }
       connectivitySetupFocusDone = true;
     }
@@ -581,6 +743,74 @@
     if (countBadge) {
       countBadge.textContent = `${items.length} Komponenten`;
     }
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;",
+    }[ch] || ch));
+  }
+
+  function softwareReqActionHtml(item) {
+    if (!item || typeof item !== "object") return '<span class="text-secondary">-</span>';
+    const key = escapeHtml(item.key || "");
+    const installBtn = (!item.installed && item.installable)
+      ? `<button type="button" class="btn btn-sm btn-outline-primary js-software-req-action" data-action="install" data-key="${key}">Installieren</button>`
+      : "";
+    const startBtn = (item.installed && item.startable)
+      ? `<button type="button" class="btn btn-sm btn-outline-success js-software-req-action" data-action="start" data-key="${key}">Starten</button>`
+      : "";
+    const actions = [installBtn, startBtn].filter(Boolean).join(" ");
+    return actions || '<span class="text-secondary">-</span>';
+  }
+
+  function renderSoftwareRequirementsSection(data) {
+    const tableHost = q("software-req-table");
+    const summary = q("software-req-summary");
+    if (!tableHost || !summary) return;
+    const items = Array.isArray(data && data.items) ? data.items : [];
+    const installed = Number(data && data.installed || 0);
+    const total = Number(data && data.total || items.length || 0);
+    const missing = Number(data && data.missing || Math.max(0, total - installed));
+    summary.textContent = `${installed}/${total} vorhanden, ${missing} fehlen.`;
+    const rows = items.map((item) => {
+      const ok = Boolean(item && item.installed);
+      const badge = ok
+        ? '<span class="badge text-bg-success">Installiert</span>'
+        : '<span class="badge text-bg-danger">Fehlt</span>';
+      return `<tr><td>${escapeHtml(item.label)}</td><td>${badge}</td><td class="text-secondary">${escapeHtml(item.version)}</td><td class="text-secondary">${escapeHtml(item.runtime)}</td><td class="text-secondary">${escapeHtml(item.detail)}</td><td>${softwareReqActionHtml(item)}</td></tr>`;
+    }).join("");
+    tableHost.innerHTML = `<table class="table table-sm align-middle mb-0"><thead><tr><th>Komponente</th><th>Status</th><th>Version</th><th>Runtime</th><th>Details</th><th>Aktion</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="text-secondary">Keine Daten.</td></tr>'}</tbody></table>`;
+  }
+
+  async function refreshSoftwareRequirements() {
+    const summary = q("software-req-summary");
+    const tableHost = q("software-req-table");
+    if (!summary || !tableHost) return;
+    const warmupData = consumeWarmupData(["sections", "legacy", "software_requirements"]);
+    if (warmupData && typeof warmupData === "object") {
+      renderSoftwareRequirementsSection(warmupData);
+      return warmupData;
+    }
+    summary.textContent = "Lade...";
+    const data = await fetchJson("/api/auth/system-requirements", { cache: "no-store" });
+    renderSoftwareRequirementsSection(data);
+    return data;
+  }
+
+  async function runSoftwareRequirementAction(action, key) {
+    const data = await fetchJson("/api/auth/system-requirements/action", {
+      method: "POST",
+      body: { action, key },
+      timeoutMs: action === "install" ? 300000 : 60000,
+    });
+    renderSoftwareRequirementsSection(data);
+    const msg = (((data || {}).result || {}).message || "").trim();
+    if (msg) toast(msg, "success");
   }
 
   function mountOrientationLabel(value) {
@@ -1277,10 +1507,25 @@
     renderNetworkSecurityUi();
 
     const rawSentinel = (cfg && cfg.sentinel_settings && typeof cfg.sentinel_settings === "object") ? cfg.sentinel_settings : {};
+    portalSecurityState.sentinels.webhookMode = String(rawSentinel.webhook_mode || "discord");
     portalSecurityState.sentinels.webhookUrl = String(rawSentinel.webhook_url || "");
+    portalSecurityState.sentinels.internalWebhookUrl = String(rawSentinel.internal_webhook_url || "");
+    portalSecurityState.sentinels.internalWebhookSecret = String(rawSentinel.internal_webhook_secret || "");
     const webhookInput = q("sentinel-webhook-url");
+    const webhookModeInput = q("sentinel-webhook-mode");
+    const internalWebhookInput = q("sentinel-internal-webhook-url");
+    const internalWebhookSecretInput = q("sentinel-internal-webhook-secret");
+    if (webhookModeInput && !webhookModeInput.value) {
+      webhookModeInput.value = portalSecurityState.sentinels.webhookMode;
+    }
     if (webhookInput && !webhookInput.value) {
       webhookInput.value = portalSecurityState.sentinels.webhookUrl;
+    }
+    if (internalWebhookInput && !internalWebhookInput.value) {
+      internalWebhookInput.value = portalSecurityState.sentinels.internalWebhookUrl;
+    }
+    if (internalWebhookSecretInput && !internalWebhookSecretInput.value) {
+      internalWebhookSecretInput.value = portalSecurityState.sentinels.internalWebhookSecret;
     }
   }
 
@@ -1456,6 +1701,10 @@
     const lan = (data.interfaces || {}).lan || {};
     const wifi = (data.interfaces || {}).wifi || {};
     const bt = (data.interfaces || {}).bluetooth || {};
+    const capabilities = (data.capabilities && typeof data.capabilities === "object") ? data.capabilities : {};
+    const wifiCap = (capabilities.wifi && typeof capabilities.wifi === "object") ? capabilities.wifi : { available: true };
+    const btCap = (capabilities.bluetooth && typeof capabilities.bluetooth === "object") ? capabilities.bluetooth : { available: true };
+    const lanCap = (capabilities.lan && typeof capabilities.lan === "object") ? capabilities.lan : { available: true };
     const routes = data.routes || {};
     const tailscale = data.tailscale || {};
     applyConnectivitySetupMode(data.connectivity_setup_mode || {});
@@ -1475,7 +1724,7 @@
     q("lan-mac").textContent = lan.mac || "-";
 
     q("wifi-ifname").textContent = wifi.ifname || "wlan0";
-    q("wifi-enabled").textContent = yn(!!wifi.enabled);
+    q("wifi-enabled").textContent = wifiCap.available ? yn(!!wifi.enabled) : "n/a (kein Modul)";
     q("wifi-connected").textContent = yn(!!wifi.connected);
     q("wifi-ssid").textContent = wifi.ssid || "-";
     q("wifi-connection").textContent = wifi.connection || "-";
@@ -1487,7 +1736,7 @@
     q("wifi-ip").textContent = wifi.ip || "-";
     q("wifi-mac").textContent = wifi.mac || "-";
 
-    q("bt-enabled").textContent = yn(!!bt.enabled);
+    q("bt-enabled").textContent = btCap.available ? yn(!!bt.enabled) : "n/a (kein Modul)";
     q("bt-discoverable").textContent = bt.discoverable === null || bt.discoverable === undefined ? "-" : yn(!!bt.discoverable);
     q("bt-pairable").textContent = bt.pairable === null || bt.pairable === undefined ? "-" : yn(!!bt.pairable);
     q("bt-discoverable-timeout").textContent = formatSeconds(bt.discoverable_timeout);
@@ -1503,6 +1752,37 @@
     els.btnWifiToggle.textContent = wifi.enabled ? "Disable Wi-Fi" : "Enable Wi-Fi";
     els.btnBtToggle.textContent = bt.enabled ? "Bluetooth ausschalten" : "Bluetooth einschalten";
     els.btnLanToggle.textContent = lan.enabled ? "Disable LAN" : "Enable LAN";
+    if (els.btnWifiToggle) {
+      els.btnWifiToggle.disabled = !wifiCap.available;
+      els.btnWifiToggle.title = wifiCap.available ? "" : "Kein WLAN-Interface erkannt";
+    }
+    if (els.btnBtToggle) {
+      els.btnBtToggle.disabled = !btCap.available;
+      els.btnBtToggle.title = btCap.available ? "" : "Kein Bluetooth-Adapter erkannt";
+    }
+    for (const id of ["btn-bt-pairing-start", "btn-bt-scan", "btn-bt-devices-refresh"]) {
+      const btn = q(id);
+      if (!btn) continue;
+      btn.disabled = !btCap.available;
+      btn.title = btCap.available ? "" : "Kein Bluetooth-Adapter erkannt";
+    }
+    if (els.btnLanToggle) {
+      els.btnLanToggle.disabled = !lanCap.available;
+      els.btnLanToggle.title = lanCap.available ? "" : "Keine LAN-Schnittstelle erkannt";
+    }
+    for (const id of [
+      "btn-wifi-scan",
+      "btn-wifi-profiles-refresh",
+      "btn-wifi-profiles-apply",
+      "btn-wifi-manual-add",
+      "btn-wps-start",
+      "btn-wps-target-clear",
+    ]) {
+      const btn = q(id);
+      if (!btn) continue;
+      btn.disabled = !wifiCap.available;
+      btn.title = wifiCap.available ? "" : "WLAN-Interface nicht vorhanden";
+    }
     if (data.security && typeof data.security === "object") {
       const profile = data.security.profile || {};
       const assessment = data.security.assessment || null;
@@ -1520,6 +1800,13 @@
     }
     renderStatusHealthCard();
     renderStatusSoftwareSection();
+  }
+
+  function isWifiAvailable() {
+    const caps = ((networkState || {}).capabilities || {});
+    const wifi = (caps.wifi && typeof caps.wifi === "object") ? caps.wifi : null;
+    if (!wifi) return true;
+    return !!wifi.available;
   }
 
   async function refreshPanelFlagsLive() {
@@ -1602,6 +1889,11 @@
   }
 
   async function refreshStatus() {
+    const warmupData = consumeWarmupData(["sections", "legacy", "status"]);
+    if (warmupData && typeof warmupData === "object") {
+      renderStatus(warmupData);
+      return warmupData;
+    }
     const data = await fetchJson("/api/status", { cache: "no-store" });
     renderStatus(data);
     return data;
@@ -1633,6 +1925,11 @@
   }
 
   async function refreshNetwork() {
+    const warmupData = consumeWarmupData(["sections", "legacy", "network"]);
+    if (warmupData && typeof warmupData === "object") {
+      renderNetwork(warmupData);
+      return warmupData;
+    }
     const data = await fetchJson("/api/network/info");
     renderNetwork(data);
     return data;
@@ -2798,6 +3095,11 @@
   }
 
   async function refreshStorageStatus() {
+    const warmupData = consumeWarmupData(["sections", "legacy", "storage"]);
+    if (warmupData && typeof warmupData === "object") {
+      renderStorageStatus(warmupData);
+      return warmupData;
+    }
     const payload = await fetchJson("/api/network/storage/status");
     renderStorageStatus(payload);
     return payload;
@@ -2818,16 +3120,17 @@
 
   function renderApStatus(payload) {
     const data = payload.data || payload || {};
+    const available = data.available !== false;
     const active = !!data.active;
-    q("ap-ssid").textContent = data.ssid || "-";
-    q("ap-ip").textContent = data.ip || "-";
-    q("ap-portal-url").textContent = data.portal_url || (data.ip ? `http://${data.ip}` : "-");
+    q("ap-ssid").textContent = available ? (data.ssid || "-") : "n/a";
+    q("ap-ip").textContent = available ? (data.ip || "-") : "n/a";
+    q("ap-portal-url").textContent = available ? (data.portal_url || (data.ip ? `http://${data.ip}` : "-")) : "n/a";
     q("ap-profile").textContent = data.profile || "jm-hotspot";
     q("ap-clients-count").textContent = String(data.clients_count || 0);
     const badge = q("ap-active-badge");
     badge.classList.remove("text-bg-success", "text-bg-secondary");
     badge.classList.add(active ? "text-bg-success" : "text-bg-secondary");
-    badge.textContent = active ? "aktiv" : "inaktiv";
+    badge.textContent = available ? (active ? "aktiv" : "inaktiv") : "nicht verfügbar";
   }
 
   function renderApClients(clients) {
@@ -2864,12 +3167,20 @@
   }
 
   async function refreshApStatus() {
+    if (!isWifiAvailable()) {
+      renderApStatus({ data: { active: false, ssid: "-", ip: "-", portal_url: "-", profile: "jm-hotspot", clients_count: 0, available: false } });
+      return { available: false };
+    }
     const payload = await fetchJson("/api/network/ap/status");
     renderApStatus(payload);
     return payload;
   }
 
   async function refreshApClients() {
+    if (!isWifiAvailable()) {
+      renderApClients([]);
+      return { available: false, data: { clients: [] } };
+    }
     const payload = await fetchJson("/api/network/ap/clients");
     const data = payload.data || {};
     const clients = Array.isArray(data.clients) ? data.clients : [];
@@ -2973,10 +3284,17 @@
     return result;
   }
 
-  function renderWifiScan(networks) {
+  function renderWifiScan(networks, options = {}) {
     const deduped = collapseMeshScanNetworks(networks);
     const host = q("wifi-scan-list");
     clearNode(host);
+    if (options && options.unavailable) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = options.message || "WLAN Modul/Interface nicht verfügbar.";
+      host.append(empty);
+      return;
+    }
     if (!deduped.length) {
       const empty = document.createElement("div");
       empty.className = "text-secondary";
@@ -3058,9 +3376,17 @@
   }
 
   async function refreshWifiScan() {
+    if (!isWifiAvailable()) {
+      renderWifiScan([], { unavailable: true, message: "WLAN-Interface nicht vorhanden. Scan übersprungen." });
+      return { available: false, networks: [] };
+    }
     const payload = await fetchJson("/api/wifi/scan");
     const data = payload.data || {};
-    renderWifiScan(data.networks || []);
+    if (data.available === false) {
+      renderWifiScan([], { unavailable: true, message: "WLAN-Interface nicht vorhanden. Scan nicht möglich." });
+      return data;
+    }
+    renderWifiScan(data.networks || [], {});
     return data;
   }
 
@@ -3154,6 +3480,17 @@
   }
 
   async function refreshWifiProfiles() {
+    if (!isWifiAvailable()) {
+      const host = q("wifi-profiles-list");
+      if (host) {
+        clearNode(host);
+        const empty = document.createElement("div");
+        empty.className = "text-secondary";
+        empty.textContent = "WLAN-Interface nicht vorhanden. Profile-Verwaltung deaktiviert.";
+        host.append(empty);
+      }
+      return { ok: true, data: { profiles: [], unavailable: true } };
+    }
     const payload = await fetchJson("/api/wifi/profiles");
     renderWifiProfiles(payload);
     return payload;
@@ -3244,6 +3581,10 @@
   }
 
   async function refreshWpsStatus() {
+    if (!isWifiAvailable()) {
+      q("wifi-wps-phase").textContent = "unsupported - WLAN-Interface nicht vorhanden.";
+      return { available: false, wps: { phase: "unsupported", phase_message: "WLAN-Interface nicht vorhanden." } };
+    }
     const payload = await fetchJson("/api/network/wifi/wps/status");
     const data = payload.data || {};
     const wps = data.wps || {};
@@ -4033,6 +4374,187 @@
     toast(`Kopplung abgelehnt (${targetMac})`, "secondary");
   }
 
+  function btStatusBadge(text, type) {
+    const cls = type === "ok" ? "text-bg-success" : (type === "warn" ? "text-bg-warning" : "text-bg-secondary");
+    return `<span class="badge ${cls} me-1">${escapeHtml(text)}</span>`;
+  }
+
+  function renderBluetoothDeviceRows(hostId, devices, source) {
+    const host = q(hostId);
+    if (!host) return;
+    clearNode(host);
+    if (!Array.isArray(devices) || devices.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-secondary";
+      empty.textContent = source === "scan" ? "Keine Scan-Ergebnisse." : "Keine Bluetooth-Geräte gefunden.";
+      host.append(empty);
+      return;
+    }
+    for (const item of devices) {
+      const id = String(item.id || "").toUpperCase();
+      const name = String(item.name || id || "Bluetooth Device");
+      const paired = !!item.paired;
+      const connected = !!item.connected;
+      const trusted = !!item.trusted;
+      const audioCapable = !!item.audio_capable;
+      const isCurrentOutput = !!item.is_current_output;
+
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0";
+
+      const top = document.createElement("div");
+      top.className = "d-flex flex-wrap justify-content-between align-items-center gap-2";
+
+      const left = document.createElement("div");
+      left.innerHTML = `<strong>${escapeHtml(name)}</strong><div class="small text-secondary">${escapeHtml(id)}</div>`;
+
+      const right = document.createElement("div");
+      right.innerHTML = `
+        ${btStatusBadge(paired ? "paired" : "unpaired", paired ? "ok" : "warn")}
+        ${btStatusBadge(trusted ? "trusted" : "untrusted", trusted ? "ok" : "secondary")}
+        ${btStatusBadge(connected ? "connected" : "disconnected", connected ? "ok" : "secondary")}
+        ${btStatusBadge(audioCapable ? "audio" : "no-audio", audioCapable ? "ok" : "warn")}
+        ${isCurrentOutput ? btStatusBadge("output", "ok") : ""}
+      `;
+      top.append(left, right);
+
+      const actions = document.createElement("div");
+      actions.className = "d-flex flex-wrap gap-2 mt-2";
+
+      if (!paired || source === "scan") {
+        const pairBtn = document.createElement("button");
+        pairBtn.className = "btn btn-outline-primary btn-sm";
+        pairBtn.textContent = "Pair";
+        pairBtn.addEventListener("click", () => run(() => bluetoothDeviceAction("pair", id)));
+        actions.append(pairBtn);
+      }
+
+      if (!connected) {
+        const connectBtn = document.createElement("button");
+        connectBtn.className = "btn btn-outline-success btn-sm";
+        connectBtn.textContent = "Verbinden";
+        connectBtn.addEventListener("click", () => run(() => bluetoothDeviceAction("connect", id)));
+        actions.append(connectBtn);
+      } else {
+        const disconnectBtn = document.createElement("button");
+        disconnectBtn.className = "btn btn-outline-warning btn-sm";
+        disconnectBtn.textContent = "Trennen";
+        disconnectBtn.addEventListener("click", () => run(() => bluetoothDeviceAction("disconnect", id)));
+        actions.append(disconnectBtn);
+      }
+
+      if (audioCapable) {
+        const useOutBtn = document.createElement("button");
+        useOutBtn.className = "btn btn-outline-secondary btn-sm";
+        useOutBtn.textContent = "Als Output";
+        useOutBtn.addEventListener("click", () => run(() => setAudioOutput(`bluetooth:${id}`)));
+        actions.append(useOutBtn);
+      }
+
+      if (source !== "scan") {
+        const forgetBtn = document.createElement("button");
+        forgetBtn.className = "btn btn-outline-danger btn-sm";
+        forgetBtn.textContent = "Forget";
+        forgetBtn.addEventListener("click", () => run(() => bluetoothDeviceAction("forget", id)));
+        actions.append(forgetBtn);
+      }
+
+      row.append(top, actions);
+      host.append(row);
+    }
+  }
+
+  function renderAudioOutputs(payload) {
+    const data = payload && payload.data ? payload.data : payload || {};
+    btDeviceState.audioOutputs = {
+      current_output: String(data.current_output || ""),
+      available_outputs: Array.isArray(data.available_outputs) ? data.available_outputs : [],
+    };
+    const current = String(data.current_output || "-");
+    const saved = String(((data.saved || {}).selected_output) || "-");
+    q("bt-audio-output-current").textContent = current || "-";
+    q("bt-audio-output-saved").textContent = saved || "-";
+    const select = q("bt-audio-output-select");
+    if (!select) return;
+    select.innerHTML = "";
+    const outputs = Array.isArray(data.available_outputs) ? data.available_outputs : [];
+    if (!outputs.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Keine Outputs gefunden";
+      select.append(opt);
+      return;
+    }
+    for (const item of outputs) {
+      const id = String(item.id || "");
+      const label = String(item.label || id || "Output");
+      const available = !!item.available;
+      const connected = item.connected === undefined ? null : !!item.connected;
+      const status = available ? (connected === null ? "verfügbar" : (connected ? "connected" : "ready")) : "nicht verfügbar";
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.disabled = !available;
+      opt.textContent = `${label} (${status})`;
+      if (id && id === data.current_output) {
+        opt.selected = true;
+      }
+      select.append(opt);
+    }
+  }
+
+  async function refreshBluetoothDevices() {
+    const payload = await fetchJson("/api/bluetooth/devices", { cache: "no-store" });
+    const data = payload.data || payload;
+    const devices = Array.isArray(data.devices) ? data.devices : [];
+    btDeviceState.devices = devices;
+    renderBluetoothDeviceRows("bt-known-devices-list", devices, "known");
+    return payload;
+  }
+
+  async function refreshBluetoothScan() {
+    const durationRaw = Number(q("bt-scan-duration")?.value || 8);
+    const duration = Number.isFinite(durationRaw) ? Math.max(4, Math.min(30, Math.round(durationRaw))) : 8;
+    const payload = await fetchJson(`/api/bluetooth/scan?duration=${duration}`, { cache: "no-store" });
+    const data = payload.data || payload;
+    const devices = Array.isArray(data.devices) ? data.devices : [];
+    btDeviceState.scanDevices = devices;
+    renderBluetoothDeviceRows("bt-scan-results", devices, "scan");
+    toast(`Bluetooth-Scan abgeschlossen (${devices.length} Geräte)`, "success");
+    return payload;
+  }
+
+  async function bluetoothDeviceAction(action, deviceId) {
+    if (!deviceId) throw new Error("device_id fehlt.");
+    await fetchJson(`/api/bluetooth/${action}`, {
+      method: "POST",
+      body: { device_id: deviceId },
+      timeoutMs: 45000,
+    });
+    await refreshNetwork();
+    await refreshBluetoothDevices();
+    await refreshAudioOutputs();
+    toast(`Bluetooth ${action}: ${deviceId}`, "success");
+  }
+
+  async function refreshAudioOutputs() {
+    const payload = await fetchJson("/api/audio/outputs", { cache: "no-store" });
+    renderAudioOutputs(payload);
+    return payload;
+  }
+
+  async function setAudioOutput(outputId = "") {
+    const selected = String(outputId || q("bt-audio-output-select")?.value || "").trim();
+    if (!selected) throw new Error("Bitte Audio-Output auswählen.");
+    await fetchJson("/api/audio/output", {
+      method: "POST",
+      body: { output: selected },
+      timeoutMs: 20000,
+    });
+    await refreshAudioOutputs();
+    await refreshBluetoothDevices();
+    toast(`Audio-Output gesetzt: ${selected}`, "success");
+  }
+
   async function toggleLan() {
     const lan = (((networkState || {}).interfaces || {}).lan || {});
     await fetchJson("/api/network/lan/toggle", {
@@ -4168,9 +4690,21 @@
     const configPathEl = q("sentinel-config-path");
     const listEl = q("sentinel-list");
     const countBadge = q("sentinel-count-badge");
+    const webhookModeInput = q("sentinel-webhook-mode");
     const webhookInput = q("sentinel-webhook-url");
+    const internalWebhookInput = q("sentinel-internal-webhook-url");
+    const internalWebhookSecretInput = q("sentinel-internal-webhook-secret");
+    if (webhookModeInput && document.activeElement !== webhookModeInput) {
+      webhookModeInput.value = String(state.webhookMode || "discord");
+    }
     if (webhookInput && document.activeElement !== webhookInput) {
       webhookInput.value = String(state.webhookUrl || "");
+    }
+    if (internalWebhookInput && document.activeElement !== internalWebhookInput) {
+      internalWebhookInput.value = String(state.internalWebhookUrl || "");
+    }
+    if (internalWebhookSecretInput && document.activeElement !== internalWebhookSecretInput) {
+      internalWebhookSecretInput.value = String(state.internalWebhookSecret || "");
     }
     if (sourceDirEl) {
       sourceDirEl.textContent = state.sourceDir || "-";
@@ -4180,6 +4714,13 @@
     }
     if (sourceStatusEl) {
       sourceStatusEl.textContent = state.sourceError ? `Fehler: ${state.sourceError}` : "bereit";
+    }
+    const mode = String((webhookModeInput && webhookModeInput.value) || state.webhookMode || "discord").toLowerCase();
+    if (webhookInput) {
+      webhookInput.placeholder = mode === "internal" ? "Discord optional (nur bei Mode=both/discord)" : "https://discord.com/api/webhooks/...";
+    }
+    if (internalWebhookInput) {
+      internalWebhookInput.placeholder = mode === "discord" ? "Incoming optional (nur bei Mode=both/internal)" : "https://joormann-family.de/api/webhooks/incoming/...";
     }
     if (countBadge) {
       countBadge.textContent = `${items.length} Module`;
@@ -4243,7 +4784,43 @@
       uninstallBtn.dataset.slug = String(item.slug || "");
       uninstallBtn.disabled = !item.installed;
 
-      right.append(badge, installBtn, uninstallBtn);
+      const runActions = document.createElement("div");
+      runActions.className = "d-flex gap-1 flex-wrap justify-content-end";
+
+      const startBtn = document.createElement("button");
+      startBtn.type = "button";
+      startBtn.className = "btn btn-outline-success btn-sm";
+      startBtn.textContent = "Start";
+      startBtn.dataset.action = "start";
+      startBtn.dataset.slug = String(item.slug || "");
+      startBtn.disabled = !item.installed;
+
+      const stopBtn = document.createElement("button");
+      stopBtn.type = "button";
+      stopBtn.className = "btn btn-outline-warning btn-sm";
+      stopBtn.textContent = "Stop";
+      stopBtn.dataset.action = "stop";
+      stopBtn.dataset.slug = String(item.slug || "");
+      stopBtn.disabled = !item.installed;
+
+      const restartBtn = document.createElement("button");
+      restartBtn.type = "button";
+      restartBtn.className = "btn btn-outline-primary btn-sm";
+      restartBtn.textContent = "Restart";
+      restartBtn.dataset.action = "restart";
+      restartBtn.dataset.slug = String(item.slug || "");
+      restartBtn.disabled = !item.installed;
+
+      const testBtn = document.createElement("button");
+      testBtn.type = "button";
+      testBtn.className = "btn btn-outline-dark btn-sm";
+      testBtn.textContent = "Test";
+      testBtn.dataset.action = "test";
+      testBtn.dataset.slug = String(item.slug || "");
+      testBtn.disabled = !item.installed;
+
+      runActions.append(startBtn, stopBtn, restartBtn, testBtn);
+      right.append(badge, installBtn, uninstallBtn, runActions);
       row.append(left, right);
       listEl.appendChild(row);
     }
@@ -4251,7 +4828,10 @@
 
   function applySentinelPayload(data) {
     const payload = data || {};
+    portalSecurityState.sentinels.webhookMode = String(payload.webhook_mode || "discord");
     portalSecurityState.sentinels.webhookUrl = String(payload.webhook_url || "");
+    portalSecurityState.sentinels.internalWebhookUrl = String(payload.internal_webhook_url || "");
+    portalSecurityState.sentinels.internalWebhookSecret = String(payload.internal_webhook_secret || "");
     portalSecurityState.sentinels.sourceDir = String(payload.source_dir || "");
     portalSecurityState.sentinels.sourceError = String(payload.source_error || "");
     portalSecurityState.sentinels.configPath = String(payload.config_path || "");
@@ -4259,24 +4839,65 @@
     renderSentinelsUi();
   }
 
-  async function refreshSentinelStatus() {
+  async function refreshSentinelStatus(options = {}) {
+    const notify = !(options && options.notify === false);
+    const warmupData = consumeWarmupData(["sections", "legacy", "sentinels_status"]);
+    if (warmupData && typeof warmupData === "object") {
+      applySentinelPayload(warmupData);
+      return { ok: true, data: warmupData, source: "runtime_warmup" };
+    }
     const payload = await fetchJson("/api/network/security/sentinels/status", { cache: "no-store", timeoutMs: 12000 });
     applySentinelPayload(payload.data || {});
-    toast("Sentinel-Status aktualisiert.", "success");
+    if (notify) {
+      toast("Sentinel-Status aktualisiert.", "success");
+    }
+    return payload;
   }
 
   async function saveSentinelWebhook() {
+    const webhookMode = String(q("sentinel-webhook-mode")?.value || "discord").trim().toLowerCase();
     const webhookUrl = String(q("sentinel-webhook-url")?.value || "").trim();
-    if (!webhookUrl) {
-      throw new Error("Bitte zuerst eine Webhook URL eintragen.");
+    const internalWebhookUrl = String(q("sentinel-internal-webhook-url")?.value || "").trim();
+    const internalWebhookSecret = String(q("sentinel-internal-webhook-secret")?.value || "").trim();
+    if (!webhookUrl && !internalWebhookUrl) {
+      throw new Error("Bitte mindestens eine Webhook URL eintragen.");
     }
     const payload = await fetchJson("/api/network/security/sentinels/webhook", {
       method: "POST",
-      body: { webhook_url: webhookUrl },
+      body: {
+        webhook_url: webhookUrl,
+        internal_webhook_url: internalWebhookUrl,
+        internal_webhook_secret: internalWebhookSecret,
+        webhook_mode: webhookMode,
+      },
       timeoutMs: 12000,
     });
     applySentinelPayload(payload.data || {});
-    toast(payload.message || "Webhook URL gespeichert.", "success");
+    toast(payload.message || "Webhook URLs gespeichert.", "success");
+  }
+
+  async function testSentinelWebhook(target) {
+    const normalized = String(target || "").trim().toLowerCase();
+    if (normalized !== "discord" && normalized !== "internal") {
+      throw new Error("Ungültiges Webhook-Testziel.");
+    }
+    const payload = await fetchJson("/api/network/security/sentinels/webhook/test", {
+      method: "POST",
+      body: { target: normalized },
+      timeoutMs: 15000,
+    });
+    const label = normalized === "discord" ? "Discord" : "Incoming";
+    toast(payload.message || `${label}-Webhook erfolgreich getestet.`, "success");
+  }
+
+  async function actionSentinel(slug, action) {
+    const payload = await fetchJson("/api/network/security/sentinels/action", {
+      method: "POST",
+      body: { slug, action },
+      timeoutMs: 45000,
+    });
+    applySentinelPayload(payload.data || {});
+    toast(payload.message || `Sentinel ${slug}: ${action}`, "success");
   }
 
   async function installSentinel(slug) {
@@ -4944,10 +5565,39 @@
     if (syncRunBtn) {
       syncRunBtn.addEventListener("click", () => run(runPortalSyncNow));
     }
+    const softwareReqRefreshBtn = q("btn-software-req-refresh");
+    if (softwareReqRefreshBtn) {
+      softwareReqRefreshBtn.addEventListener("click", () => run(refreshSoftwareRequirements));
+    }
+    const softwareReqTable = q("software-req-table");
+    if (softwareReqTable) {
+      softwareReqTable.addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("button.js-software-req-action") : null;
+        if (!btn) return;
+        const action = String(btn.dataset.action || "").trim();
+        const key = String(btn.dataset.key || "").trim();
+        if (!action || !key) return;
+        run(async () => {
+          btn.disabled = true;
+          const old = btn.textContent;
+          btn.textContent = "Bitte warten...";
+          try {
+            await runSoftwareRequirementAction(action, key);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = old;
+          }
+        });
+      });
+    }
 
     els.btnWifiToggle.addEventListener("click", () => run(toggleWifi));
     els.btnBtToggle.addEventListener("click", () => run(toggleBluetooth));
     els.btnBtPairingStart.addEventListener("click", () => run(startBluetoothPairing));
+    q("btn-bt-scan").addEventListener("click", () => run(refreshBluetoothScan));
+    q("btn-bt-devices-refresh").addEventListener("click", () => run(refreshBluetoothDevices));
+    q("btn-audio-output-refresh").addEventListener("click", () => run(refreshAudioOutputs));
+    q("btn-audio-output-set").addEventListener("click", () => run(() => setAudioOutput("")));
     q("btn-bt-pairing-confirm").addEventListener("click", () => run(confirmBluetoothPairing));
     q("btn-bt-pairing-reject").addEventListener("click", () => run(rejectBluetoothPairing));
     q("btn-bt-pairing-stop").addEventListener("click", () => run(stopBluetoothPairing));
@@ -4978,6 +5628,9 @@
     q("btn-security-ap-disable").addEventListener("click", () => run(() => toggleAp(false)));
     q("btn-sentinel-refresh").addEventListener("click", () => run(refreshSentinelStatus));
     q("btn-sentinel-webhook-save").addEventListener("click", () => run(saveSentinelWebhook));
+    q("btn-sentinel-test-discord").addEventListener("click", () => run(() => testSentinelWebhook("discord")));
+    q("btn-sentinel-test-internal").addEventListener("click", () => run(() => testSentinelWebhook("internal")));
+    q("sentinel-webhook-mode").addEventListener("change", () => renderSentinelsUi());
     q("btn-hostname-rename-save").addEventListener("click", () => run(saveHostnameRename));
     q("hostname-rename-input").addEventListener("input", () => {
       if (hostnameRenameState.previewTimer) {
@@ -5172,6 +5825,10 @@
       }
       if (action === "uninstall") {
         run(() => uninstallSentinel(slug));
+        return;
+      }
+      if (action === "start" || action === "stop" || action === "restart" || action === "test") {
+        run(() => actionSentinel(slug, action));
       }
     });
     for (const radio of document.querySelectorAll('input[name="setup-link-type"]')) {
@@ -5224,7 +5881,9 @@
 
   async function boot() {
     initRefs();
+    setupSessionCloseLogout();
     bindButtons();
+    await run(runRuntimeWarmupFlow);
     await run(refreshStatus);
     await run(refreshPanelFlagsLive);
     await run(refreshSyncStatus);
@@ -5238,11 +5897,14 @@
     await run(refreshStreamOverview);
     await run(refreshStreamAudioFiles);
     await run(refreshStreamAudioStatus);
+    await run(refreshBluetoothDevices);
+    await run(refreshAudioOutputs);
     await run(loadPlayerRepoConfig);
     await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
     await run(refreshApClients);
-    await run(refreshSentinelStatus);
+    await run(() => refreshSentinelStatus({ notify: false }));
+    await run(refreshSoftwareRequirements);
     await run(loadLastPortalUpdateStatus);
     await run(refreshOverlayState);
     flushPersistedUpdateResultFlash();

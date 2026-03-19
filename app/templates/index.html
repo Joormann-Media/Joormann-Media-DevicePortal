@@ -102,11 +102,6 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="radio-tab" data-bs-toggle="tab" data-bs-target="#radio-pane" type="button" role="tab">
-          <i class="bi bi-bluetooth me-1"></i>BT & AP
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
         <button class="nav-link" id="storage-tab" data-bs-toggle="tab" data-bs-target="#storage-pane" type="button" role="tab">
           <i class="bi bi-device-hdd me-1"></i>Storage
         </button>
@@ -326,6 +321,21 @@
               <div id="status-software-list" class="status-software-list"></div>
             </div>
           </div>
+          <div class="col-12">
+            <div class="portal-card p-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                <div>
+                  <h3 class="h6 mb-0">Provisioning: Installations-Check</h3>
+                  <div class="small text-secondary">Prüft benötigte Pakete/Tools auf diesem Jarvis Node.</div>
+                </div>
+                <button id="btn-software-req-refresh" class="btn btn-outline-secondary btn-sm">Refresh Check</button>
+              </div>
+              <div id="software-req-summary" class="small text-secondary mb-2">Lade...</div>
+              <div id="software-req-table" class="table-responsive small">
+                <div class="text-secondary">Keine Daten.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -383,7 +393,7 @@
             </div>
           </div>
 
-          <div class="col-12 col-lg-4" data-connectivity-setup-hide="1">
+          <div class="col-12" data-connectivity-setup-hide="1">
             <div class="portal-card p-3 h-100">
               <h3 class="h6">LAN</h3>
               <dl class="portal-kv mb-0">
@@ -397,7 +407,7 @@
             </div>
           </div>
 
-          <div class="col-12 col-lg-4">
+          <div class="col-12">
             <div class="portal-card p-3 h-100">
               <h3 class="h6">WLAN</h3>
               <dl class="portal-kv mb-0">
@@ -417,7 +427,66 @@
             </div>
           </div>
 
-          <div class="col-12 col-lg-4" data-connectivity-setup-hide="1">
+          <div class="col-12">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0">WLAN Netze</h3>
+                <button id="btn-wifi-scan" class="btn btn-outline-dark btn-sm">Scan</button>
+              </div>
+              <div id="wifi-scan-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Noch kein Scan ausgeführt.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0">Gespeicherte WLAN Profile</h3>
+                <div class="d-flex gap-2">
+                  <button id="btn-wifi-profiles-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  <button id="btn-wifi-profiles-apply" class="btn btn-outline-primary btn-sm">Apply</button>
+                </div>
+              </div>
+              <div id="wifi-profiles-list" class="list-group list-group-flush small mb-3">
+                <div class="text-secondary">Keine Profile geladen.</div>
+              </div>
+              <div class="row g-2">
+                <div class="col-md-5">
+                  <input id="wifi-manual-ssid" class="form-control form-control-sm" placeholder="SSID">
+                </div>
+                <div class="col-md-5">
+                  <input id="wifi-manual-password" class="form-control form-control-sm" type="password" placeholder="Passwort (optional)">
+                </div>
+                <div class="col-md-2 d-grid">
+                  <button id="btn-wifi-manual-add" class="btn btn-outline-success btn-sm">Add</button>
+                </div>
+                <div class="col-12">
+                  <div class="form-check form-check-sm">
+                    <input class="form-check-input" type="checkbox" id="wifi-manual-hidden">
+                    <label class="form-check-label small text-secondary" for="wifi-manual-hidden">
+                      Hidden SSID / verstecktes Netzwerk
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0">WPS / Ereignisse</h3>
+                <button id="btn-wifi-logs-refresh" class="btn btn-outline-secondary btn-sm">Refresh Logs</button>
+              </div>
+              <div class="small mb-2">
+                <strong>Status:</strong> <span id="wifi-wps-phase">idle</span>
+              </div>
+              <pre id="wifi-event-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
+            </div>
+          </div>
+
+          <div class="col-12" data-connectivity-setup-hide="1">
             <div class="portal-card p-3 h-100">
               <h3 class="h6">System Netz</h3>
               <dl class="portal-kv mb-0">
@@ -430,15 +499,10 @@
             </div>
           </div>
 
-        </div>
-      </div>
-
-      <div class="tab-pane fade" id="radio-pane" role="tabpanel" aria-labelledby="radio-tab">
-        <div class="row g-3">
-          <div class="col-12 col-xl-6">
+          <div class="col-12">
             <div class="portal-card p-3 h-100">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <h2 class="h5 mb-0">Bluetooth</h2>
+                <h2 class="h5 mb-0">Bluetooth Scan / Pairing</h2>
                 <span id="bt-enabled-badge" class="badge text-bg-secondary">-</span>
               </div>
               <dl class="portal-kv mb-3">
@@ -449,24 +513,65 @@
                 <dt>Pairing Timeout</dt><dd id="bt-pairable-timeout">-</dd>
                 <dt>Tailscale</dt><dd id="radio-tailscale">-</dd>
               </dl>
-              <div class="row g-2 mb-2 align-items-end">
+              <div class="row g-2 mb-3 align-items-end">
                 <div class="col-12 col-md-6">
                   <label class="form-label form-label-sm mb-1" for="bt-pairing-timeout-target">Pairing-Timeout (Sek.)</label>
                   <input id="bt-pairing-timeout-target" type="number" min="30" max="900" step="1" class="form-control form-control-sm" value="180">
                 </div>
-                <div class="col-12 col-md-6">
+                <div class="col-12 col-md-3">
+                  <label class="form-label form-label-sm mb-1" for="bt-scan-duration">Scan (Sek.)</label>
+                  <input id="bt-scan-duration" type="number" min="4" max="30" step="1" class="form-control form-control-sm" value="8">
+                </div>
+                <div class="col-12 col-md-3">
                   <div class="small text-secondary">Beim Start wird Bluetooth automatisch aktiviert, sichtbar und pairable gesetzt.</div>
                 </div>
               </div>
-              <div class="d-flex flex-wrap gap-2">
+              <div class="d-flex flex-wrap gap-2 mb-3">
                 <button id="btn-bt-toggle" class="btn btn-outline-secondary btn-sm">Bluetooth ein/aus</button>
                 <button id="btn-bt-pairing-start" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#btPairingModal">Pairing starten</button>
+                <button id="btn-bt-scan" class="btn btn-outline-primary btn-sm">Scan starten</button>
                 <button id="btn-system-refresh-network-radio" class="btn btn-outline-secondary btn-sm">Netzwerkdaten aktualisieren</button>
+              </div>
+              <div class="small text-uppercase text-secondary mb-1">Gefundene Geräte (Scan)</div>
+              <div id="bt-scan-results" class="list-group list-group-flush small">
+                <div class="text-secondary">Noch kein Scan ausgeführt.</div>
               </div>
             </div>
           </div>
 
-          <div class="col-12 col-xl-6">
+          <div class="col-12">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">Bekannte / gekoppelte Bluetooth-Geräte</h2>
+                <button id="btn-bt-devices-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+              </div>
+              <div id="bt-known-devices-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Keine Bluetooth-Geräte gefunden.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">Audio-Ausgabe / Output Routing</h2>
+                <button id="btn-audio-output-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+              </div>
+              <dl class="portal-kv mb-2">
+                <dt>Aktueller Output</dt><dd id="bt-audio-output-current">-</dd>
+                <dt>Gespeichert</dt><dd id="bt-audio-output-saved">-</dd>
+              </dl>
+              <div class="d-flex gap-2 mb-2">
+                <select id="bt-audio-output-select" class="form-select form-select-sm">
+                  <option value="">Keine Outputs gefunden</option>
+                </select>
+                <button id="btn-audio-output-set" class="btn btn-outline-primary btn-sm">Output setzen</button>
+              </div>
+              <div class="small text-secondary">Umschaltung zwischen local_hdmi, local_speaker und verbundenen Bluetooth-Outputs.</div>
+            </div>
+          </div>
+
+          <div class="col-12">
             <div class="portal-card p-3 h-100">
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <h2 class="h5 mb-0">AP / Hotspot</h2>
@@ -489,7 +594,6 @@
               </div>
             </div>
           </div>
-
         </div>
       </div>
 
@@ -570,10 +674,22 @@
               <div class="small text-secondary mb-2">
                 Webhook-Ziel für alle installierten Sentinels. Muss vor Installation gesetzt werden.
               </div>
+              <label class="form-label form-label-sm mb-1" for="sentinel-webhook-mode">Webhook Modus</label>
+              <select id="sentinel-webhook-mode" class="form-select form-select-sm mb-2">
+                <option value="discord">Discord</option>
+                <option value="internal">Eigenes Incoming</option>
+                <option value="both">Beide</option>
+              </select>
               <label class="form-label form-label-sm mb-1" for="sentinel-webhook-url">Discord/Webhook URL</label>
               <input id="sentinel-webhook-url" type="url" class="form-control form-control-sm mb-2" placeholder="https://discord.com/api/webhooks/...">
+              <label class="form-label form-label-sm mb-1" for="sentinel-internal-webhook-url">Eigenes Incoming Webhook URL</label>
+              <input id="sentinel-internal-webhook-url" type="url" class="form-control form-control-sm mb-2" placeholder="https://joormann-family.de/api/webhooks/incoming/...">
+              <label class="form-label form-label-sm mb-1" for="sentinel-internal-webhook-secret">Incoming Secret (optional)</label>
+              <input id="sentinel-internal-webhook-secret" type="text" class="form-control form-control-sm mb-2" placeholder="X-Hook-Token / secret">
               <div class="d-flex gap-2 mb-2">
                 <button id="btn-sentinel-webhook-save" class="btn btn-outline-primary btn-sm">Webhook speichern</button>
+                <button id="btn-sentinel-test-discord" class="btn btn-outline-secondary btn-sm">Discord testen</button>
+                <button id="btn-sentinel-test-internal" class="btn btn-outline-secondary btn-sm">Incoming testen</button>
               </div>
               <dl class="portal-kv mb-0">
                 <dt>Quelle</dt><dd id="sentinel-source-dir">-</dd>
@@ -765,83 +881,208 @@
         <div class="row g-3">
           <div class="col-12 col-xl-7">
             <div class="portal-card p-4 h-100">
-              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                <div>
-                  <h2 class="h5 mb-1">Stream</h2>
-                  <p class="text-secondary mb-0">Gerätestream vom Adminpanel laden, lokal synchronisieren und Player steuern.</p>
-                </div>
-                <div class="d-flex gap-2">
-                  <button id="btn-stream-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
-                  <button id="btn-stream-sync" class="btn btn-primary btn-sm">Manifest + Assets sync</button>
-                </div>
-              </div>
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+              <h2 class="h5 mb-1">Stream</h2>
+              <p class="text-secondary mb-0">Gerätestream vom Adminpanel laden, lokal synchronisieren und Player steuern.</p>
+            </div>
+            <div class="d-flex gap-2">
+              <button id="btn-stream-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+              <button id="btn-stream-sync" class="btn btn-primary btn-sm">Manifest + Assets sync</button>
+            </div>
+          </div>
 
-              <div class="row g-3">
-                <div class="col-12 col-lg-7">
-                  <div class="border rounded p-3 h-100">
-                    <div class="small text-uppercase text-secondary mb-2">Verfügbare Streams</div>
-                    <div class="d-flex gap-2 mb-2">
-                      <select id="stream-select" class="form-select form-select-sm">
-                        <option value="">Keine Streams geladen</option>
-                      </select>
-                      <button id="btn-stream-select-save" class="btn btn-outline-primary btn-sm">Auswählen</button>
-                    </div>
-                    <div id="stream-list-meta" class="small text-secondary">-</div>
-                    <div id="stream-fetch-error" class="small text-danger mt-2 d-none"></div>
-                  </div>
+          <div class="row g-3">
+            <div class="col-12 col-lg-7">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary mb-2">Verfügbare Streams</div>
+                <div class="d-flex gap-2 mb-2">
+                  <select id="stream-select" class="form-select form-select-sm">
+                    <option value="">Keine Streams geladen</option>
+                  </select>
+                  <button id="btn-stream-select-save" class="btn btn-outline-primary btn-sm">Auswählen</button>
                 </div>
-                <div class="col-12 col-lg-5">
-                  <div class="border rounded p-3 h-100">
-                    <div class="small text-uppercase text-secondary mb-2">Player</div>
-                    <div id="stream-player-status" class="small mb-2">Status: -</div>
-                    <div class="d-flex flex-wrap gap-2">
-                      <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
-                      <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                      <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
-                      <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
-                    </div>
-                  </div>
+                <div id="stream-list-meta" class="small text-secondary">-</div>
+                <div id="stream-fetch-error" class="small text-danger mt-2 d-none"></div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-5">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary mb-2">Player</div>
+                <div id="stream-player-status" class="small mb-2">Status: -</div>
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
+                  <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                  <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                  <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mt-1">
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Ausgewählter Stream</div>
+                <div id="stream-selected-slug" class="fw-semibold">-</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Manifest Version</div>
+                <div id="stream-manifest-version" class="fw-semibold">-</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Assets lokal</div>
+                <div id="stream-asset-count" class="fw-semibold">0</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-uppercase text-secondary">Letzter Sync</div>
+                <div id="stream-last-sync" class="fw-semibold">-</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="border rounded p-3 mt-3">
+            <div class="small text-uppercase text-secondary mb-1">Storage Ziel</div>
+            <div id="stream-storage-target" class="small text-secondary">-</div>
+            <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
+          </div>
+
+	          <div class="border rounded p-3 mt-3">
+	            <div class="small text-secondary">
+	              Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
+	            </div>
+	          </div>
 
               <div class="row g-3 mt-1">
-                <div class="col-12 col-md-6 col-xl-3">
-                  <div class="border rounded p-3 h-100">
-                    <div class="small text-uppercase text-secondary">Ausgewählter Stream</div>
-                    <div id="stream-selected-slug" class="fw-semibold">-</div>
-                  </div>
-                </div>
-                <div class="col-12 col-md-6 col-xl-3">
-                  <div class="border rounded p-3 h-100">
-                    <div class="small text-uppercase text-secondary">Manifest Version</div>
-                    <div id="stream-manifest-version" class="fw-semibold">-</div>
-                  </div>
-                </div>
-                <div class="col-12 col-md-6 col-xl-3">
-                  <div class="border rounded p-3 h-100">
-                    <div class="small text-uppercase text-secondary">Assets lokal</div>
-                    <div id="stream-asset-count" class="fw-semibold">0</div>
-                  </div>
-                </div>
-                <div class="col-12 col-md-6 col-xl-3">
-                  <div class="border rounded p-3 h-100">
-                    <div class="small text-uppercase text-secondary">Letzter Sync</div>
-                    <div id="stream-last-sync" class="fw-semibold">-</div>
-                  </div>
-                </div>
-              </div>
+	            <div class="col-12">
+	              <div class="portal-card p-3 h-100">
+	                <h3 class="h6 mb-2">Player Overlay · Flash Message</h3>
+	                <div class="row g-2">
+	                  <div class="col-12 col-md-5"><input id="overlay-flash-id" class="form-control form-control-sm" placeholder="id (z. B. flash-1)"></div>
+	                  <div class="col-12 col-md-7"><input id="overlay-flash-title" class="form-control form-control-sm" placeholder="Titel"></div>
+	                  <div class="col-12"><textarea id="overlay-flash-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
+	                  <div class="col-6 col-md-4"><input id="overlay-flash-duration" class="form-control form-control-sm" type="number" value="5000" min="500" max="120000" step="100"></div>
+	                  <div class="col-6 col-md-4">
+	                    <select id="overlay-flash-position" class="form-select form-select-sm">
+	                      <option value="top">top</option>
+	                      <option value="center">center</option>
+	                      <option value="bottom">bottom</option>
+	                    </select>
+	                  </div>
+	                  <div class="col-6 col-md-4"><input id="overlay-flash-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
+	                  <div class="col-4"><input id="overlay-flash-bg" class="form-control form-control-sm" value="#111111"></div>
+	                  <div class="col-4"><input id="overlay-flash-fg" class="form-control form-control-sm" value="#ffffff"></div>
+	                  <div class="col-4"><input id="overlay-flash-accent" class="form-control form-control-sm" value="#0d6efd"></div>
+	                  <div class="col-4"><input id="overlay-flash-font" class="form-control form-control-sm" type="number" value="32" min="12" max="140"></div>
+	                  <div class="col-4"><input id="overlay-flash-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+	                  <div class="col-4"><input id="overlay-flash-opacity" class="form-control form-control-sm" type="number" value="0.95" min="0.05" max="1" step="0.05"></div>
+	                  <div class="col-12">
+	                    <div class="form-check form-switch">
+	                      <input id="overlay-flash-enabled" class="form-check-input" type="checkbox" checked>
+	                      <label class="form-check-label" for="overlay-flash-enabled">enabled</label>
+	                    </div>
+	                  </div>
+	                </div>
+	                <div class="d-flex flex-wrap gap-2 mt-2">
+	                  <button id="btn-overlay-save-flash" class="btn btn-outline-primary btn-sm">Flash speichern</button>
+	                  <button id="btn-overlay-clear-flash" class="btn btn-outline-secondary btn-sm">Flash leeren</button>
+	                </div>
+	              </div>
+	            </div>
 
-              <div class="border rounded p-3 mt-3">
-                <div class="small text-uppercase text-secondary mb-1">Storage Ziel</div>
-                <div id="stream-storage-target" class="small text-secondary">-</div>
-                <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
-              </div>
+	            <div class="col-12 col-xl-6">
+	              <div class="portal-card p-3 h-100">
+	                <h3 class="h6 mb-2">Ticker</h3>
+	                <div class="row g-2">
+	                  <div class="col-12 col-md-5"><input id="overlay-ticker-id" class="form-control form-control-sm" placeholder="id (z. B. ticker-1)"></div>
+	                  <div class="col-12 col-md-7"><input id="overlay-ticker-text" class="form-control form-control-sm" placeholder="Text"></div>
+	                  <div class="col-6 col-md-3">
+	                    <select id="overlay-ticker-position" class="form-select form-select-sm">
+	                      <option value="bottom">bottom</option>
+	                      <option value="top">top</option>
+	                    </select>
+	                  </div>
+	                  <div class="col-6 col-md-3"><input id="overlay-ticker-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
+	                  <div class="col-6 col-md-3"><input id="overlay-ticker-speed" class="form-control form-control-sm" type="number" value="120" min="10" max="800"></div>
+	                  <div class="col-6 col-md-3"><input id="overlay-ticker-height" class="form-control form-control-sm" type="number" value="72" min="24" max="320"></div>
+	                  <div class="col-4"><input id="overlay-ticker-padding-x" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+	                  <div class="col-4"><input id="overlay-ticker-bg" class="form-control form-control-sm" value="#000000"></div>
+	                  <div class="col-4"><input id="overlay-ticker-fg" class="form-control form-control-sm" value="#ffffff"></div>
+	                  <div class="col-6"><input id="overlay-ticker-font" class="form-control form-control-sm" type="number" value="34" min="12" max="160"></div>
+	                  <div class="col-6"><input id="overlay-ticker-opacity" class="form-control form-control-sm" type="number" value="0.90" min="0.05" max="1" step="0.05"></div>
+	                  <div class="col-12">
+	                    <div class="form-check form-switch">
+	                      <input id="overlay-ticker-enabled" class="form-check-input" type="checkbox" checked>
+	                      <label class="form-check-label" for="overlay-ticker-enabled">enabled</label>
+	                    </div>
+	                  </div>
+	                </div>
+	                <div class="d-flex flex-wrap gap-2 mt-2">
+	                  <button id="btn-overlay-save-ticker" class="btn btn-outline-primary btn-sm">Ticker speichern</button>
+	                  <button id="btn-overlay-clear-tickers" class="btn btn-outline-secondary btn-sm">Ticker leeren</button>
+	                </div>
+	              </div>
+	            </div>
 
-              <div class="border rounded p-3 mt-3">
-                <div class="small text-secondary">
-                  Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
-                </div>
-              </div>
+	            <div class="col-12 col-xl-6">
+	              <div class="portal-card p-3 h-100">
+	                <h3 class="h6 mb-2">Popup</h3>
+	                <div class="row g-2">
+	                  <div class="col-12 col-md-5"><input id="overlay-popup-id" class="form-control form-control-sm" placeholder="id (z. B. popup-1)"></div>
+	                  <div class="col-12 col-md-7"><input id="overlay-popup-title" class="form-control form-control-sm" placeholder="Titel"></div>
+	                  <div class="col-12"><textarea id="overlay-popup-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
+	                  <div class="col-6 col-md-4"><input id="overlay-popup-duration" class="form-control form-control-sm" type="number" value="8000" min="500" max="120000" step="100"></div>
+	                  <div class="col-6 col-md-4">
+	                    <select id="overlay-popup-position" class="form-select form-select-sm">
+	                      <option value="center">center</option>
+	                      <option value="top-left">top-left</option>
+	                      <option value="top-right">top-right</option>
+	                      <option value="bottom-left">bottom-left</option>
+	                      <option value="bottom-right">bottom-right</option>
+	                    </select>
+	                  </div>
+	                  <div class="col-12 col-md-4"><input id="overlay-popup-image-path" class="form-control form-control-sm" placeholder="imagePath (optional)"></div>
+	                  <div class="col-4"><input id="overlay-popup-bg" class="form-control form-control-sm" value="#ffffff"></div>
+	                  <div class="col-4"><input id="overlay-popup-fg" class="form-control form-control-sm" value="#111111"></div>
+	                  <div class="col-4"><input id="overlay-popup-accent" class="form-control form-control-sm" value="#dc3545"></div>
+	                  <div class="col-4"><input id="overlay-popup-width" class="form-control form-control-sm" type="number" value="800" min="180" max="3840"></div>
+	                  <div class="col-4"><input id="overlay-popup-height" class="form-control form-control-sm" type="number" value="420" min="120" max="2160"></div>
+	                  <div class="col-4"><input id="overlay-popup-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+	                  <div class="col-12"><input id="overlay-popup-opacity" class="form-control form-control-sm" type="number" value="1.0" min="0.05" max="1" step="0.05"></div>
+	                  <div class="col-12">
+	                    <div class="form-check form-switch">
+	                      <input id="overlay-popup-enabled" class="form-check-input" type="checkbox" checked>
+	                      <label class="form-check-label" for="overlay-popup-enabled">enabled</label>
+	                    </div>
+	                  </div>
+	                </div>
+	                <div class="d-flex flex-wrap gap-2 mt-2">
+	                  <button id="btn-overlay-save-popup" class="btn btn-outline-primary btn-sm">Popup speichern</button>
+	                  <button id="btn-overlay-clear-popups" class="btn btn-outline-secondary btn-sm">Popups leeren</button>
+	                </div>
+	              </div>
+	            </div>
+
+	            <div class="col-12 col-xl-6">
+	              <div class="portal-card p-3 h-100">
+	                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+	                  <h3 class="h6 mb-0">Overlay State</h3>
+	                  <span id="overlay-state-path" class="badge text-bg-light border text-dark">-</span>
+	                </div>
+	                <div class="d-flex flex-wrap gap-2 mb-2">
+	                  <button id="btn-overlay-refresh" class="btn btn-outline-secondary btn-sm">Overlay-Status laden</button>
+	                  <button id="btn-overlay-reset-all" class="btn btn-outline-danger btn-sm">Alles zurücksetzen</button>
+	                </div>
+	                <pre id="overlay-state-json" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height: 320px; overflow:auto;">-</pre>
+	              </div>
+	            </div>
+	          </div>
             </div>
           </div>
 
@@ -924,17 +1165,6 @@
             </button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link" id="system-sub-wifi-tab" data-bs-toggle="tab" data-bs-target="#system-sub-wifi" type="button" role="tab">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
-                <path d="M12 20h.01"></path>
-                <path d="M2 8.82a15 15 0 0 1 20 0"></path>
-                <path d="M5 12.86a10 10 0 0 1 14 0"></path>
-                <path d="M8.5 16.43a5 5 0 0 1 7 0"></path>
-              </svg>
-              WLAN Verwaltung
-            </button>
-          </li>
-          <li class="nav-item" role="presentation">
             <button class="nav-link" id="system-sub-update-tab" data-bs-toggle="tab" data-bs-target="#system-sub-update" type="button" role="tab">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
                 <path d="M21 2v6h-6"></path>
@@ -945,17 +1175,7 @@
               Sync & Update
             </button>
           </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="system-sub-overlay-tab" data-bs-toggle="tab" data-bs-target="#system-sub-overlay" type="button" role="tab">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
-                <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-                <line x1="8" y1="21" x2="16" y2="21"></line>
-                <line x1="12" y1="17" x2="12" y2="21"></line>
-              </svg>
-              Player Overlay
-            </button>
-          </li>
-        </ul>
+	        </ul>
 
         <div class="tab-content">
           <div class="tab-pane fade show active" id="system-sub-general" role="tabpanel" aria-labelledby="system-sub-general-tab">
@@ -1047,7 +1267,7 @@
 
           <div class="tab-pane fade" id="system-sub-link" role="tabpanel" aria-labelledby="system-sub-link-tab">
             <div class="row g-3">
-              <div class="col-12 col-xl-6">
+              <div class="col-12">
                 <div class="portal-card p-3 h-100">
                   <h2 class="h5 mb-3">Panel / Link Aktionen</h2>
 
@@ -1089,7 +1309,7 @@
                 </div>
               </div>
 
-              <div class="col-12 col-xl-6">
+              <div class="col-12">
                 <div class="portal-card p-3 h-100">
                   <div class="d-flex justify-content-between align-items-center mb-2">
                     <h2 class="h5 mb-0">Sync Kontrolle</h2>
@@ -1108,69 +1328,6 @@
                     <button id="btn-panel-sync-check" class="btn btn-outline-secondary btn-sm">Sync prüfen</button>
                     <button id="btn-panel-sync-now" class="btn btn-outline-primary btn-sm">Jetzt nachmelden</button>
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="tab-pane fade" id="system-sub-wifi" role="tabpanel" aria-labelledby="system-sub-wifi-tab">
-            <div class="row g-3">
-              <div class="col-12 col-xl-6">
-                <div class="portal-card p-3 h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h3 class="h6 mb-0">WLAN Netze</h3>
-                    <button id="btn-wifi-scan" class="btn btn-outline-dark btn-sm">Scan</button>
-                  </div>
-                  <div id="wifi-scan-list" class="list-group list-group-flush small">
-                    <div class="text-secondary">Noch kein Scan ausgeführt.</div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="col-12 col-xl-6">
-                <div class="portal-card p-3 h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h3 class="h6 mb-0">Gespeicherte WLAN Profile</h3>
-                    <div class="d-flex gap-2">
-                      <button id="btn-wifi-profiles-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
-                      <button id="btn-wifi-profiles-apply" class="btn btn-outline-primary btn-sm">Apply</button>
-                    </div>
-                  </div>
-                  <div id="wifi-profiles-list" class="list-group list-group-flush small mb-3">
-                    <div class="text-secondary">Keine Profile geladen.</div>
-                  </div>
-                  <div class="row g-2">
-                    <div class="col-md-5">
-                      <input id="wifi-manual-ssid" class="form-control form-control-sm" placeholder="SSID">
-                    </div>
-                    <div class="col-md-5">
-                      <input id="wifi-manual-password" class="form-control form-control-sm" type="password" placeholder="Passwort (optional)">
-                    </div>
-                    <div class="col-md-2 d-grid">
-                      <button id="btn-wifi-manual-add" class="btn btn-outline-success btn-sm">Add</button>
-                    </div>
-                    <div class="col-12">
-                      <div class="form-check form-check-sm">
-                        <input class="form-check-input" type="checkbox" id="wifi-manual-hidden">
-                        <label class="form-check-label small text-secondary" for="wifi-manual-hidden">
-                          Hidden SSID / verstecktes Netzwerk
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="col-12 col-xl-6">
-                <div class="portal-card p-3 h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h3 class="h6 mb-0">WPS / Ereignisse</h3>
-                    <button id="btn-wifi-logs-refresh" class="btn btn-outline-secondary btn-sm">Refresh Logs</button>
-                  </div>
-                  <div class="small mb-2">
-                    <strong>Status:</strong> <span id="wifi-wps-phase">idle</span>
-                  </div>
-                  <pre id="wifi-event-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
                 </div>
               </div>
             </div>
@@ -1243,134 +1400,8 @@
             </div>
           </div>
 
-          <div class="tab-pane fade" id="system-sub-overlay" role="tabpanel" aria-labelledby="system-sub-overlay-tab">
-            <div class="row g-3">
-              <div class="col-12 col-xl-6">
-                <div class="portal-card p-3 h-100">
-                  <h3 class="h6 mb-2">Flash Message</h3>
-                  <div class="row g-2">
-                    <div class="col-12 col-md-5"><input id="overlay-flash-id" class="form-control form-control-sm" placeholder="id (z. B. flash-1)"></div>
-                    <div class="col-12 col-md-7"><input id="overlay-flash-title" class="form-control form-control-sm" placeholder="Titel"></div>
-                    <div class="col-12"><textarea id="overlay-flash-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
-                    <div class="col-6 col-md-4"><input id="overlay-flash-duration" class="form-control form-control-sm" type="number" value="5000" min="500" max="120000" step="100"></div>
-                    <div class="col-6 col-md-4">
-                      <select id="overlay-flash-position" class="form-select form-select-sm">
-                        <option value="top">top</option>
-                        <option value="center">center</option>
-                        <option value="bottom">bottom</option>
-                      </select>
-                    </div>
-                    <div class="col-6 col-md-4"><input id="overlay-flash-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
-                    <div class="col-4"><input id="overlay-flash-bg" class="form-control form-control-sm" value="#111111"></div>
-                    <div class="col-4"><input id="overlay-flash-fg" class="form-control form-control-sm" value="#ffffff"></div>
-                    <div class="col-4"><input id="overlay-flash-accent" class="form-control form-control-sm" value="#0d6efd"></div>
-                    <div class="col-4"><input id="overlay-flash-font" class="form-control form-control-sm" type="number" value="32" min="12" max="140"></div>
-                    <div class="col-4"><input id="overlay-flash-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
-                    <div class="col-4"><input id="overlay-flash-opacity" class="form-control form-control-sm" type="number" value="0.95" min="0.05" max="1" step="0.05"></div>
-                    <div class="col-12">
-                      <div class="form-check form-switch">
-                        <input id="overlay-flash-enabled" class="form-check-input" type="checkbox" checked>
-                        <label class="form-check-label" for="overlay-flash-enabled">enabled</label>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="d-flex flex-wrap gap-2 mt-2">
-                    <button id="btn-overlay-save-flash" class="btn btn-outline-primary btn-sm">Flash speichern</button>
-                    <button id="btn-overlay-clear-flash" class="btn btn-outline-secondary btn-sm">Flash leeren</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="col-12 col-xl-6">
-                <div class="portal-card p-3 h-100">
-                  <h3 class="h6 mb-2">Ticker</h3>
-                  <div class="row g-2">
-                    <div class="col-12 col-md-5"><input id="overlay-ticker-id" class="form-control form-control-sm" placeholder="id (z. B. ticker-1)"></div>
-                    <div class="col-12 col-md-7"><input id="overlay-ticker-text" class="form-control form-control-sm" placeholder="Text"></div>
-                    <div class="col-6 col-md-3">
-                      <select id="overlay-ticker-position" class="form-select form-select-sm">
-                        <option value="bottom">bottom</option>
-                        <option value="top">top</option>
-                      </select>
-                    </div>
-                    <div class="col-6 col-md-3"><input id="overlay-ticker-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
-                    <div class="col-6 col-md-3"><input id="overlay-ticker-speed" class="form-control form-control-sm" type="number" value="120" min="10" max="800"></div>
-                    <div class="col-6 col-md-3"><input id="overlay-ticker-height" class="form-control form-control-sm" type="number" value="72" min="24" max="320"></div>
-                    <div class="col-4"><input id="overlay-ticker-padding-x" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
-                    <div class="col-4"><input id="overlay-ticker-bg" class="form-control form-control-sm" value="#000000"></div>
-                    <div class="col-4"><input id="overlay-ticker-fg" class="form-control form-control-sm" value="#ffffff"></div>
-                    <div class="col-6"><input id="overlay-ticker-font" class="form-control form-control-sm" type="number" value="34" min="12" max="160"></div>
-                    <div class="col-6"><input id="overlay-ticker-opacity" class="form-control form-control-sm" type="number" value="0.90" min="0.05" max="1" step="0.05"></div>
-                    <div class="col-12">
-                      <div class="form-check form-switch">
-                        <input id="overlay-ticker-enabled" class="form-check-input" type="checkbox" checked>
-                        <label class="form-check-label" for="overlay-ticker-enabled">enabled</label>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="d-flex flex-wrap gap-2 mt-2">
-                    <button id="btn-overlay-save-ticker" class="btn btn-outline-primary btn-sm">Ticker speichern</button>
-                    <button id="btn-overlay-clear-tickers" class="btn btn-outline-secondary btn-sm">Ticker leeren</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="col-12 col-xl-6">
-                <div class="portal-card p-3 h-100">
-                  <h3 class="h6 mb-2">Popup</h3>
-                  <div class="row g-2">
-                    <div class="col-12 col-md-5"><input id="overlay-popup-id" class="form-control form-control-sm" placeholder="id (z. B. popup-1)"></div>
-                    <div class="col-12 col-md-7"><input id="overlay-popup-title" class="form-control form-control-sm" placeholder="Titel"></div>
-                    <div class="col-12"><textarea id="overlay-popup-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
-                    <div class="col-6 col-md-4"><input id="overlay-popup-duration" class="form-control form-control-sm" type="number" value="8000" min="500" max="120000" step="100"></div>
-                    <div class="col-6 col-md-4">
-                      <select id="overlay-popup-position" class="form-select form-select-sm">
-                        <option value="center">center</option>
-                        <option value="top-left">top-left</option>
-                        <option value="top-right">top-right</option>
-                        <option value="bottom-left">bottom-left</option>
-                        <option value="bottom-right">bottom-right</option>
-                      </select>
-                    </div>
-                    <div class="col-12 col-md-4"><input id="overlay-popup-image-path" class="form-control form-control-sm" placeholder="imagePath (optional)"></div>
-                    <div class="col-4"><input id="overlay-popup-bg" class="form-control form-control-sm" value="#ffffff"></div>
-                    <div class="col-4"><input id="overlay-popup-fg" class="form-control form-control-sm" value="#111111"></div>
-                    <div class="col-4"><input id="overlay-popup-accent" class="form-control form-control-sm" value="#dc3545"></div>
-                    <div class="col-4"><input id="overlay-popup-width" class="form-control form-control-sm" type="number" value="800" min="180" max="3840"></div>
-                    <div class="col-4"><input id="overlay-popup-height" class="form-control form-control-sm" type="number" value="420" min="120" max="2160"></div>
-                    <div class="col-4"><input id="overlay-popup-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
-                    <div class="col-12"><input id="overlay-popup-opacity" class="form-control form-control-sm" type="number" value="1.0" min="0.05" max="1" step="0.05"></div>
-                    <div class="col-12">
-                      <div class="form-check form-switch">
-                        <input id="overlay-popup-enabled" class="form-check-input" type="checkbox" checked>
-                        <label class="form-check-label" for="overlay-popup-enabled">enabled</label>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="d-flex flex-wrap gap-2 mt-2">
-                    <button id="btn-overlay-save-popup" class="btn btn-outline-primary btn-sm">Popup speichern</button>
-                    <button id="btn-overlay-clear-popups" class="btn btn-outline-secondary btn-sm">Popups leeren</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="col-12 col-xl-6">
-                <div class="portal-card p-3 h-100">
-                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                    <h3 class="h6 mb-0">Overlay State</h3>
-                    <span id="overlay-state-path" class="badge text-bg-light border text-dark">-</span>
-                  </div>
-                  <div class="d-flex flex-wrap gap-2 mb-2">
-                    <button id="btn-overlay-refresh" class="btn btn-outline-secondary btn-sm">Overlay-Status laden</button>
-                    <button id="btn-overlay-reset-all" class="btn btn-outline-danger btn-sm">Alles zurücksetzen</button>
-                  </div>
-                  <pre id="overlay-state-json" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height: 320px; overflow:auto;">-</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+	        </div>
+	      </div>
     </div>
   </div>
 
@@ -1677,6 +1708,29 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
           <button id="btn-hostname-rename-save" type="button" class="btn btn-primary" disabled>OK Speichern</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="runtimeWarmupModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title">Portal wird vorbereitet</h5>
+        </div>
+        <div class="modal-body pt-2">
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+            <div>
+              <div id="runtime-warmup-text" class="fw-semibold">Runtime-Snapshot wird geladen…</div>
+              <div id="runtime-warmup-subtext" class="small text-secondary">Bitte kurz warten.</div>
+            </div>
+          </div>
+          <div class="progress mb-2" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+            <div id="runtime-warmup-progress" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
+          </div>
+          <div id="runtime-warmup-percent" class="small text-secondary">0%</div>
         </div>
       </div>
     </div>

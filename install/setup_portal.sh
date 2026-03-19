@@ -28,8 +28,49 @@ if [[ ! -d "$REPO_DIR" ]]; then
   exit 2
 fi
 
-apt-get update
-apt-get install -y python3 python3-venv python3-pip
+is_pkg_installed() {
+  dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+}
+
+is_raspotify_installed() {
+  if is_pkg_installed "raspotify"; then
+    return 0
+  fi
+  if command -v raspotify >/dev/null 2>&1; then
+    return 0
+  fi
+  if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^raspotify\.service'; then
+    return 0
+  fi
+  return 1
+}
+
+MISSING_PKGS=()
+for pkg in python3 python3-venv python3-pip curl mpg123; do
+  if ! is_pkg_installed "$pkg"; then
+    MISSING_PKGS+=("$pkg")
+  fi
+done
+
+if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
+  echo "Installing missing packages: ${MISSING_PKGS[*]}"
+  apt-get update
+  apt-get install -y "${MISSING_PKGS[@]}"
+else
+  echo "All required base packages already installed (python3, python3-venv, python3-pip, curl, mpg123)."
+fi
+
+if command -v raspi-config >/dev/null 2>&1; then
+  # Keep Wi-Fi country setup idempotent on Raspberry Pi OS hosts.
+  raspi-config nonint do_wifi_country DE || true
+fi
+
+if ! is_raspotify_installed; then
+  echo "Installing raspotify via upstream install script ..."
+  curl -fsSL https://dtcooper.github.io/raspotify/install.sh | sh
+else
+  echo "raspotify already installed."
+fi
 
 install -d -m 0775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/var"
 install -d -m 0775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/var/data"

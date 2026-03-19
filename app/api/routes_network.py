@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import ipaddress
+import json
+import shutil
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -41,6 +45,11 @@ from app.core.netcontrol import (
     get_bluetooth_pairing_feedback,
     get_bluetooth_pairing_session_status,
     get_bluetooth_paired_devices,
+    bluetooth_audio_scan,
+    bluetooth_audio_devices,
+    bluetooth_audio_action,
+    audio_outputs_status,
+    audio_output_set,
     bluetooth_pairing_action,
     set_bluetooth_enabled,
     set_bluetooth_runtime_settings,
@@ -79,6 +88,7 @@ from app.core.sentinel_manager import (
     SentinelManagerError,
     get_status as sentinels_status,
     install_sentinel as install_sentinel_module,
+    sentinel_action as sentinel_action_module,
     uninstall_sentinel as uninstall_sentinel_module,
 )
 
@@ -86,6 +96,54 @@ bp_network = Blueprint("network", __name__)
 storage_fm = StorageFileManagerService()
 storage_delete_service = StorageDeleteService(storage_fm)
 PLAYER_SOURCE_PATH = Path(DATA_DIR) / "player-source.json"
+
+
+def _interface_exists(ifname: str) -> bool:
+    iface = str(ifname or "").strip()
+    if not iface:
+        return False
+    return (Path("/sys/class/net") / iface).exists()
+
+
+def _any_lan_interface_exists() -> bool:
+    try:
+        for item in Path("/sys/class/net").iterdir():
+            name = item.name
+            if name == "lo":
+                continue
+            if name.startswith("eth") or name.startswith("en"):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _bluetooth_adapter_exists() -> bool:
+    bt_root = Path("/sys/class/bluetooth")
+    try:
+        if bt_root.exists() and any(path.name.startswith("hci") for path in bt_root.iterdir()):
+            return True
+    except Exception:
+        pass
+    return shutil.which("bluetoothctl") is not None
+
+
+def _runtime_module_capabilities() -> dict:
+    wifi_ifname = "wlan0"
+    wifi_available = _interface_exists(wifi_ifname)
+    return {
+        "wifi": {
+            "available": wifi_available,
+            "ifname": wifi_ifname,
+            "reason": "" if wifi_available else "interface_missing",
+        },
+        "lan": {
+            "available": _any_lan_interface_exists(),
+        },
+        "bluetooth": {
+            "available": _bluetooth_adapter_exists(),
+        },
+    }
 
 
 def _ok(data: dict, status: int = 200):
@@ -663,10 +721,23 @@ def _has_uplink(network_info: dict) -> bool:
     return bool(lan_up or wifi_up)
 
 
+def _get_audio_output_profile(cfg: dict) -> dict:
+    profile = cfg.get("audio_output") if isinstance(cfg.get("audio_output"), dict) else {}
+    selected = str(profile.get("selected_output") or "").strip()
+    return {
+        "selected_output": selected,
+        "updated_at": str(profile.get("updated_at") or ""),
+    }
+
+
 @bp_network.get("/api/network/info")
 def api_network_info():
+    # NOTE: Legacy read endpoint with side effects in storage paths.
+    # Network info itself is read-only and must not mutate AP/Wi-Fi state.
     try:
         info = get_network_info()
+        capabilities = _runtime_module_capabilities()
+        info["capabilities"] = capabilities
         setup_mode_active = not _has_uplink(info)
         setup_mode = {
             "active": setup_mode_active,
@@ -682,18 +753,14 @@ def api_network_info():
             "ap": {},
         }
 
-        try:
-            # Read-only AP status for UI; no automatic AP switching here.
-            setup_mode["ap"] = get_ap_status()
-        except NetControlError as exc:
-            setup_mode["ap_error"] = f"{exc.code}: {exc.message}"
-        if setup_mode_active and not setup_mode.get("ap_error"):
+        if bool(((capabilities.get("wifi") or {}).get("available"))):
             try:
-                if not _interface_exists("wlan0"):
-                    setup_mode["reason"] = "wifi_interface_missing"
-                    setup_mode["message"] = "Kein WLAN-Interface erkannt. AP-Setup ist auf diesem Host nicht verfuegbar."
-            except Exception:
-                pass
+                setup_mode["ap"] = get_ap_status()
+            except NetControlError as exc:
+                setup_mode["ap_error"] = f"{exc.code}: {exc.message}"
+        elif setup_mode_active:
+            setup_mode["reason"] = "wifi_interface_missing"
+            setup_mode["message"] = "Kein WLAN-Interface erkannt. AP-Setup ist auf diesem Host nicht verfuegbar."
 
         info["connectivity_setup_mode"] = setup_mode
         cfg = ensure_config()
@@ -1238,6 +1305,146 @@ def api_network_bluetooth_pairing_status():
     )
 
 
+@bp_network.get("/api/bluetooth/scan")
+def api_bluetooth_scan():
+    raw_duration = request.args.get("duration", "8")
+    try:
+        duration = int(raw_duration)
+    except Exception:
+        return _error("invalid_payload", "Query param 'duration' must be int", status=400)
+    try:
+        payload = bluetooth_audio_scan(scan_seconds=duration)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/bluetooth/devices")
+def api_bluetooth_devices():
+    try:
+        payload = bluetooth_audio_devices()
+        outputs = {}
+        try:
+            outputs = audio_outputs_status()
+        except NetControlError:
+            outputs = {}
+        current_output = str(outputs.get("current_output") or "")
+        devices = payload.get("devices") if isinstance(payload.get("devices"), list) else []
+        for item in devices:
+            if not isinstance(item, dict):
+                continue
+            mac = str(item.get("id") or "").upper()
+            item["is_current_output"] = bool(mac and current_output == f"bluetooth:{mac}")
+        payload["current_output"] = current_output
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/bluetooth/pair")
+def api_bluetooth_pair():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or data.get("id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        payload = bluetooth_audio_action("pair", device_id=device_id)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/bluetooth/connect")
+def api_bluetooth_connect():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or data.get("id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        payload = bluetooth_audio_action("connect", device_id=device_id)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/bluetooth/disconnect")
+def api_bluetooth_disconnect():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or data.get("id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        payload = bluetooth_audio_action("disconnect", device_id=device_id)
+        if str((payload.get("result") or {}).get("device_id") or "").strip():
+            try:
+                outputs = audio_outputs_status()
+                current_output = str(outputs.get("current_output") or "")
+                if current_output.startswith("bluetooth:"):
+                    audio_output_set("local_hdmi")
+            except NetControlError:
+                pass
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/bluetooth/forget")
+def api_bluetooth_forget():
+    data = request.get_json(force=True, silent=True) or {}
+    device_id = str(data.get("device_id") or data.get("id") or "").strip()
+    if not device_id:
+        return _error("invalid_payload", "Field 'device_id' is required", status=400)
+    try:
+        payload = bluetooth_audio_action("forget", device_id=device_id)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/audio/outputs")
+def api_audio_outputs():
+    cfg = ensure_config()
+    profile = _get_audio_output_profile(cfg)
+    try:
+        payload = audio_outputs_status()
+        payload["saved"] = profile
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/audio/output")
+def api_audio_output_set():
+    data = request.get_json(force=True, silent=True) or {}
+    output = str(data.get("output") or "").strip()
+    if not output:
+        return _error("invalid_payload", "Field 'output' is required", status=400)
+    cfg = ensure_config()
+    try:
+        payload = audio_output_set(output)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+    profile = _get_audio_output_profile(cfg)
+    profile["selected_output"] = output
+    profile["updated_at"] = utc_now()
+    cfg["audio_output"] = profile
+    cfg["updated_at"] = utc_now()
+    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist audio output selection", status=500, detail=err)
+    payload["saved"] = profile
+    return _ok(payload)
+
+
 @bp_network.post("/api/network/lan/toggle")
 def api_network_lan_toggle():
     data = request.get_json(force=True, silent=True) or {}
@@ -1256,8 +1463,27 @@ def api_network_lan_toggle():
 def api_network_ap_status():
     ifname = (request.args.get("ifname") or "wlan0").strip()
     profile = (request.args.get("profile") or "jm-hotspot").strip()
+    if not _interface_exists(ifname):
+        return _ok(
+            {
+                "ifname": ifname,
+                "profile": profile,
+                "available": False,
+                "active": False,
+                "ssid": "",
+                "ip": "",
+                "portal_url": "",
+                "clients_count": 0,
+                "radio": "",
+                "device_state": "missing",
+                "active_connection": "",
+                "reason": "interface_missing",
+            }
+        )
     try:
-        return _ok(get_ap_status(ifname=ifname, profile=profile))
+        payload = get_ap_status(ifname=ifname, profile=profile)
+        payload["available"] = True
+        return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
@@ -1283,8 +1509,12 @@ def api_network_ap_toggle():
 @bp_network.get("/api/network/ap/clients")
 def api_network_ap_clients():
     ifname = (request.args.get("ifname") or "wlan0").strip()
+    if not _interface_exists(ifname):
+        return _ok({"ifname": ifname, "available": False, "clients": [], "reason": "interface_missing"})
     try:
-        return _ok(get_ap_clients(ifname=ifname))
+        payload = get_ap_clients(ifname=ifname)
+        payload["available"] = True
+        return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
@@ -1292,6 +1522,8 @@ def api_network_ap_clients():
 
 @bp_network.get("/api/network/storage/status")
 def api_network_storage_status():
+    # NOTE: Legacy read endpoint with side effects.
+    # get_storage_state() may auto-mount internal/external storage and persist config updates.
     try:
         return _ok(get_storage_state())
     except NetControlError as exc:
@@ -1703,6 +1935,28 @@ def api_network_wifi_wps_start():
 @bp_network.get("/api/network/wifi/wps/status")
 def api_network_wifi_wps_status():
     ifname = (request.args.get("ifname") or "wlan0").strip()
+    if not _interface_exists(ifname):
+        return _ok(
+            {
+                "ifname": ifname,
+                "available": False,
+                "wps": {
+                    "phase": "unsupported",
+                    "phase_message": "WLAN-Interface nicht vorhanden.",
+                    "target_ssid": "",
+                    "target_bssid": "",
+                },
+                "wifi": {
+                    "ifname": ifname,
+                    "enabled": False,
+                    "connected": False,
+                    "ssid": "",
+                    "ip": "",
+                    "reason": "interface_missing",
+                },
+                "ap_fallback": {"attempted": False, "disabled": False, "was_enabled": False, "ifname": ifname, "reason": "interface_missing"},
+            }
+        )
     try:
         status = get_wifi_status(ifname=ifname)
     except NetControlError as exc:
@@ -1779,8 +2033,28 @@ def api_network_wifi_wps_status():
 @bp_network.get("/api/network/wifi/status")
 def api_network_wifi_status():
     ifname = (request.args.get("ifname") or "wlan0").strip()
+    if not _interface_exists(ifname):
+        return _ok(
+            {
+                "ifname": ifname,
+                "available": False,
+                "enabled": False,
+                "connected": False,
+                "ssid": "",
+                "connection": "",
+                "bssid": "",
+                "signal": 0,
+                "frequency_mhz": 0,
+                "security": "",
+                "wpa_state": "",
+                "ip": "",
+                "mac": "",
+                "reason": "interface_missing",
+            }
+        )
     try:
         status = get_wifi_status(ifname=ifname)
+        status["available"] = True
         return _ok(status)
     except NetControlError as exc:
         return _error(exc.code, exc.message, status=400, detail=exc.detail)
@@ -1789,8 +2063,11 @@ def api_network_wifi_status():
 @bp_network.get("/api/wifi/scan")
 def api_wifi_scan():
     ifname = (request.args.get("ifname") or "wlan0").strip()
+    if not _interface_exists(ifname):
+        return _ok({"ifname": ifname, "available": False, "networks": [], "reason": "interface_missing"})
     try:
         payload = wifi_scan(ifname=ifname)
+        payload["available"] = True
         ap_ssid = _current_ap_ssid(ifname=ifname)
         networks = payload.get("networks") if isinstance(payload.get("networks"), list) else []
         if ap_ssid:
@@ -2180,8 +2457,20 @@ def api_network_security_sentinels_status():
     cfg = ensure_config()
     settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
     webhook_url = str((settings or {}).get("webhook_url") or "")
+    internal_webhook_url = str((settings or {}).get("internal_webhook_url") or "")
+    internal_webhook_secret = str((settings or {}).get("internal_webhook_secret") or "")
+    webhook_mode = str((settings or {}).get("webhook_mode") or "discord")
     try:
-        payload = sentinels_status(webhook_url=webhook_url)
+        payload = sentinels_status(
+            webhook_url=webhook_url,
+            internal_webhook_url=internal_webhook_url,
+            internal_webhook_secret=internal_webhook_secret,
+            webhook_mode=webhook_mode,
+        )
+        payload["internal_webhook_url"] = internal_webhook_url
+        payload["internal_webhook_secret"] = internal_webhook_secret
+        payload["webhook_mode"] = webhook_mode
+        payload["updated_at"] = (settings or {}).get("updated_at")
         return _ok(payload)
     except SentinelManagerError as exc:
         status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
@@ -2192,14 +2481,25 @@ def api_network_security_sentinels_status():
 def api_network_security_sentinels_webhook():
     data = request.get_json(force=True, silent=True) or {}
     webhook_url = str(data.get("webhook_url") or "").strip()
-    if not webhook_url:
-        return _error("invalid_payload", "Field 'webhook_url' is required", status=400)
-    if not webhook_url.lower().startswith(("http://", "https://")):
+    internal_webhook_url = str(data.get("internal_webhook_url") or "").strip()
+    internal_webhook_secret = str(data.get("internal_webhook_secret") or "").strip()
+    webhook_mode = str(data.get("webhook_mode") or "discord").strip().lower()
+    if webhook_mode not in {"discord", "internal", "both"}:
+        return _error("invalid_payload", "Field 'webhook_mode' must be discord/internal/both", status=400)
+
+    if not webhook_url and not internal_webhook_url:
+        return _error("invalid_payload", "At least one webhook URL is required", status=400)
+    if webhook_url and not webhook_url.lower().startswith(("http://", "https://")):
         return _error("invalid_payload", "Field 'webhook_url' must start with http:// or https://", status=400)
+    if internal_webhook_url and not internal_webhook_url.lower().startswith(("http://", "https://")):
+        return _error("invalid_payload", "Field 'internal_webhook_url' must start with http:// or https://", status=400)
 
     cfg = ensure_config()
     settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
     settings["webhook_url"] = webhook_url
+    settings["internal_webhook_url"] = internal_webhook_url
+    settings["internal_webhook_secret"] = internal_webhook_secret
+    settings["webhook_mode"] = webhook_mode
     settings["updated_at"] = utc_now()
     cfg["sentinel_settings"] = settings
     cfg["updated_at"] = utc_now()
@@ -2208,11 +2508,106 @@ def api_network_security_sentinels_webhook():
         return _error("config_write_failed", "Could not persist sentinel webhook URL", status=500, detail=err)
 
     try:
-        payload = sentinels_status(webhook_url=webhook_url)
+        payload = sentinels_status(
+            webhook_url=webhook_url,
+            internal_webhook_url=internal_webhook_url,
+            internal_webhook_secret=internal_webhook_secret,
+            webhook_mode=webhook_mode,
+        )
+        payload["internal_webhook_url"] = internal_webhook_url
+        payload["internal_webhook_secret"] = internal_webhook_secret
+        payload["webhook_mode"] = webhook_mode
+        payload["updated_at"] = settings.get("updated_at")
         return _ok({"message": "Webhook URL gespeichert.", **payload})
     except SentinelManagerError as exc:
         status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/security/sentinels/webhook/test")
+def api_network_security_sentinels_webhook_test():
+    data = request.get_json(force=True, silent=True) or {}
+    target = str(data.get("target") or "").strip().lower()
+    cfg = ensure_config()
+    settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+
+    primary_url = str((settings or {}).get("webhook_url") or "").strip()
+    internal_url = str((settings or {}).get("internal_webhook_url") or "").strip()
+    internal_secret = str((settings or {}).get("internal_webhook_secret") or "").strip()
+
+    if target in ("discord", "primary"):
+        test_url = primary_url
+        label = "discord"
+    elif target in ("internal", "custom"):
+        test_url = internal_url
+        label = "internal"
+    else:
+        return _error("invalid_payload", "Field 'target' must be 'discord' or 'internal'", status=400)
+
+    if not test_url:
+        return _error("invalid_payload", f"No URL configured for target '{label}'", status=400)
+    if not test_url.lower().startswith(("http://", "https://")):
+        return _error("invalid_payload", f"Configured URL for target '{label}' is invalid", status=400)
+
+    now_iso = utc_now()
+    payload_obj = {
+        "event": "portal.sentinel.webhook_test",
+        "source": "jarvis-device-portal-rsp",
+        "target": label,
+        "timestamp": now_iso,
+        "message": f"Sentinel webhook test ({label}) from Jarvis Node",
+    }
+
+    if "discord.com/api/webhooks/" in test_url:
+        body_obj = {"content": payload_obj["message"]}
+    else:
+        body_obj = payload_obj
+
+    body = json.dumps(body_obj).encode("utf-8")
+    headers = {"Content-Type": "application/json", "User-Agent": "jarvis-deviceportal/1.0"}
+    if label == "internal" and internal_secret:
+        if "secret=" not in test_url:
+            sep = "&" if "?" in test_url else "?"
+            test_url = f"{test_url}{sep}secret={internal_secret}"
+        headers["X-Hook-Token"] = internal_secret
+
+    req = urllib.request.Request(
+        test_url,
+        data=body,
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            status_code = int(getattr(resp, "status", 200) or 200)
+            resp.read()
+        if status_code >= 400:
+            return _error("webhook_test_failed", f"Webhook test failed with HTTP {status_code}", status=502)
+        return _ok(
+            {
+                "target": label,
+                "url": test_url,
+                "status_code": status_code,
+                "message": f"Webhook-Test '{label}' erfolgreich gesendet.",
+                "sent_at": now_iso,
+            }
+        )
+    except urllib.error.HTTPError as exc:
+        status_code = int(getattr(exc, "code", 0) or 0)
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="ignore")
+        except Exception:
+            detail = str(exc)
+        return _error(
+            "webhook_test_failed",
+            f"Webhook test failed with HTTP {status_code or 'error'}",
+            status=502,
+            detail=detail[:500],
+        )
+    except Exception as exc:
+        return _error("webhook_test_failed", "Webhook test request failed", status=502, detail=str(exc))
 
 
 @bp_network.post("/api/network/security/sentinels/install")
@@ -2225,12 +2620,24 @@ def api_network_security_sentinels_install():
     cfg = ensure_config()
     settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
     webhook_url = str((settings or {}).get("webhook_url") or "").strip()
-    if not webhook_url:
-        return _error("invalid_payload", "Please save a webhook URL first.", status=400)
+    internal_webhook_url = str((settings or {}).get("internal_webhook_url") or "").strip()
+    internal_webhook_secret = str((settings or {}).get("internal_webhook_secret") or "").strip()
+    webhook_mode = str((settings or {}).get("webhook_mode") or "discord").strip().lower()
 
     try:
-        payload = install_sentinel_module(slug=slug, webhook_url=webhook_url)
-        return _ok({"message": f"Sentinel '{slug}' installiert.", **payload.get("status", {})})
+        payload = install_sentinel_module(
+            slug=slug,
+            webhook_url=webhook_url,
+            internal_webhook_url=internal_webhook_url,
+            internal_webhook_secret=internal_webhook_secret,
+            webhook_mode=webhook_mode,
+        )
+        data = {"message": f"Sentinel '{slug}' installiert.", **payload.get("status", {})}
+        data["internal_webhook_url"] = internal_webhook_url
+        data["internal_webhook_secret"] = internal_webhook_secret
+        data["webhook_mode"] = webhook_mode
+        data["updated_at"] = (settings or {}).get("updated_at")
+        return _ok(data)
     except SentinelManagerError as exc:
         status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
@@ -2246,10 +2653,56 @@ def api_network_security_sentinels_uninstall():
     cfg = ensure_config()
     settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
     webhook_url = str((settings or {}).get("webhook_url") or "").strip()
+    internal_webhook_url = str((settings or {}).get("internal_webhook_url") or "").strip()
+    internal_webhook_secret = str((settings or {}).get("internal_webhook_secret") or "").strip()
+    webhook_mode = str((settings or {}).get("webhook_mode") or "discord").strip().lower()
 
     try:
-        payload = uninstall_sentinel_module(slug=slug, webhook_url=webhook_url)
-        return _ok({"message": f"Sentinel '{slug}' entfernt.", **payload.get("status", {})})
+        payload = uninstall_sentinel_module(
+            slug=slug,
+            webhook_url=webhook_url,
+            internal_webhook_url=internal_webhook_url,
+            internal_webhook_secret=internal_webhook_secret,
+            webhook_mode=webhook_mode,
+        )
+        data = {"message": f"Sentinel '{slug}' entfernt.", **payload.get("status", {})}
+        data["internal_webhook_url"] = internal_webhook_url
+        data["internal_webhook_secret"] = internal_webhook_secret
+        data["webhook_mode"] = webhook_mode
+        data["updated_at"] = (settings or {}).get("updated_at")
+        return _ok(data)
+    except SentinelManagerError as exc:
+        status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/network/security/sentinels/action")
+def api_network_security_sentinels_action():
+    data = request.get_json(force=True, silent=True) or {}
+    slug = str(data.get("slug") or "").strip()
+    action = str(data.get("action") or "").strip().lower()
+    if not slug:
+        return _error("invalid_payload", "Field 'slug' is required", status=400)
+    if action not in {"start", "stop", "restart", "test"}:
+        return _error("invalid_payload", "Field 'action' must be start/stop/restart/test", status=400)
+
+    cfg = ensure_config()
+    settings = cfg.get("sentinel_settings") if isinstance(cfg.get("sentinel_settings"), dict) else {}
+    webhook_url = str((settings or {}).get("webhook_url") or "").strip()
+    internal_webhook_url = str((settings or {}).get("internal_webhook_url") or "").strip()
+    internal_webhook_secret = str((settings or {}).get("internal_webhook_secret") or "").strip()
+    webhook_mode = str((settings or {}).get("webhook_mode") or "discord").strip().lower()
+
+    try:
+        payload = sentinel_action_module(
+            slug=slug,
+            action=action,
+            webhook_url=webhook_url,
+            internal_webhook_url=internal_webhook_url,
+            internal_webhook_secret=internal_webhook_secret,
+            webhook_mode=webhook_mode,
+        )
+        return _ok({"message": f"Sentinel '{slug}' {action} ausgeführt.", **payload.get("status", {})})
     except SentinelManagerError as exc:
         status = 500 if exc.code in ("execution_failed", "source_not_found", "command_not_found") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)

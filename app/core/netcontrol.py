@@ -123,6 +123,16 @@ def _parse_kv_output(raw: str) -> dict[str, str]:
     return parsed
 
 
+def _parse_json_output(raw: str, *, code: str, message: str) -> dict:
+    try:
+        payload = json.loads(raw) if raw else {}
+    except Exception as exc:
+        raise NetControlError(code=code, message=message, detail=f"invalid json: {exc}")
+    if not isinstance(payload, dict):
+        raise NetControlError(code=code, message=message, detail="payload must be JSON object")
+    return payload
+
+
 def _is_missing_wifi_secret_error(detail: str) -> bool:
     text = (detail or "").lower()
     if not text:
@@ -175,6 +185,24 @@ def _sanitize_hostname(value: str) -> str:
     return raw
 
 
+def _allowed_lan_interfaces() -> set[str]:
+    interfaces: set[str] = set()
+    try:
+        for path in Path("/sys/class/net").iterdir():
+            ifname = path.name
+            if ifname == "lo":
+                continue
+            if (path / "wireless").exists():
+                continue
+            if ifname.startswith("eth") or ifname.startswith("en"):
+                interfaces.add(ifname)
+    except Exception:
+        pass
+    if not interfaces:
+        interfaces = set(ALLOWED_LAN_INTERFACES)
+    return interfaces
+
+
 def _derive_ap_ssid(hostname: str) -> str:
     return f"{hostname}-ap"[:32]
 
@@ -184,7 +212,7 @@ def _derive_bt_name(hostname: str) -> str:
 
 
 def get_network_info() -> dict:
-    rc, out, err = _run_script("network_info.sh", [], timeout=8, use_sudo=False)
+    rc, out, err = _run_script("network_info.sh", [], timeout=12, use_sudo=False)
     if rc != 0:
         raise NetControlError(code="network_info_failed", message="Failed to read network status", detail=err or out)
     try:
@@ -483,9 +511,73 @@ def get_bluetooth_paired_devices() -> list[dict]:
     return devices
 
 
+def bluetooth_audio_scan(scan_seconds: int = 8) -> dict:
+    seconds = max(4, min(30, int(scan_seconds or 8)))
+    rc, out, err = _run_script("bluetooth_audio.py", ["scan", str(seconds)], timeout=seconds + 20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="bluetooth_scan_failed", message="Failed to scan Bluetooth devices", detail=err or out)
+    payload = _parse_json_output(out, code="bluetooth_scan_invalid_json", message="Bluetooth scan returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(code="bluetooth_scan_failed", message="Failed to scan Bluetooth devices", detail=str(payload.get("error") or err or out))
+    return payload
+
+
+def bluetooth_audio_devices() -> dict:
+    rc, out, err = _run_script("bluetooth_audio.py", ["devices"], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="bluetooth_devices_failed", message="Failed to list Bluetooth devices", detail=err or out)
+    payload = _parse_json_output(out, code="bluetooth_devices_invalid_json", message="Bluetooth devices returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(code="bluetooth_devices_failed", message="Failed to list Bluetooth devices", detail=str(payload.get("error") or err or out))
+    return payload
+
+
+def bluetooth_audio_action(action: str, device_id: str) -> dict:
+    normalized = (action or "").strip().lower()
+    if normalized not in ("pair", "connect", "disconnect", "forget"):
+        raise NetControlError(code="invalid_payload", message="action must be pair|connect|disconnect|forget")
+    mac = (device_id or "").strip().upper()
+    if not re.fullmatch(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", mac):
+        raise NetControlError(code="invalid_payload", message="device_id must be a valid MAC address")
+    rc, out, err = _run_script("bluetooth_audio.py", [normalized, mac], timeout=50, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="bluetooth_action_failed", message=f"Failed to {normalized} bluetooth device", detail=err or out)
+    payload = _parse_json_output(out, code="bluetooth_action_invalid_json", message="Bluetooth action returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(
+            code="bluetooth_action_failed",
+            message=f"Failed to {normalized} bluetooth device",
+            detail=str(payload.get("error") or err or out),
+        )
+    return payload
+
+
+def audio_outputs_status() -> dict:
+    rc, out, err = _run_script("audio_output_ctl.py", ["status"], timeout=20, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="audio_outputs_failed", message="Failed to read audio outputs", detail=err or out)
+    payload = _parse_json_output(out, code="audio_outputs_invalid_json", message="Audio outputs returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(code="audio_outputs_failed", message="Failed to read audio outputs", detail=str(payload.get("error") or err or out))
+    return payload
+
+
+def audio_output_set(output_id: str) -> dict:
+    target = (output_id or "").strip()
+    if not target:
+        raise NetControlError(code="invalid_payload", message="output is required")
+    rc, out, err = _run_script("audio_output_ctl.py", ["set", target], timeout=25, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="audio_output_set_failed", message="Failed to set audio output", detail=err or out)
+    payload = _parse_json_output(out, code="audio_output_set_invalid_json", message="Audio output set returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(code="audio_output_set_failed", message="Failed to set audio output", detail=str(payload.get("error") or err or out))
+    return payload
+
+
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     iface = (ifname or "eth0").strip()
-    if iface not in ALLOWED_LAN_INTERFACES:
+    if iface not in _allowed_lan_interfaces():
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     state_arg = "up" if enabled else "down"
     rc, out, err = _run_script("lan_toggle.sh", [state_arg, iface], timeout=10, use_sudo=True)
