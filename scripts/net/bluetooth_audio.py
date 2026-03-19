@@ -56,9 +56,6 @@ def _run(args: list[str], timeout: int = 20) -> BtResult:
     if "--timeout" not in args:
         cmd.extend(["--timeout", str(max(2, min(int(timeout), 30)))])
     cmd.extend(args)
-    timeout_bin = shutil.which("timeout")
-    if timeout_bin:
-        cmd = [timeout_bin, f"{max(2, min(int(timeout), 30))}s"] + cmd
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 6)
     return BtResult(proc.returncode, _clean(proc.stdout), _clean(proc.stderr))
 
@@ -193,11 +190,13 @@ def _run_action(action: str, mac: str) -> dict:
 def _scan(seconds: int) -> dict:
     scan_seconds = max(4, min(30, int(seconds)))
     power = _run(["power", "on"], timeout=8)
-    if power.rc != 0:
+    power_text = f"{power.out}\n{power.err}".lower()
+    if power.rc != 0 and "succeeded" not in power_text:
         raise RuntimeError((power.err or power.out or "failed to power on bluetooth adapter").strip())
 
     scan_on = _run(["--timeout", str(scan_seconds), "scan", "on"], timeout=scan_seconds + 10)
-    if scan_on.rc != 0:
+    scan_text = f"{scan_on.out}\n{scan_on.err}".lower()
+    if scan_on.rc != 0 and "discovery started" not in scan_text:
         raise RuntimeError((scan_on.err or scan_on.out or "failed to scan bluetooth devices").strip())
 
     # Best-effort cleanup only.
