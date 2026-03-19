@@ -117,7 +117,7 @@ def _list_paired_set() -> set[str]:
 def _collect_devices() -> list[dict]:
     listed = _run(["devices"], timeout=10)
     if listed.rc != 0:
-        return []
+        raise RuntimeError((listed.err or listed.out or "bluetoothctl devices failed").strip())
     paired_set = _list_paired_set()
     rows: list[dict] = []
     for mac, listed_name in _parse_devices(listed.out):
@@ -192,8 +192,15 @@ def _run_action(action: str, mac: str) -> dict:
 
 def _scan(seconds: int) -> dict:
     scan_seconds = max(4, min(30, int(seconds)))
-    _run(["power", "on"], timeout=8)
-    _run(["--timeout", str(scan_seconds), "scan", "on"], timeout=scan_seconds + 6)
+    power = _run(["power", "on"], timeout=8)
+    if power.rc != 0:
+        raise RuntimeError((power.err or power.out or "failed to power on bluetooth adapter").strip())
+
+    scan_on = _run(["--timeout", str(scan_seconds), "scan", "on"], timeout=scan_seconds + 10)
+    if scan_on.rc != 0:
+        raise RuntimeError((scan_on.err or scan_on.out or "failed to scan bluetooth devices").strip())
+
+    # Best-effort cleanup only.
     _run(["scan", "off"], timeout=8)
     return {"scan_seconds": scan_seconds}
 
