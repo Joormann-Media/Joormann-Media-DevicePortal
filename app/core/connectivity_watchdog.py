@@ -4,8 +4,7 @@ import os
 import threading
 import time
 
-from app.core.config import ensure_config
-from app.core.netcontrol import NetControlError, get_ap_status, get_network_info, player_service_action, set_ap_enabled, set_wifi_enabled
+from app.core.netcontrol import NetControlError, get_network_info
 from app.core.network_events import log_event
 
 _thread_lock = threading.Lock()
@@ -40,57 +39,11 @@ def _has_uplink(info: dict) -> bool:
     return bool(lan_up or wifi_up)
 
 
-def _sync_player_for_ap(ap_enabled: bool, source: str) -> None:
-    cfg = ensure_config()
-    service_name = str(cfg.get("player_service_name") or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
-    action = "stop" if ap_enabled else "start"
-    try:
-        player_service_action(action, service_name=service_name)
-    except NetControlError as exc:
-        log_event(
-            "ap",
-            "Watchdog could not sync player service with AP mode",
-            level="warning",
-            data={
-                "source": source,
-                "action": action,
-                "service_name": service_name,
-                "error": exc.detail or exc.message,
-            },
-        )
-
-
 def _run_check_once() -> None:
     info = get_network_info()
-    if _has_uplink(info):
+    if not _has_uplink(info):
+        # Intentionally read-only: no automatic AP/Hotspot switching from watchdog.
         return
-
-    ap = get_ap_status()
-    if bool(ap.get("active")):
-        return
-
-    # Ensure radio/interface is enabled before trying hotspot profile activation.
-    try:
-        set_wifi_enabled(True)
-    except NetControlError:
-        # Continue; set_ap_enabled may still recover depending on device state.
-        pass
-
-    set_ap_enabled(True)
-    _sync_player_for_ap(True, source="connectivity_watchdog_auto_ap")
-    ap_after = get_ap_status()
-    log_event(
-        "ap",
-        "AP auto-enabled by connectivity watchdog (missing LAN/WLAN uplink)",
-        level="warning",
-        data={
-            "source": "connectivity_watchdog",
-            "reason": "missing_lan_and_wifi_uplink",
-            "ap_active": bool(ap_after.get("active")),
-            "ap_ssid": ap_after.get("ssid", ""),
-            "ap_ip": ap_after.get("ip", ""),
-        },
-    )
 
 
 def _watchdog_loop(start_delay_seconds: int, interval_seconds: int, error_backoff_seconds: int) -> None:

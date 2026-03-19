@@ -672,7 +672,7 @@ def api_network_info():
             "active": setup_mode_active,
             "reason": "missing_lan_and_wifi_uplink" if setup_mode_active else "uplink_available",
             "message": (
-                "Kein LAN/WLAN-Uplink erkannt. AP/Hotspot wird als Setup-Fallback aktiv gehalten."
+                "Kein LAN/WLAN-Uplink erkannt. Kein automatisches Umschalten auf AP/Hotspot."
                 if setup_mode_active
                 else "Uplink verfügbar."
             ),
@@ -682,29 +682,18 @@ def api_network_info():
             "ap": {},
         }
 
-        if setup_mode_active:
-            setup_mode["ap_auto_enable_attempted"] = True
+        try:
+            # Read-only AP status for UI; no automatic AP switching here.
+            setup_mode["ap"] = get_ap_status()
+        except NetControlError as exc:
+            setup_mode["ap_error"] = f"{exc.code}: {exc.message}"
+        if setup_mode_active and not setup_mode.get("ap_error"):
             try:
-                ap_status = get_ap_status()
-                if not bool(ap_status.get("active")):
-                    try:
-                        set_wifi_enabled(True)
-                    except NetControlError:
-                        # Continue with AP activation attempt; script may recover itself.
-                        pass
-                    set_ap_enabled(True)
-                    setup_mode["ap_auto_enabled"] = True
-                    log_event(
-                        "ap",
-                        "AP auto-enabled because no LAN/WLAN uplink is available",
-                        level="warning",
-                        data={"reason": "missing_lan_and_wifi_uplink"},
-                    )
-                    _sync_player_with_ap_mode(True, source="network_info_auto_ap")
-                    ap_status = get_ap_status()
-                setup_mode["ap"] = ap_status
-            except NetControlError as exc:
-                setup_mode["ap_error"] = f"{exc.code}: {exc.message}"
+                if not _interface_exists("wlan0"):
+                    setup_mode["reason"] = "wifi_interface_missing"
+                    setup_mode["message"] = "Kein WLAN-Interface erkannt. AP-Setup ist auf diesem Host nicht verfuegbar."
+            except Exception:
+                pass
 
         info["connectivity_setup_mode"] = setup_mode
         cfg = ensure_config()
