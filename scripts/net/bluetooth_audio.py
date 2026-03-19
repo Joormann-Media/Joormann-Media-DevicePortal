@@ -56,8 +56,11 @@ def _run(args: list[str], timeout: int = 20) -> BtResult:
     if "--timeout" not in args:
         cmd.extend(["--timeout", str(max(2, min(int(timeout), 30)))])
     cmd.extend(args)
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 6)
-    return BtResult(proc.returncode, _clean(proc.stdout), _clean(proc.stderr))
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 6)
+        return BtResult(proc.returncode, _clean(proc.stdout), _clean(proc.stderr))
+    except subprocess.TimeoutExpired as exc:
+        return BtResult(124, "", f"timeout: {exc}")
 
 
 def _bool_from_info(info: str, key: str) -> bool:
@@ -105,10 +108,13 @@ def _parse_devices(raw: str) -> list[tuple[str, str]]:
 
 
 def _list_paired_set() -> set[str]:
-    paired = _run(["paired-devices"], timeout=8)
-    if paired.rc != 0:
+    try:
+        paired = _run(["paired-devices"], timeout=20)
+        if paired.rc != 0:
+            return set()
+        return {mac for mac, _ in _parse_devices(paired.out)}
+    except Exception:
         return set()
-    return {mac for mac, _ in _parse_devices(paired.out)}
 
 
 def _collect_devices() -> list[dict]:
