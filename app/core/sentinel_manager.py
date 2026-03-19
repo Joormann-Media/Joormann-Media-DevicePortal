@@ -77,10 +77,13 @@ TARGET_LOGS = TARGET_BASE / "logs"
 TARGET_CONFIG = TARGET_BASE / "config"
 TARGET_SENTINEL_CONF = TARGET_CONFIG / "sentinel.conf"
 TARGET_FOLDER_CONF = TARGET_CONFIG / "folder.conf"
+TARGET_DISPATCH_HELPER = TARGET_BIN / "webhook-dispatch.sh"
 SYSTEMD_DIR = Path("/etc/systemd/system")
 PAM_SSHD_PATH = Path("/etc/pam.d/sshd")
 PAM_MARKER = "# DevicePortal Sentinel Hook"
 PAM_HOOK_LINE = "session optional pam_exec.so seteuid /opt/sentinels/bin/ssh-sentinel.sh"
+NETCONTROL_BIN_DIR = Path(os.getenv("NETCONTROL_BIN_DIR", "/opt/deviceportal/bin"))
+SENTINEL_PRIV_SCRIPT = "sentinel_priv.sh"
 
 
 def _sentinel_index() -> dict[str, SentinelDef]:
@@ -107,7 +110,26 @@ def _run_checked(cmd: list[str], timeout: int = 45, code: str = "command_failed"
 
 
 def _sudo_prefix() -> list[str]:
-    return [] if os.geteuid() == 0 else ["sudo", "-n"]
+    if os.geteuid() == 0:
+        return []
+    wrapper = NETCONTROL_BIN_DIR / SENTINEL_PRIV_SCRIPT
+    if wrapper.exists() and wrapper.is_file():
+        return ["sudo", "-n", str(wrapper)]
+    return ["sudo", "-n"]
+
+
+def _sudo_run_script(
+    script_path: Path,
+    timeout: int = 30,
+    code: str = "test_failed",
+    message: str = "Could not run script",
+    args: list[str] | None = None,
+) -> str:
+    extra_args = list(args or [])
+    wrapper = NETCONTROL_BIN_DIR / SENTINEL_PRIV_SCRIPT
+    if os.geteuid() != 0 and wrapper.exists() and wrapper.is_file():
+        return _sudo_checked(["run-script", str(script_path)] + extra_args, timeout=timeout, code=code, message=message)
+    return _sudo_checked([str(script_path)] + extra_args, timeout=timeout, code=code, message=message)
 
 
 def _sudo_checked(cmd: list[str], timeout: int = 45, code: str = "sudo_command_failed", message: str = "Privileged command failed") -> str:
@@ -165,6 +187,24 @@ def _validate_webhook_url(url: str) -> str:
     return clean
 
 
+def _normalize_webhook_mode(mode: str) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized in {"discord", "internal", "both"}:
+        return normalized
+    return "discord"
+
+
+def _compose_internal_url_with_secret(url: str, secret: str) -> str:
+    clean_url = str(url or "").strip()
+    if not clean_url:
+        return ""
+    token = str(secret or "").strip()
+    if not token:
+        return clean_url
+    sep = "&" if "?" in clean_url else "?"
+    return f"{clean_url}{sep}secret={token}"
+
+
 def _ensure_base_dirs() -> None:
     _sudo_checked(["install", "-d", "-m", "0755", str(TARGET_BASE)], code="mkdir_failed", message="Could not prepare /opt/sentinels")
     _sudo_checked(["install", "-d", "-m", "0755", str(TARGET_BIN)], code="mkdir_failed", message="Could not prepare sentinel bin dir")
@@ -189,10 +229,39 @@ def _write_file_sudo(path: Path, content: str, mode: int = 0o644) -> None:
             pass
 
 
-def _ensure_webhook_conf(webhook_url: str) -> None:
-    safe_url = _validate_webhook_url(webhook_url)
+def _ensure_webhook_conf(
+    webhook_url: str,
+    internal_webhook_url: str = "",
+    internal_webhook_secret: str = "",
+    webhook_mode: str = "discord",
+) -> None:
+    mode = _normalize_webhook_mode(webhook_mode)
+    safe_discord = _validate_webhook_url(webhook_url) if str(webhook_url or "").strip() else ""
+    safe_internal = _validate_webhook_url(internal_webhook_url) if str(internal_webhook_url or "").strip() else ""
+
+    if mode == "discord" and not safe_discord:
+        raise SentinelManagerError("invalid_payload", "Discord webhook URL is required for mode 'discord'")
+    if mode == "internal" and not safe_internal:
+        raise SentinelManagerError("invalid_payload", "Internal webhook URL is required for mode 'internal'")
+    if mode == "both" and (not safe_discord or not safe_internal):
+        raise SentinelManagerError("invalid_payload", "Both webhook URLs are required for mode 'both'")
+
+    # Backward-compatibility for scripts that still use DISCORD_WEBHOOK only.
+    legacy_target = safe_discord
+    if mode == "internal":
+        legacy_target = _compose_internal_url_with_secret(safe_internal, internal_webhook_secret)
+    elif mode == "both":
+        legacy_target = safe_discord
+
     _ensure_base_dirs()
-    _write_file_sudo(TARGET_SENTINEL_CONF, f"DISCORD_WEBHOOK='{safe_url}'\n", mode=0o640)
+    content = (
+        f"WEBHOOK_MODE='{mode}'\n"
+        f"DISCORD_WEBHOOK='{legacy_target}'\n"
+        f"DISCORD_WEBHOOK_PRIMARY='{safe_discord}'\n"
+        f"INTERNAL_WEBHOOK_URL='{safe_internal}'\n"
+        f"INTERNAL_WEBHOOK_SECRET='{str(internal_webhook_secret or '').strip()}'\n"
+    )
+    _write_file_sudo(TARGET_SENTINEL_CONF, content, mode=0o640)
     try:
         _sudo_checked(["chown", "root:root", str(TARGET_SENTINEL_CONF)], code="chown_failed", message="Could not secure sentinel.conf")
     except SentinelManagerError:
@@ -213,6 +282,17 @@ def _copy_script(defn: SentinelDef, source_dir: Path) -> Path:
     dst = _target_script_path(defn.slug)
     _sudo_checked(["install", "-m", "0755", str(src), str(dst)], code="install_failed", message=f"Could not install script for {defn.slug}")
     return dst
+
+
+def _install_dispatch_helper(source_dir: Path) -> None:
+    src = source_dir / "lib" / "webhook_dispatch.sh"
+    if not src.exists() or not src.is_file():
+        raise SentinelManagerError("script_missing", "Webhook dispatch helper missing", str(src))
+    _sudo_checked(
+        ["install", "-m", "0755", str(src), str(TARGET_DISPATCH_HELPER)],
+        code="install_failed",
+        message="Could not install webhook dispatch helper",
+    )
 
 
 def _service_unit_content(defn: SentinelDef, script_path: Path) -> str:
@@ -368,7 +448,12 @@ def _remove_file(path: Path) -> None:
     _run(_sudo_prefix() + ["rm", "-f", str(path)], timeout=20)
 
 
-def get_status(webhook_url: str = "") -> dict:
+def get_status(
+    webhook_url: str = "",
+    internal_webhook_url: str = "",
+    internal_webhook_secret: str = "",
+    webhook_mode: str = "discord",
+) -> dict:
     source_dir = None
     source_error = ""
     try:
@@ -426,19 +511,34 @@ def get_status(webhook_url: str = "") -> dict:
         "source_dir": str(source_dir) if source_dir else "",
         "source_error": source_error,
         "webhook_url": str(webhook_url or ""),
+        "internal_webhook_url": str(internal_webhook_url or ""),
+        "internal_webhook_secret": str(internal_webhook_secret or ""),
+        "webhook_mode": _normalize_webhook_mode(webhook_mode),
         "config_path": str(TARGET_SENTINEL_CONF),
         "sentinels": items,
     }
 
 
-def install_sentinel(slug: str, webhook_url: str) -> dict:
+def install_sentinel(
+    slug: str,
+    webhook_url: str,
+    internal_webhook_url: str = "",
+    internal_webhook_secret: str = "",
+    webhook_mode: str = "discord",
+) -> dict:
     mapping = _sentinel_index()
     defn = mapping.get(str(slug or "").strip())
     if not defn:
         raise SentinelManagerError("invalid_payload", "Unknown sentinel slug")
 
     source_dir = resolve_source_dir()
-    _ensure_webhook_conf(webhook_url)
+    _ensure_webhook_conf(
+        webhook_url=webhook_url,
+        internal_webhook_url=internal_webhook_url,
+        internal_webhook_secret=internal_webhook_secret,
+        webhook_mode=webhook_mode,
+    )
+    _install_dispatch_helper(source_dir)
     script_path = _copy_script(defn, source_dir)
 
     if defn.install_mode == "service":
@@ -450,11 +550,22 @@ def install_sentinel(slug: str, webhook_url: str) -> dict:
     else:
         raise SentinelManagerError("unsupported_mode", "Unsupported install mode", defn.install_mode)
 
-    status = get_status(webhook_url=webhook_url)
+    status = get_status(
+        webhook_url=webhook_url,
+        internal_webhook_url=internal_webhook_url,
+        internal_webhook_secret=internal_webhook_secret,
+        webhook_mode=webhook_mode,
+    )
     return {"slug": defn.slug, "name": defn.name, "status": status}
 
 
-def uninstall_sentinel(slug: str, webhook_url: str = "") -> dict:
+def uninstall_sentinel(
+    slug: str,
+    webhook_url: str = "",
+    internal_webhook_url: str = "",
+    internal_webhook_secret: str = "",
+    webhook_mode: str = "discord",
+) -> dict:
     mapping = _sentinel_index()
     defn = mapping.get(str(slug or "").strip())
     if not defn:
@@ -472,5 +583,88 @@ def uninstall_sentinel(slug: str, webhook_url: str = "") -> dict:
     _remove_file(_target_script_path(defn.slug))
     _sudo_checked(["systemctl", "daemon-reload"], code="daemon_reload_failed", message="Could not reload systemd")
 
-    status = get_status(webhook_url=webhook_url)
+    status = get_status(
+        webhook_url=webhook_url,
+        internal_webhook_url=internal_webhook_url,
+        internal_webhook_secret=internal_webhook_secret,
+        webhook_mode=webhook_mode,
+    )
     return {"slug": defn.slug, "name": defn.name, "status": status}
+
+
+def sentinel_action(
+    slug: str,
+    action: str,
+    webhook_url: str = "",
+    internal_webhook_url: str = "",
+    internal_webhook_secret: str = "",
+    webhook_mode: str = "discord",
+) -> dict:
+    mapping = _sentinel_index()
+    defn = mapping.get(str(slug or "").strip())
+    if not defn:
+        raise SentinelManagerError("invalid_payload", "Unknown sentinel slug")
+
+    act = str(action or "").strip().lower()
+    if act not in {"start", "stop", "restart", "test"}:
+        raise SentinelManagerError("invalid_payload", "Unsupported sentinel action")
+
+    script_path = _target_script_path(defn.slug)
+    if not script_path.exists():
+        raise SentinelManagerError("not_installed", "Sentinel script not installed", str(script_path))
+
+    # Opportunistic self-heal: refresh scripts/helper from bundled sources when available.
+    try:
+        source_dir = resolve_source_dir()
+        _install_dispatch_helper(source_dir)
+        _copy_script(defn, source_dir)
+    except SentinelManagerError:
+        pass
+
+    _ensure_webhook_conf(
+        webhook_url=webhook_url,
+        internal_webhook_url=internal_webhook_url,
+        internal_webhook_secret=internal_webhook_secret,
+        webhook_mode=webhook_mode,
+    )
+
+    if defn.install_mode == "pam":
+        if act == "start":
+            _install_pam(defn, script_path)
+        elif act == "stop":
+            _remove_pam_hook()
+        elif act == "restart":
+            _remove_pam_hook()
+            _install_pam(defn, script_path)
+        else:  # test
+            _sudo_run_script(script_path, timeout=30, code="test_failed", message=f"Could not test {defn.slug}")
+    elif defn.install_mode == "service":
+        unit = defn.service_name
+        if not unit:
+            raise SentinelManagerError("invalid_state", "Service unit missing", defn.slug)
+        if act == "test":
+            if defn.slug == "folder-sentinel":
+                _sudo_run_script(script_path, timeout=30, code="test_failed", message=f"Could not test {defn.slug}", args=["--test"])
+            else:
+                _sudo_run_script(script_path, timeout=30, code="test_failed", message=f"Could not test {defn.slug}")
+        else:
+            _sudo_checked(["systemctl", act, unit], code="service_action_failed", message=f"Could not {act} {unit}")
+    elif defn.install_mode == "timer":
+        timer_unit = defn.timer_name
+        service_unit = defn.service_name
+        if not timer_unit or not service_unit:
+            raise SentinelManagerError("invalid_state", "Timer definition missing", defn.slug)
+        if act == "test":
+            _sudo_run_script(script_path, timeout=30, code="test_failed", message=f"Could not test {defn.slug}")
+        else:
+            _sudo_checked(["systemctl", act, timer_unit], code="timer_action_failed", message=f"Could not {act} {timer_unit}")
+    else:
+        raise SentinelManagerError("unsupported_mode", "Unsupported install mode", defn.install_mode)
+
+    status = get_status(
+        webhook_url=webhook_url,
+        internal_webhook_url=internal_webhook_url,
+        internal_webhook_secret=internal_webhook_secret,
+        webhook_mode=webhook_mode,
+    )
+    return {"slug": defn.slug, "name": defn.name, "action": act, "status": status}
