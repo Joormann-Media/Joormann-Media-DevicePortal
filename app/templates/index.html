@@ -762,82 +762,134 @@
       </div>
 
       <div class="tab-pane fade" id="stream-pane" role="tabpanel" aria-labelledby="stream-tab">
-        <div class="portal-card p-4">
-          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-            <div>
-              <h2 class="h5 mb-1">Stream</h2>
-              <p class="text-secondary mb-0">Gerätestream vom Adminpanel laden, lokal synchronisieren und Player steuern.</p>
-            </div>
-            <div class="d-flex gap-2">
-              <button id="btn-stream-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
-              <button id="btn-stream-sync" class="btn btn-primary btn-sm">Manifest + Assets sync</button>
+        <div class="row g-3">
+          <div class="col-12 col-xl-7">
+            <div class="portal-card p-4 h-100">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Stream</h2>
+                  <p class="text-secondary mb-0">Gerätestream vom Adminpanel laden, lokal synchronisieren und Player steuern.</p>
+                </div>
+                <div class="d-flex gap-2">
+                  <button id="btn-stream-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+                  <button id="btn-stream-sync" class="btn btn-primary btn-sm">Manifest + Assets sync</button>
+                </div>
+              </div>
+
+              <div class="row g-3">
+                <div class="col-12 col-lg-7">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary mb-2">Verfügbare Streams</div>
+                    <div class="d-flex gap-2 mb-2">
+                      <select id="stream-select" class="form-select form-select-sm">
+                        <option value="">Keine Streams geladen</option>
+                      </select>
+                      <button id="btn-stream-select-save" class="btn btn-outline-primary btn-sm">Auswählen</button>
+                    </div>
+                    <div id="stream-list-meta" class="small text-secondary">-</div>
+                    <div id="stream-fetch-error" class="small text-danger mt-2 d-none"></div>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-5">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary mb-2">Player</div>
+                    <div id="stream-player-status" class="small mb-2">Status: -</div>
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
+                      <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                      <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                      <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row g-3 mt-1">
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary">Ausgewählter Stream</div>
+                    <div id="stream-selected-slug" class="fw-semibold">-</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary">Manifest Version</div>
+                    <div id="stream-manifest-version" class="fw-semibold">-</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary">Assets lokal</div>
+                    <div id="stream-asset-count" class="fw-semibold">0</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary">Letzter Sync</div>
+                    <div id="stream-last-sync" class="fw-semibold">-</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="border rounded p-3 mt-3">
+                <div class="small text-uppercase text-secondary mb-1">Storage Ziel</div>
+                <div id="stream-storage-target" class="small text-secondary">-</div>
+                <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
+              </div>
+
+              <div class="border rounded p-3 mt-3">
+                <div class="small text-secondary">
+                  Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="row g-3">
-            <div class="col-12 col-lg-7">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary mb-2">Verfügbare Streams</div>
-                <div class="d-flex gap-2 mb-2">
-                  <select id="stream-select" class="form-select form-select-sm">
-                    <option value="">Keine Streams geladen</option>
-                  </select>
-                  <button id="btn-stream-select-save" class="btn btn-outline-primary btn-sm">Auswählen</button>
+          <div class="col-12 col-xl-5">
+            <div class="portal-card p-4 h-100">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Audio</h2>
+                  <p class="text-secondary mb-0">Lokale Audio-Dateien oder Webstream auswählen und abspielen.</p>
                 </div>
-                <div id="stream-list-meta" class="small text-secondary">-</div>
-                <div id="stream-fetch-error" class="small text-danger mt-2 d-none"></div>
+                <button id="btn-stream-audio-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
               </div>
-            </div>
-            <div class="col-12 col-lg-5">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary mb-2">Player</div>
-                <div id="stream-player-status" class="small mb-2">Status: -</div>
+
+              <div class="border rounded p-3 mb-3">
+                <div class="small text-uppercase text-secondary mb-2">Status</div>
+                <div id="stream-audio-status" class="small mb-2">Status: -</div>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                  <button id="btn-stream-audio-play-file" class="btn btn-outline-primary btn-sm">Datei abspielen</button>
+                  <button id="btn-stream-audio-play-stream" class="btn btn-outline-primary btn-sm">Webstream starten</button>
+                </div>
                 <div class="d-flex flex-wrap gap-2">
-                  <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
-                  <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                  <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
-                  <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
+                  <button id="btn-stream-audio-pause" class="btn btn-outline-warning btn-sm">Pause</button>
+                  <button id="btn-stream-audio-resume" class="btn btn-outline-success btn-sm">Resume</button>
+                  <button id="btn-stream-audio-stop" class="btn btn-outline-danger btn-sm">Stop</button>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div class="row g-3 mt-1">
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Ausgewählter Stream</div>
-                <div id="stream-selected-slug" class="fw-semibold">-</div>
+              <div class="border rounded p-3 mb-3">
+                <div class="small text-uppercase text-secondary mb-2">Datei (MP3 / OGG / WAV / ...)</div>
+                <div class="small text-secondary mb-2">Audio Root: <span id="stream-audio-root">-</span></div>
+                <select id="stream-audio-file-select" class="form-select form-select-sm mb-2">
+                  <option value="">Keine Audio-Dateien gefunden</option>
+                </select>
+                <input id="stream-audio-file-path" type="text" class="form-control form-control-sm" placeholder="/pfad/zur/datei.mp3">
               </div>
-            </div>
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Manifest Version</div>
-                <div id="stream-manifest-version" class="fw-semibold">-</div>
-              </div>
-            </div>
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Assets lokal</div>
-                <div id="stream-asset-count" class="fw-semibold">0</div>
-              </div>
-            </div>
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Letzter Sync</div>
-                <div id="stream-last-sync" class="fw-semibold">-</div>
-              </div>
-            </div>
-          </div>
 
-          <div class="border rounded p-3 mt-3">
-            <div class="small text-uppercase text-secondary mb-1">Storage Ziel</div>
-            <div id="stream-storage-target" class="small text-secondary">-</div>
-            <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
-          </div>
+              <div class="border rounded p-3 mb-3">
+                <div class="small text-uppercase text-secondary mb-2">Webradio / Webstream</div>
+                <input id="stream-audio-stream-url" type="url" class="form-control form-control-sm" placeholder="https://example.com/stream.mp3">
+              </div>
 
-          <div class="border rounded p-3 mt-3">
-            <div class="small text-secondary">
-              Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
+              <div class="border rounded p-3">
+                <div class="small text-uppercase text-secondary mb-2">Lautstärke</div>
+                <div class="d-flex gap-2">
+                  <input id="stream-audio-volume" type="number" min="0" max="100" step="1" value="65" class="form-control form-control-sm">
+                  <button id="btn-stream-audio-volume-set" class="btn btn-outline-secondary btn-sm">Setzen</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

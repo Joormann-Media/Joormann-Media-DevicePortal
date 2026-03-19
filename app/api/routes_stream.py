@@ -27,6 +27,11 @@ bp_stream = Blueprint('stream', __name__)
 
 STREAM_SERVICE_NAME = os.getenv('DEVICE_PLAYER_SERVICE_NAME', 'joormann-media-deviceplayer.service')
 PLAYER_SOURCE_PATH = Path(DATA_DIR) / 'player-source.json'
+PLAYER_CONTROL_DEFAULT_HOST = os.getenv('DEVICEPLAYER_CONTROL_API_HOST', '127.0.0.1').strip() or '127.0.0.1'
+try:
+    PLAYER_CONTROL_DEFAULT_PORT = int(os.getenv('DEVICEPLAYER_CONTROL_API_PORT', '5081'))
+except Exception:
+    PLAYER_CONTROL_DEFAULT_PORT = 5081
 
 
 def _selected_stream_slug(cfg: dict) -> str:
@@ -35,6 +40,53 @@ def _selected_stream_slug(cfg: dict) -> str:
 
 def _selected_stream_name(cfg: dict) -> str:
     return str(cfg.get('selected_stream_name') or '').strip()
+
+
+def _player_control_base_url() -> str:
+    host = str(PLAYER_CONTROL_DEFAULT_HOST or '127.0.0.1').strip() or '127.0.0.1'
+    if host in ('0.0.0.0', '::'):
+        host = '127.0.0.1'
+    port = int(PLAYER_CONTROL_DEFAULT_PORT or 5081)
+    return f'http://{host}:{port}'
+
+
+def _player_control_request(method: str, path: str, payload: dict | None = None, timeout: int = 8) -> tuple[int | None, dict, str]:
+    url = f"{_player_control_base_url()}{path}"
+    try:
+        if method.upper() == 'GET':
+            resp = requests.get(url, timeout=timeout)
+        else:
+            resp = requests.post(url, json=payload or {}, timeout=timeout)
+    except Exception as exc:
+        return None, {}, str(exc)
+
+    status = int(resp.status_code)
+    try:
+        data = resp.json() if resp.text else {}
+    except Exception:
+        data = {'raw': resp.text}
+    if not isinstance(data, dict):
+        data = {'raw': data}
+    return status, data, ''
+
+
+def _resolve_audio_allowed_root() -> Path:
+    explicit = str(os.getenv('DEVICEPLAYER_AUDIO_ALLOWED_ROOT') or '').strip()
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+
+    if PLAYER_SOURCE_PATH.exists():
+        try:
+            payload = json.loads(PLAYER_SOURCE_PATH.read_text(encoding='utf-8'))
+            if isinstance(payload, dict):
+                manifest = payload.get('manifest') if isinstance(payload.get('manifest'), dict) else {}
+                manifest_path = str(manifest.get('path') or payload.get('manifest_path') or '').strip()
+                if manifest_path:
+                    return (Path(manifest_path).expanduser().resolve().parent / 'audio').resolve()
+        except Exception:
+            pass
+
+    return Path('/mnt/deviceportal/media/stream/current/audio').resolve()
 
 
 def _base_admin_url(cfg: dict, incoming: dict | None = None) -> str:
@@ -726,3 +778,104 @@ def api_stream_player_install_update_status():
         status = 500 if exc.code in ('script_missing', 'execution_failed', 'update_state_read_failed') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
     return jsonify(ok=True, data=payload)
+
+
+@bp_stream.get('/api/stream/player/audio/status')
+def api_stream_player_audio_status():
+    code, payload, err = _player_control_request('GET', '/player/status', timeout=6)
+    if code is None:
+        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
+    if code >= 400:
+        return jsonify(ok=False, error='audio_status_failed', detail=f'HTTP {code}', response=payload), (code if code >= 400 else 502)
+    return jsonify(ok=True, data=payload)
+
+
+@bp_stream.get('/api/stream/player/audio/files')
+def api_stream_player_audio_files():
+    root = _resolve_audio_allowed_root()
+    if not root.exists() or not root.is_dir():
+        return jsonify(ok=True, root=str(root), files=[])
+
+    allowed_ext = {'.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac'}
+    files: list[dict] = []
+    for path in sorted(root.rglob('*')):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in allowed_ext:
+            continue
+        try:
+            rel = str(path.relative_to(root))
+        except Exception:
+            rel = path.name
+        files.append(
+            {
+                'name': path.name,
+                'relative_path': rel,
+                'path': str(path.resolve()),
+                'size_bytes': int(path.stat().st_size or 0),
+            }
+        )
+    return jsonify(ok=True, root=str(root), files=files)
+
+
+@bp_stream.post('/api/stream/player/audio/play-file')
+def api_stream_player_audio_play_file():
+    data = request.get_json(force=True, silent=True) or {}
+    path = str(data.get('path') or '').strip()
+    if not path:
+        return jsonify(ok=False, error='missing_path', detail='path fehlt.'), 400
+    code, payload, err = _player_control_request('POST', '/player/play-file', {'path': path}, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
+    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+
+
+@bp_stream.post('/api/stream/player/audio/play-stream')
+def api_stream_player_audio_play_stream():
+    data = request.get_json(force=True, silent=True) or {}
+    url = str(data.get('url') or '').strip()
+    if not url:
+        return jsonify(ok=False, error='missing_url', detail='url fehlt.'), 400
+    code, payload, err = _player_control_request('POST', '/player/play-stream', {'url': url}, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
+    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+
+
+@bp_stream.post('/api/stream/player/audio/stop')
+def api_stream_player_audio_stop():
+    code, payload, err = _player_control_request('POST', '/player/stop', {}, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
+    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+
+
+@bp_stream.post('/api/stream/player/audio/pause')
+def api_stream_player_audio_pause():
+    code, payload, err = _player_control_request('POST', '/player/pause', {}, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
+    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+
+
+@bp_stream.post('/api/stream/player/audio/resume')
+def api_stream_player_audio_resume():
+    code, payload, err = _player_control_request('POST', '/player/resume', {}, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
+    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+
+
+@bp_stream.post('/api/stream/player/audio/volume')
+def api_stream_player_audio_volume():
+    data = request.get_json(force=True, silent=True) or {}
+    if 'volume' not in data:
+        return jsonify(ok=False, error='missing_volume', detail='volume fehlt.'), 400
+    try:
+        volume = int(data.get('volume'))
+    except Exception:
+        return jsonify(ok=False, error='invalid_volume', detail='volume muss int sein.'), 400
+    code, payload, err = _player_control_request('POST', '/player/volume', {'volume': volume}, timeout=8)
+    if code is None:
+        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
+    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)

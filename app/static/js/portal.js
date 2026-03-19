@@ -3490,6 +3490,90 @@
     }
   }
 
+  function renderStreamAudioStatus(payload) {
+    const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+    const health = (data.health && typeof data.health === "object") ? data.health : {};
+    const state = String(data.state || "-");
+    const sourceType = String(data.source_type || "-");
+    const source = String(data.source || "-");
+    const volume = Number.isFinite(Number(data.volume)) ? Number(data.volume) : "-";
+    const output = String(data.output || "-");
+    const healthText = String(health.status || "-");
+    const statusEl = q("stream-audio-status");
+    if (statusEl) {
+      statusEl.textContent = `Status: ${state} | source: ${sourceType} | output: ${output} | volume: ${volume} | health: ${healthText} | ${source}`;
+    }
+    const volumeInput = q("stream-audio-volume");
+    if (volumeInput && Number.isFinite(Number(data.volume))) {
+      volumeInput.value = String(Number(data.volume));
+    }
+  }
+
+  async function refreshStreamAudioStatus() {
+    const payload = await fetchJson("/api/stream/player/audio/status", { cache: "no-store" });
+    renderStreamAudioStatus(payload);
+    return payload;
+  }
+
+  async function refreshStreamAudioFiles() {
+    const payload = await fetchJson("/api/stream/player/audio/files", { cache: "no-store" });
+    const files = Array.isArray(payload.files) ? payload.files : [];
+    const root = String(payload.root || "-");
+    q("stream-audio-root").textContent = root;
+    const select = q("stream-audio-file-select");
+    if (select) {
+      select.innerHTML = "";
+      if (files.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "Keine Audio-Dateien gefunden";
+        select.appendChild(opt);
+      } else {
+        for (const file of files) {
+          const opt = document.createElement("option");
+          opt.value = String(file.path || "");
+          opt.textContent = `${String(file.relative_path || file.name || "audio")} (${Math.round((Number(file.size_bytes || 0) / 1024))} KB)`;
+          select.appendChild(opt);
+        }
+      }
+    }
+    const firstPath = files.length > 0 ? String(files[0].path || "") : "";
+    q("stream-audio-file-path").value = firstPath;
+    return payload;
+  }
+
+  async function streamAudioPlayFile() {
+    const selected = String(q("stream-audio-file-select")?.value || "").trim();
+    const path = String(q("stream-audio-file-path")?.value || "").trim() || selected;
+    if (!path) throw new Error("Bitte Audio-Datei auswählen oder Pfad eintragen.");
+    await fetchJson("/api/stream/player/audio/play-file", { method: "POST", body: { path }, timeoutMs: 12000 });
+    await refreshStreamAudioStatus();
+    toast("Audio-Datei gestartet", "success");
+  }
+
+  async function streamAudioPlayStream() {
+    const url = String(q("stream-audio-stream-url")?.value || "").trim();
+    if (!url) throw new Error("Bitte Webstream-URL eingeben.");
+    await fetchJson("/api/stream/player/audio/play-stream", { method: "POST", body: { url }, timeoutMs: 12000 });
+    await refreshStreamAudioStatus();
+    toast("Webstream gestartet", "success");
+  }
+
+  async function streamAudioAction(action) {
+    await fetchJson(`/api/stream/player/audio/${action}`, { method: "POST", timeoutMs: 10000 });
+    await refreshStreamAudioStatus();
+    toast(`Audio ${action}`, "success");
+  }
+
+  async function streamAudioSetVolume() {
+    const raw = String(q("stream-audio-volume")?.value || "").trim();
+    const volume = Number(raw);
+    if (!Number.isFinite(volume)) throw new Error("Lautstärke muss eine Zahl sein.");
+    await fetchJson("/api/stream/player/audio/volume", { method: "POST", body: { volume: Math.max(0, Math.min(100, Math.round(volume))) } });
+    await refreshStreamAudioStatus();
+    toast("Lautstärke gesetzt", "success");
+  }
+
   async function loadPlayerRepoConfig() {
     const payload = await fetchJson("/api/stream/player/repo", { timeoutMs: 10000 });
     const cfg = payload.config || {};
@@ -4767,6 +4851,20 @@
     q("btn-player-start").addEventListener("click", () => run(() => playerAction("start")));
     q("btn-player-stop").addEventListener("click", () => run(() => playerAction("stop")));
     q("btn-player-restart").addEventListener("click", () => run(() => playerAction("restart")));
+    q("btn-stream-audio-refresh").addEventListener("click", () => run(async () => {
+      await refreshStreamAudioFiles();
+      await refreshStreamAudioStatus();
+    }));
+    q("btn-stream-audio-play-file").addEventListener("click", () => run(streamAudioPlayFile));
+    q("btn-stream-audio-play-stream").addEventListener("click", () => run(streamAudioPlayStream));
+    q("btn-stream-audio-pause").addEventListener("click", () => run(() => streamAudioAction("pause")));
+    q("btn-stream-audio-resume").addEventListener("click", () => run(() => streamAudioAction("resume")));
+    q("btn-stream-audio-stop").addEventListener("click", () => run(() => streamAudioAction("stop")));
+    q("btn-stream-audio-volume-set").addEventListener("click", () => run(streamAudioSetVolume));
+    q("stream-audio-file-select").addEventListener("change", () => {
+      const selected = String(q("stream-audio-file-select")?.value || "").trim();
+      if (selected) q("stream-audio-file-path").value = selected;
+    });
     q("btn-stream-player-repo-save").addEventListener("click", () => run(savePlayerRepoConfig));
     q("btn-stream-player-install-update").addEventListener("click", () => run(startStreamPlayerInstallUpdate));
     q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
@@ -5072,6 +5170,8 @@
     await run(refreshWifiLogs);
     await run(refreshStorageStatus);
     await run(refreshStreamOverview);
+    await run(refreshStreamAudioFiles);
+    await run(refreshStreamAudioStatus);
     await run(loadPlayerRepoConfig);
     await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
