@@ -1416,8 +1416,29 @@ def api_audio_outputs():
         payload["saved"] = profile
         return _ok(payload)
     except NetControlError as exc:
-        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
-        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+        # Keep UI usable even when host audio backend probing fails.
+        fallback = {
+            "current_output": "",
+            "available_outputs": [
+                {
+                    "id": "local_hdmi",
+                    "label": "HDMI",
+                    "type": "local",
+                    "available": False,
+                    "sink_name": "",
+                },
+                {
+                    "id": "local_speaker",
+                    "label": "Lokale Lautsprecher / Klinke",
+                    "type": "local",
+                    "available": False,
+                    "sink_name": "",
+                },
+            ],
+            "saved": profile,
+            "warning": f"{exc.code}: {exc.detail or exc.message}",
+        }
+        return _ok(fallback)
 
 
 @bp_network.post("/api/audio/output")
