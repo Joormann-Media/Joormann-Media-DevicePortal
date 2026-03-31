@@ -122,6 +122,17 @@ _user_marker_enabled() {
   [[ -n "${marker}" && -f "${marker}" ]]
 }
 
+_user_unit_exists() {
+  local user="$1"
+  local service="${2:-raspotify.service}"
+  local home
+  home="$(_user_home "${user}")"
+  if [[ -z "${home}" ]]; then
+    return 1
+  fi
+  [[ -f "${home}/.config/systemd/user/${service}" ]]
+}
+
 choose_service_system() {
   local candidate load_state
   for candidate in ${CANDIDATES_RAW}; do
@@ -350,7 +361,7 @@ elif [[ "${SERVICE_SCOPE}" == "system" ]]; then
 else
   # auto: prefer user scope when a service user is configured
   if [[ -n "${SERVICE_USER}" ]]; then
-    if _user_proc_running "${SERVICE_USER}" || _user_marker_enabled "${SERVICE_USER}"; then
+    if _user_proc_running "${SERVICE_USER}" || _user_marker_enabled "${SERVICE_USER}" || _user_unit_exists "${SERVICE_USER}" "${REQUESTED_SERVICE:-${first_candidate}}"; then
       chosen_scope="user"
       chosen_service="${REQUESTED_SERVICE:-${first_candidate}}"
     elif chosen_service="$(choose_service_user)"; then
