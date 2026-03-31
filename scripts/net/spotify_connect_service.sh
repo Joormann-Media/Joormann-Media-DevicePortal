@@ -293,7 +293,7 @@ case "${ACTION}" in
   status|refresh)
     build_status "${chosen_service}" "${chosen_scope}"
     ;;
-  start|stop|restart)
+  start|stop|restart|enable|disable)
     if [[ -z "${chosen_service}" ]]; then
       emit "success" "false"
       emit "code" "service_not_found"
@@ -323,7 +323,7 @@ case "${ACTION}" in
   *)
     emit "success" "false"
     emit "code" "invalid_action"
-    emit "message" "Action must be start|stop|restart|status|refresh"
+    emit "message" "Action must be start|stop|restart|enable|disable|status|refresh"
     exit 2
     ;;
 esac

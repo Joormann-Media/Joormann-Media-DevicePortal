@@ -3799,6 +3799,7 @@
     const running = !!data.serviceRunning;
     const ready = !!data.connectReady;
     const serviceName = String(data.serviceName || "-");
+    const serviceScope = String(data.serviceScope || "-");
     const deviceName = String(data.deviceName || "-");
     const backend = String(data.backend || "-");
     const output = String(data.outputDevice || "-");
@@ -3813,6 +3814,7 @@
     }
 
     q("spotify-connect-service-name").textContent = serviceName;
+    q("spotify-connect-service-scope").textContent = serviceScope || "-";
     q("spotify-connect-installed").textContent = installed ? "ja" : "nein";
     q("spotify-connect-enabled").textContent = enabled ? "ja" : "nein";
     q("spotify-connect-running").textContent = running ? "ja" : "nein";
@@ -3899,9 +3901,33 @@
     return payload;
   }
 
+  async function refreshSpotifyConnectConfig() {
+    const payload = await fetchJson("/api/spotify-connect/config", { cache: "no-store" });
+    const data = payload.data || {};
+    q("spotify-connect-config-name").value = String(data.service_name || "");
+    q("spotify-connect-config-user").value = String(data.service_user || "");
+    q("spotify-connect-config-scope").value = String(data.service_scope || "auto");
+    q("spotify-connect-config-candidates").value = String(data.service_candidates || "");
+    return payload;
+  }
+
+  async function saveSpotifyConnectConfig() {
+    const service_name = String(q("spotify-connect-config-name")?.value || "").trim();
+    const service_user = String(q("spotify-connect-config-user")?.value || "").trim();
+    const service_scope = String(q("spotify-connect-config-scope")?.value || "auto").trim();
+    const service_candidates = String(q("spotify-connect-config-candidates")?.value || "").trim();
+    await fetchJson("/api/spotify-connect/config", {
+      method: "POST",
+      body: { service_name, service_user, service_scope, service_candidates },
+      timeoutMs: 12000,
+    });
+    toast("Spotify Connect Konfiguration gespeichert", "success");
+    await refreshSpotifyConnectStatus();
+  }
+
   async function spotifyConnectAction(action) {
     const safeAction = String(action || "").trim().toLowerCase();
-    if (!["start", "stop", "restart", "refresh"].includes(safeAction)) {
+    if (!["start", "stop", "restart", "refresh", "enable", "disable"].includes(safeAction)) {
       throw new Error("Ungültige Spotify-Action.");
     }
     const payload = await fetchJson(`/api/spotify-connect/${safeAction}`, { method: "POST" });
@@ -5827,6 +5853,9 @@
     q("btn-spotify-connect-stop").addEventListener("click", () => run(() => spotifyConnectAction("stop")));
     q("btn-spotify-connect-restart").addEventListener("click", () => run(() => spotifyConnectAction("restart")));
     q("btn-spotify-connect-refresh").addEventListener("click", () => run(refreshSpotifyConnectStatus));
+    q("btn-spotify-connect-enable").addEventListener("click", () => run(() => spotifyConnectAction("enable")));
+    q("btn-spotify-connect-disable").addEventListener("click", () => run(() => spotifyConnectAction("disable")));
+    q("btn-spotify-connect-config-save").addEventListener("click", () => run(saveSpotifyConnectConfig));
     q("btn-stream-audio-refresh").addEventListener("click", () => run(async () => {
       await refreshStreamAudioFiles();
       await refreshStreamAudioStatus();
@@ -6210,6 +6239,7 @@
     await run(refreshStorageStatus);
     await run(refreshStreamOverview);
     await run(refreshSpotifyConnectStatus);
+    await run(refreshSpotifyConnectConfig);
     await run(refreshStreamAudioFiles);
     await run(refreshStreamAudioStatus);
     await run(refreshBluetoothDevices);

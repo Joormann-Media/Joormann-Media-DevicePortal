@@ -1293,8 +1293,8 @@ def spotify_connect_service_action(
     service_candidates: str = "",
 ) -> dict:
     requested = (action or "").strip().lower()
-    if requested not in {"start", "stop", "restart", "status", "refresh"}:
-        raise NetControlError(code="invalid_action", message="Action must be start|stop|restart|status|refresh")
+    if requested not in {"start", "stop", "restart", "enable", "disable", "status", "refresh"}:
+        raise NetControlError(code="invalid_action", message="Action must be start|stop|restart|enable|disable|status|refresh")
 
     script_action = "status" if requested == "refresh" else requested
     args = [script_action]
@@ -1328,6 +1328,7 @@ def spotify_connect_service_action(
         "success": parsed.get("success", "true").lower() == "true",
         "action": parsed.get("action", requested),
         "serviceName": parsed.get("service_name", service),
+        "serviceScope": parsed.get("service_scope", ""),
         "serviceInstalled": service_installed is True,
         "serviceEnabled": service_enabled is True,
         "serviceRunning": service_running is True,

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from app.core.config import ensure_config
+from app.core.jsonio import write_json
 from app.core.netcontrol import NetControlError, spotify_connect_service_action
+from app.core.paths import CONFIG_PATH
+from app.core.timeutil import utc_now
 
 bp_spotify_connect = Blueprint("spotify_connect", __name__)
 
@@ -83,3 +86,60 @@ def api_spotify_connect_refresh():
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed", "script_missing") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail or "")
+
+
+@bp_spotify_connect.post("/api/spotify-connect/enable")
+def api_spotify_connect_enable():
+    try:
+        cfg = _service_env_from_cfg()
+        data = spotify_connect_service_action("enable", **cfg)
+        return _ok(data)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail or "")
+
+
+@bp_spotify_connect.post("/api/spotify-connect/disable")
+def api_spotify_connect_disable():
+    try:
+        cfg = _service_env_from_cfg()
+        data = spotify_connect_service_action("disable", **cfg)
+        return _ok(data)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail or "")
+
+
+@bp_spotify_connect.get("/api/spotify-connect/config")
+def api_spotify_connect_config_get():
+    cfg = ensure_config()
+    return _ok(
+        {
+            "service_name": str(cfg.get("spotify_connect_service_name") or "").strip(),
+            "service_user": str(cfg.get("spotify_connect_service_user") or "").strip(),
+            "service_scope": str(cfg.get("spotify_connect_service_scope") or "").strip() or "auto",
+            "service_candidates": str(cfg.get("spotify_connect_service_candidates") or "").strip(),
+        }
+    )
+
+
+@bp_spotify_connect.post("/api/spotify-connect/config")
+def api_spotify_connect_config_set():
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    cfg["spotify_connect_service_name"] = str(data.get("service_name") or "").strip()
+    cfg["spotify_connect_service_user"] = str(data.get("service_user") or "").strip()
+    cfg["spotify_connect_service_scope"] = str(data.get("service_scope") or "").strip()
+    cfg["spotify_connect_service_candidates"] = str(data.get("service_candidates") or "").strip()
+    cfg["updated_at"] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist spotify connect config", status=500, detail=write_err)
+    return _ok(
+        {
+            "service_name": str(cfg.get("spotify_connect_service_name") or "").strip(),
+            "service_user": str(cfg.get("spotify_connect_service_user") or "").strip(),
+            "service_scope": str(cfg.get("spotify_connect_service_scope") or "").strip(),
+            "service_candidates": str(cfg.get("spotify_connect_service_candidates") or "").strip(),
+        }
+    )
