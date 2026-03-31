@@ -84,6 +84,12 @@ def create_app() -> Flask:
         if path in public_exact or path.startswith("/static/"):
             return None
 
+        cfg = ensure_config()
+
+        # Allow smarthome/audio-node API calls without login (when explicitly enabled).
+        if cfg.get("audio_node_public") and path.startswith("/api/audio/"):
+            return None
+
         # Allow local service-driven stream sync even when panel-remote auth is active.
         if _is_local_unauth_stream_sync():
             return None
@@ -93,7 +99,7 @@ def create_app() -> Flask:
 
         setup_mode = detect_connectivity_setup_mode()
         mode_info = resolve_auth_mode(
-            ensure_config(),
+            cfg,
             force_local=bool(setup_mode.get("active")),
             force_reason="connectivity_setup_mode",
         )

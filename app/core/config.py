@@ -80,6 +80,7 @@ DEFAULT_CONFIG: dict = {
     'spotify_connect_service_scope': '',
     'spotify_connect_service_candidates': '',
     'spotify_connect_device_name': '',
+    'audio_node_public': False,
     'player_auto_update_with_portal': True,
     'sentinel_settings': {
         'webhook_url': '',
