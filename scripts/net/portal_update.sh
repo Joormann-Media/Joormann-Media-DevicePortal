@@ -250,6 +250,16 @@ EOF
 
   echo "[runtime] local runtime backup mode active (no git stash for var/data)"
 
+  # Ensure hotfix files don't block git pull (keep backup for inspection).
+  HOTFIX_FILE="scripts/net/spotify_connect_service.sh"
+  HOTFIX_STATUS="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git status --porcelain -- \"${HOTFIX_FILE}\"" 2>/dev/null || true)"
+  if [[ -n "${HOTFIX_STATUS}" ]]; then
+    HOTFIX_BACKUP="${UPDATE_DIR}/${JOB_ID}-spotify_connect_service.sh.backup"
+    echo "[git] local hotfix detected for ${HOTFIX_FILE}, backing up to ${HOTFIX_BACKUP} and resetting to HEAD"
+    cp -a "${REPO_DIR}/${HOTFIX_FILE}" "${HOTFIX_BACKUP}" >/dev/null 2>&1 || true
+    runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git checkout -- \"${HOTFIX_FILE}\"" >/dev/null 2>&1 || true
+  fi
+
   if [[ -n "${UPDATE_SOURCE}" ]]; then
     CURRENT_ORIGIN="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git remote get-url origin" 2>/dev/null || true)"
     if [[ "${CURRENT_ORIGIN}" != "${UPDATE_SOURCE}" ]]; then
