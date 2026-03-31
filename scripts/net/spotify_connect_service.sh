@@ -317,12 +317,12 @@ build_status() {
       local env_line
       env_line="$(_user_env "${SERVICE_USER}")" || env_line=""
       if [[ -n "${env_line}" ]]; then
-        last_error="$(sudo -n -u "${SERVICE_USER}" env ${env_line} journalctl --user -u "${service_name}" -p err -n 10 --no-pager -o cat 2>/dev/null | tail -n1 | tr -d '\r' | sed 's/^\s\+//; s/\s\+$//')"
+        last_error="$(sudo -n -u "${SERVICE_USER}" env ${env_line} journalctl --user -u "${service_name}" -p err -n 10 --no-pager -o cat 2>/dev/null | tail -n1 | tr -d '\r' | sed 's/^\s\+//; s/\s\+$//' || true)"
       else
         last_error=""
       fi
     else
-      last_error="$(journalctl -u "${service_name}" -p err -n 10 --no-pager -o cat 2>/dev/null | tail -n1 | tr -d '\r' | sed 's/^\s\+//; s/\s\+$//')"
+      last_error="$(journalctl -u "${service_name}" -p err -n 10 --no-pager -o cat 2>/dev/null | tail -n1 | tr -d '\r' | sed 's/^\s\+//; s/\s\+$//' || true)"
     fi
   else
     last_error=""
