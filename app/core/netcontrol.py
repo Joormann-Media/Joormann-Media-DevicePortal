@@ -533,7 +533,9 @@ def get_bluetooth_paired_devices() -> list[dict]:
 def bluetooth_audio_scan(scan_seconds: int = 8) -> dict:
     seconds = max(4, min(30, int(scan_seconds or 8)))
     # Scan+device-info can take noticeably longer on busy airspace.
-    rc, out, err = _run_script("bluetooth_audio.py", ["scan", str(seconds)], timeout=max(45, seconds + 60), use_sudo=False)
+    env = dict(os.environ)
+    env["BTCTL_HARD_TIMEOUT"] = str(max(12, min(45, seconds + 10)))
+    rc, out, err = _run_script("bluetooth_audio.py", ["scan", str(seconds)], timeout=max(20, seconds + 20), use_sudo=False, env=env)
     if rc != 0:
         raise NetControlError(code="bluetooth_scan_failed", message="Failed to scan Bluetooth devices", detail=err or out)
     payload = _parse_json_output(out, code="bluetooth_scan_invalid_json", message="Bluetooth scan returned invalid JSON")
@@ -543,7 +545,9 @@ def bluetooth_audio_scan(scan_seconds: int = 8) -> dict:
 
 
 def bluetooth_audio_devices() -> dict:
-    rc, out, err = _run_script("bluetooth_audio.py", ["devices"], timeout=45, use_sudo=False)
+    env = dict(os.environ)
+    env["BTCTL_HARD_TIMEOUT"] = "12"
+    rc, out, err = _run_script("bluetooth_audio.py", ["devices"], timeout=18, use_sudo=False, env=env)
     if rc != 0:
         raise NetControlError(code="bluetooth_devices_failed", message="Failed to list Bluetooth devices", detail=err or out)
     payload = _parse_json_output(out, code="bluetooth_devices_invalid_json", message="Bluetooth devices returned invalid JSON")
@@ -559,7 +563,9 @@ def bluetooth_audio_action(action: str, device_id: str) -> dict:
     mac = (device_id or "").strip().upper()
     if not re.fullmatch(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", mac):
         raise NetControlError(code="invalid_payload", message="device_id must be a valid MAC address")
-    rc, out, err = _run_script("bluetooth_audio.py", [normalized, mac], timeout=70, use_sudo=False)
+    env = dict(os.environ)
+    env["BTCTL_HARD_TIMEOUT"] = "40"
+    rc, out, err = _run_script("bluetooth_audio.py", [normalized, mac], timeout=50, use_sudo=False, env=env)
     if rc != 0:
         raise NetControlError(code="bluetooth_action_failed", message=f"Failed to {normalized} bluetooth device", detail=err or out)
     payload = _parse_json_output(out, code="bluetooth_action_invalid_json", message="Bluetooth action returned invalid JSON")

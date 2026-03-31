@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+import signal
+import os
 
 
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
@@ -50,10 +52,10 @@ def _adapter_exists() -> bool:
         return False
 
 
-def _run(args: list[str], timeout: int = 20) -> BtResult:
+def _run(args: list[str], timeout: int = 20, use_bt_timeout: bool = False) -> BtResult:
     btctl = _btctl_path()
     cmd = [btctl]
-    if "--timeout" not in args:
+    if use_bt_timeout and "--timeout" not in args:
         cmd.extend(["--timeout", str(max(2, min(int(timeout), 30)))])
     cmd.extend(args)
     try:
@@ -109,9 +111,9 @@ def _parse_devices(raw: str) -> list[tuple[str, str]]:
 
 def _list_paired_set() -> set[str]:
     try:
-        paired = _run(["paired-devices"], timeout=20)
+        paired = _run(["paired-devices"], timeout=12)
         if paired.rc != 0 or not paired.out.strip():
-            paired = _run(["devices", "Paired"], timeout=20)
+            paired = _run(["devices", "Paired"], timeout=12)
         if paired.rc != 0:
             return set()
         return {mac for mac, _ in _parse_devices(paired.out)}
@@ -121,9 +123,9 @@ def _list_paired_set() -> set[str]:
 
 def _list_paired_devices() -> list[tuple[str, str]]:
     try:
-        paired = _run(["paired-devices"], timeout=20)
+        paired = _run(["paired-devices"], timeout=12)
         if paired.rc != 0 or not paired.out.strip():
-            paired = _run(["devices", "Paired"], timeout=20)
+            paired = _run(["devices", "Paired"], timeout=12)
         if paired.rc != 0:
             return []
         return _parse_devices(paired.out)
@@ -132,7 +134,7 @@ def _list_paired_devices() -> list[tuple[str, str]]:
 
 
 def _collect_devices() -> list[dict]:
-    listed = _run(["devices"], timeout=12)
+    listed = _run(["devices"], timeout=8)
     if listed.rc != 0:
         raise RuntimeError((listed.err or listed.out or "bluetoothctl devices failed").strip())
     paired_set = _list_paired_set()
@@ -140,7 +142,7 @@ def _collect_devices() -> list[dict]:
     seen: set[str] = set()
     for mac, listed_name in _parse_devices(listed.out):
         seen.add(mac)
-        info = _run(["info", mac], timeout=10)
+        info = _run(["info", mac], timeout=8)
         info_text = info.out if info.rc == 0 else ""
         alias = _extract_alias(info_text) or listed_name or mac
         rows.append(
@@ -157,7 +159,7 @@ def _collect_devices() -> list[dict]:
     for mac, listed_name in _list_paired_devices():
         if mac in seen:
             continue
-        info = _run(["info", mac], timeout=10)
+        info = _run(["info", mac], timeout=8)
         info_text = info.out if info.rc == 0 else ""
         alias = _extract_alias(info_text) or listed_name or mac
         rows.append(
@@ -185,9 +187,9 @@ def _run_action(action: str, mac: str) -> dict:
     target = _validate_mac(mac)
     if action == "pair":
         _run(["power", "on"], timeout=8)
-        pair = _run(["pair", target], timeout=40)
-        trust = _run(["trust", target], timeout=20)
-        connect = _run(["connect", target], timeout=30)
+        pair = _run(["pair", target], timeout=30)
+        trust = _run(["trust", target], timeout=12)
+        connect = _run(["connect", target], timeout=25)
         return {
             "action": action,
             "device_id": target,
@@ -198,8 +200,8 @@ def _run_action(action: str, mac: str) -> dict:
         }
     if action == "connect":
         _run(["power", "on"], timeout=8)
-        trust = _run(["trust", target], timeout=20)
-        conn = _run(["connect", target], timeout=30)
+        trust = _run(["trust", target], timeout=12)
+        conn = _run(["connect", target], timeout=25)
         return {
             "action": action,
             "device_id": target,
@@ -208,7 +210,7 @@ def _run_action(action: str, mac: str) -> dict:
             "detail": (conn.err or conn.out or trust.err).strip(),
         }
     if action == "disconnect":
-        dis = _run(["disconnect", target], timeout=20)
+        dis = _run(["disconnect", target], timeout=12)
         return {
             "action": action,
             "device_id": target,
@@ -216,7 +218,7 @@ def _run_action(action: str, mac: str) -> dict:
             "detail": (dis.err or dis.out).strip(),
         }
     if action == "forget":
-        rm = _run(["remove", target], timeout=20)
+        rm = _run(["remove", target], timeout=12)
         return {
             "action": action,
             "device_id": target,
@@ -233,7 +235,7 @@ def _scan(seconds: int) -> dict:
     if power.rc != 0 and "succeeded" not in power_text:
         raise RuntimeError((power.err or power.out or "failed to power on bluetooth adapter").strip())
 
-    scan_on = _run(["--timeout", str(scan_seconds), "scan", "on"], timeout=scan_seconds + 10)
+    scan_on = _run(["scan", "on"], timeout=scan_seconds + 10, use_bt_timeout=True)
     scan_text = f"{scan_on.out}\n{scan_on.err}".lower()
     if scan_on.rc != 0 and "discovery started" not in scan_text:
         raise RuntimeError((scan_on.err or scan_on.out or "failed to scan bluetooth devices").strip())
@@ -246,6 +248,12 @@ def _scan(seconds: int) -> dict:
 def main() -> int:
     mode = (sys.argv[1] if len(sys.argv) > 1 else "devices").strip().lower()
     try:
+        hard_timeout = int(os.getenv("BTCTL_HARD_TIMEOUT", "15") or "15")
+        if hard_timeout > 0:
+            def _alarm_handler(_signum, _frame):
+                raise TimeoutError(f"hard timeout after {hard_timeout}s")
+            signal.signal(signal.SIGALRM, _alarm_handler)
+            signal.alarm(hard_timeout)
         if mode in ("scan", "devices", "pair", "connect", "disconnect", "forget") and not _adapter_exists():
             payload = {"ok": True, "mode": mode, "devices": [], "warning": "bluetooth adapter missing"}
             print(json.dumps(payload))
@@ -267,6 +275,11 @@ def main() -> int:
         payload = {"ok": False, "mode": mode, "error": str(exc), "devices": []}
         print(json.dumps(payload))
         return 1
+    finally:
+        try:
+            signal.alarm(0)
+        except Exception:
+            pass
 
     print(json.dumps(payload))
     return 0
