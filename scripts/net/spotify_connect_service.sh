@@ -68,6 +68,19 @@ _user_env() {
   printf 'XDG_RUNTIME_DIR=%s DBUS_SESSION_BUS_ADDRESS=unix:path=%s/bus' "${runtime_dir}" "${runtime_dir}"
 }
 
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  "$@" &
+  local pid=$!
+  ( sleep "${seconds}"; kill -0 "${pid}" >/dev/null 2>&1 && kill -TERM "${pid}" >/dev/null 2>&1 ) &
+  local killer=$!
+  wait "${pid}" 2>/dev/null
+  local rc=$?
+  kill -TERM "${killer}" >/dev/null 2>&1 || true
+  return "${rc}"
+}
+
 _systemctl_user() {
   local user="$1"
   shift
@@ -76,7 +89,7 @@ _systemctl_user() {
   if command -v timeout >/dev/null 2>&1; then
     sudo -n -u "${user}" env ${env} timeout 4 systemctl --user "$@"
   else
-    sudo -n -u "${user}" env ${env} systemctl --user "$@"
+    run_with_timeout 4 sudo -n -u "${user}" env ${env} systemctl --user "$@"
   fi
 }
 
