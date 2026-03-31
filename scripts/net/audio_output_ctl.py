@@ -35,6 +35,12 @@ def _collect_sinks_pactl() -> tuple[str, list[dict]]:
     code, short_out, _ = _run(["pactl", "list", "short", "sinks"], timeout=8)
     if code != 0:
         return "", []
+    # If no sinks are visible, try to ensure a user session exists via pulseaudio --check.
+    if not short_out.strip():
+        _run(["pulseaudio", "--check"], timeout=3)
+        code_retry, short_out, _ = _run(["pactl", "list", "short", "sinks"], timeout=8)
+        if code_retry != 0:
+            return "", []
     sinks: list[dict] = []
     for line in short_out.splitlines():
         parts = line.split("\t")
