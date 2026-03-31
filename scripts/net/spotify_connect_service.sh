@@ -5,6 +5,8 @@ ACTION="${1:-status}"
 REQUESTED_SERVICE="${2:-}"
 
 CANDIDATES_RAW="${SPOTIFY_CONNECT_SERVICE_CANDIDATES:-raspotify.service librespot.service}"
+SERVICE_SCOPE="${SPOTIFY_CONNECT_SERVICE_SCOPE:-auto}"
+SERVICE_USER="${SPOTIFY_CONNECT_SERVICE_USER:-${SUDO_USER:-}}"
 if [[ -n "${REQUESTED_SERVICE}" ]]; then
   CANDIDATES_RAW="${REQUESTED_SERVICE}"
 fi
@@ -30,10 +32,64 @@ if ! command -v systemctl >/dev/null 2>&1; then
   exit 3
 fi
 
-choose_service() {
+_user_id() {
+  local user="$1"
+  if [[ -z "${user}" ]]; then
+    return 1
+  fi
+  id -u "${user}" 2>/dev/null || true
+}
+
+_user_home() {
+  local user="$1"
+  if [[ -z "${user}" ]]; then
+    return 1
+  fi
+  getent passwd "${user}" | awk -F: '{print $6}' | head -n1
+}
+
+_user_env() {
+  local user="$1"
+  local uid
+  uid="$(_user_id "${user}")"
+  if [[ -z "${uid}" ]]; then
+    return 1
+  fi
+  local runtime_dir="/run/user/${uid}"
+  if [[ ! -d "${runtime_dir}" ]]; then
+    return 1
+  fi
+  printf 'XDG_RUNTIME_DIR=%s DBUS_SESSION_BUS_ADDRESS=unix:path=%s/bus' "${runtime_dir}" "${runtime_dir}"
+}
+
+_systemctl_user() {
+  local user="$1"
+  shift
+  local env
+  env="$(_user_env "${user}")" || return 1
+  sudo -n -u "${user}" env ${env} systemctl --user "$@"
+}
+
+choose_service_system() {
   local candidate load_state
   for candidate in ${CANDIDATES_RAW}; do
     load_state="$(systemctl show "${candidate}" --property=LoadState --value 2>/dev/null || true)"
+    if [[ -n "${load_state}" && "${load_state}" != "not-found" ]]; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+choose_service_user() {
+  local user="${SERVICE_USER}"
+  if [[ -z "${user}" ]]; then
+    return 1
+  fi
+  local candidate load_state
+  for candidate in ${CANDIDATES_RAW}; do
+    load_state="$(_systemctl_user "${user}" show "${candidate}" --property=LoadState --value 2>/dev/null || true)"
     if [[ -n "${load_state}" && "${load_state}" != "not-found" ]]; then
       echo "${candidate}"
       return 0
@@ -64,8 +120,11 @@ extract_from_options() {
 
 build_status() {
   local service_name="$1"
+  local service_scope="${2:-system}"
   local installed enabled_state active_state sub_state
   local enabled running device_name backend output_device last_error checked_at
+  local config_path=""
+  local user_home=""
 
   if [[ -z "${service_name}" ]]; then
     service_name="${REQUESTED_SERVICE:-raspotify.service}"
@@ -75,9 +134,15 @@ build_status() {
     sub_state="dead"
   else
     installed="true"
-    enabled_state="$(systemctl is-enabled "${service_name}" 2>/dev/null || true)"
-    active_state="$(systemctl show "${service_name}" --property=ActiveState --value 2>/dev/null || true)"
-    sub_state="$(systemctl show "${service_name}" --property=SubState --value 2>/dev/null || true)"
+    if [[ "${service_scope}" == "user" ]]; then
+      enabled_state="$(_systemctl_user "${SERVICE_USER}" is-enabled "${service_name}" 2>/dev/null || true)"
+      active_state="$(_systemctl_user "${SERVICE_USER}" show "${service_name}" --property=ActiveState --value 2>/dev/null || true)"
+      sub_state="$(_systemctl_user "${SERVICE_USER}" show "${service_name}" --property=SubState --value 2>/dev/null || true)"
+    else
+      enabled_state="$(systemctl is-enabled "${service_name}" 2>/dev/null || true)"
+      active_state="$(systemctl show "${service_name}" --property=ActiveState --value 2>/dev/null || true)"
+      sub_state="$(systemctl show "${service_name}" --property=SubState --value 2>/dev/null || true)"
+    fi
   fi
 
   enabled="false"
@@ -91,7 +156,31 @@ build_status() {
   backend=""
   output_device=""
 
-  if [[ "${service_name}" == "raspotify.service" || -f /etc/default/raspotify ]]; then
+  if [[ "${service_scope}" == "user" ]]; then
+    user_home="$(_user_home "${SERVICE_USER}")"
+    if [[ -n "${user_home}" && -f "${user_home}/.config/raspotify/conf" ]]; then
+      config_path="${user_home}/.config/raspotify/conf"
+    elif [[ -n "${user_home}" && -f "${user_home}/.config/raspotify/env" ]]; then
+      config_path="${user_home}/.config/raspotify/env"
+    fi
+  fi
+
+  if [[ -n "${config_path}" ]]; then
+    device_name="$(read_kv_file "${config_path}" DEVICE_NAME || true)"
+    backend="$(read_kv_file "${config_path}" BACKEND || true)"
+    output_device="$(read_kv_file "${config_path}" DEVICE || true)"
+    local opts
+    opts="$(read_kv_file "${config_path}" OPTIONS || true)"
+    if [[ -z "${device_name}" ]]; then
+      device_name="$(extract_from_options "${opts}" '--name')"
+    fi
+    if [[ -z "${backend}" ]]; then
+      backend="$(extract_from_options "${opts}" '--backend')"
+    fi
+    if [[ -z "${output_device}" ]]; then
+      output_device="$(extract_from_options "${opts}" '--device')"
+    fi
+  elif [[ "${service_name}" == "raspotify.service" || -f /etc/default/raspotify ]]; then
     device_name="$(read_kv_file /etc/default/raspotify DEVICE_NAME || true)"
     backend="$(read_kv_file /etc/default/raspotify BACKEND || true)"
     output_device="$(read_kv_file /etc/default/raspotify DEVICE || true)"
@@ -134,7 +223,17 @@ build_status() {
   fi
 
   if [[ -n "${service_name}" ]]; then
-    last_error="$(journalctl -u "${service_name}" -p err -n 10 --no-pager -o cat 2>/dev/null | tail -n1 | tr -d '\r' | sed 's/^\s\+//; s/\s\+$//')"
+    if [[ "${service_scope}" == "user" ]]; then
+      local env_line
+      env_line="$(_user_env "${SERVICE_USER}")" || env_line=""
+      if [[ -n "${env_line}" ]]; then
+        last_error="$(sudo -n -u "${SERVICE_USER}" env ${env_line} journalctl --user -u "${service_name}" -p err -n 10 --no-pager -o cat 2>/dev/null | tail -n1 | tr -d '\r' | sed 's/^\s\+//; s/\s\+$//')"
+      else
+        last_error=""
+      fi
+    else
+      last_error="$(journalctl -u "${service_name}" -p err -n 10 --no-pager -o cat 2>/dev/null | tail -n1 | tr -d '\r' | sed 's/^\s\+//; s/\s\+$//')"
+    fi
   else
     last_error=""
   fi
@@ -149,6 +248,7 @@ build_status() {
   emit "success" "true"
   emit "action" "${ACTION}"
   emit "service_name" "${service_name}"
+  emit "service_scope" "${service_scope}"
   emit "service_installed" "${installed}"
   emit "service_enabled" "${enabled}"
   emit "service_running" "${running}"
@@ -158,6 +258,7 @@ build_status() {
   emit "device_name" "${device_name}"
   emit "backend" "${backend}"
   emit "output_device" "${output_device}"
+  emit "config_path" "${config_path}"
   emit "last_error" "${last_error}"
   emit "connect_ready" "${connect_ready}"
   emit "checked_at" "${checked_at}"
@@ -165,15 +266,32 @@ build_status() {
 }
 
 chosen_service=""
-if chosen_service="$(choose_service)"; then
-  :
+chosen_scope="system"
+if [[ "${SERVICE_SCOPE}" == "user" ]]; then
+  if chosen_service="$(choose_service_user)"; then
+    chosen_scope="user"
+  else
+    chosen_service=""
+  fi
+elif [[ "${SERVICE_SCOPE}" == "system" ]]; then
+  if chosen_service="$(choose_service_system)"; then
+    chosen_scope="system"
+  else
+    chosen_service=""
+  fi
 else
-  chosen_service=""
+  if chosen_service="$(choose_service_system)"; then
+    chosen_scope="system"
+  elif chosen_service="$(choose_service_user)"; then
+    chosen_scope="user"
+  else
+    chosen_service=""
+  fi
 fi
 
 case "${ACTION}" in
   status|refresh)
-    build_status "${chosen_service}"
+    build_status "${chosen_service}" "${chosen_scope}"
     ;;
   start|stop|restart)
     if [[ -z "${chosen_service}" ]]; then
@@ -183,14 +301,24 @@ case "${ACTION}" in
       emit "details" "Checked: ${CANDIDATES_RAW}"
       exit 4
     fi
-    if ! systemctl "${ACTION}" "${chosen_service}" >/dev/null 2>&1; then
+    if [[ "${chosen_scope}" == "user" ]]; then
+      if ! _systemctl_user "${SERVICE_USER}" "${ACTION}" "${chosen_service}" >/dev/null 2>&1; then
+        emit "success" "false"
+        emit "code" "service_action_failed"
+        emit "message" "Failed to ${ACTION} user service"
+        emit "service_name" "${chosen_service}"
+        emit "service_scope" "${chosen_scope}"
+        exit 5
+      fi
+    elif ! systemctl "${ACTION}" "${chosen_service}" >/dev/null 2>&1; then
       emit "success" "false"
       emit "code" "service_action_failed"
       emit "message" "Failed to ${ACTION} service"
       emit "service_name" "${chosen_service}"
+      emit "service_scope" "${chosen_scope}"
       exit 5
     fi
-    build_status "${chosen_service}"
+    build_status "${chosen_service}" "${chosen_scope}"
     ;;
   *)
     emit "success" "false"
