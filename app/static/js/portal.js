@@ -4582,6 +4582,26 @@
     q("bt-pairing-device").textContent = deviceLabel || "-";
     const rawMsg = cleanBtText(feedback.passkey_line || feedback.recent_line || "");
     q("bt-pairing-message").textContent = rawMsg && !looksLikeMenuHint(rawMsg) ? rawMsg : "Warte auf Pairing-Anfrage...";
+
+    const actionsHost = q("bt-pairing-actions");
+    if (actionsHost) {
+      clearNode(actionsHost);
+      const mac = deviceMac || "";
+      if (mac) {
+        const pairBtn = document.createElement("button");
+        pairBtn.className = "btn btn-outline-success btn-sm";
+        pairBtn.textContent = "Koppeln & Verbinden";
+        pairBtn.addEventListener("click", () => run(async () => {
+          await bluetoothDeviceAction("pair", mac);
+          await setAudioOutput(`bluetooth:${mac}`);
+          const modalEl = q("btPairingModal");
+          if (modalEl) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+          }
+        }));
+        actionsHost.append(pairBtn);
+      }
+    }
   }
 
   function currentBtTargetMac() {
