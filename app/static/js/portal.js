@@ -4444,6 +4444,38 @@
     toast(`Player ${action}`, "success");
   }
 
+  async function installPlayerService() {
+    const player_repo_link = String(q("stream-player-repo-dir")?.value || "").trim();
+    const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
+    const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
+    if (!player_repo_link) {
+      throw new Error("Bitte zuerst Player-Repo Link/Pfad setzen.");
+    }
+    if (!player_service_user) {
+      throw new Error("Bitte Service-User setzen.");
+    }
+    const btn = q("btn-player-service-install");
+    const original = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Installiere...';
+    }
+    try {
+      await fetchJson("/api/stream/player/service/install", {
+        method: "POST",
+        body: { player_repo_link, player_service_name, player_service_user },
+        timeoutMs: 20000,
+      });
+      await refreshPlayerStatus();
+      toast("Player Service installiert", "success");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    }
+  }
+
   async function refreshFingerprint() {
     await fetchJson("/api/status/fingerprint/refresh", { method: "POST" });
     toast("Fingerprint refreshed", "success");
@@ -5773,6 +5805,7 @@
     q("btn-player-start").addEventListener("click", () => run(() => playerAction("start")));
     q("btn-player-stop").addEventListener("click", () => run(() => playerAction("stop")));
     q("btn-player-restart").addEventListener("click", () => run(() => playerAction("restart")));
+    q("btn-player-service-install").addEventListener("click", () => run(installPlayerService));
     q("btn-spotify-connect-start").addEventListener("click", () => run(() => spotifyConnectAction("start")));
     q("btn-spotify-connect-stop").addEventListener("click", () => run(() => spotifyConnectAction("stop")));
     q("btn-spotify-connect-restart").addEventListener("click", () => run(() => spotifyConnectAction("restart")));

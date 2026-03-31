@@ -17,7 +17,8 @@ from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
 from app.core.httpclient import http_get_json, http_post_json
 from app.core.jsonio import write_json
-from app.core.netcontrol import NetControlError, player_service_action, player_update, player_update_status
+from app.core.netcontrol import NetControlError, player_service_action, player_service_install, player_update, player_update_status
+from app.core.paths import PORTAL_DIR
 from app.core.netcontrol import spotify_connect_service_action
 from app.core.paths import CONFIG_PATH, DATA_DIR
 from app.core.storage_state import get_storage_state
@@ -723,6 +724,28 @@ def api_stream_player_action(action: str):
     except NetControlError as exc:
         status = 500 if exc.code in ('execution_failed', 'script_missing') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+
+@bp_stream.post('/api/stream/player/service/install')
+def api_stream_player_service_install():
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    repo_link = str(data.get('player_repo_link') or data.get('player_repo_dir') or cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '').strip()
+    service_name = str(data.get('player_service_name') or cfg.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
+    service_user = str(data.get('player_service_user') or cfg.get('player_service_user') or '').strip()
+
+    if not repo_link:
+        return jsonify(ok=False, error='player_repo_missing', detail='Bitte Player-Repo-Link oder lokalen Pfad setzen.'), 400
+    if not service_user:
+        return jsonify(ok=False, error='player_service_user_missing', detail='Bitte Service-User setzen.'), 400
+
+    try:
+        payload = player_service_install(repo_link, service_user=service_user, service_name=service_name, portal_dir=str(PORTAL_DIR))
+    except NetControlError as exc:
+        status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_service_install_failed') else 400
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+    return jsonify(ok=True, player=payload)
 
 
 @bp_stream.get('/api/stream/player/repo')
