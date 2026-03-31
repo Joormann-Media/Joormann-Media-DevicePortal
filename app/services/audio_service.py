@@ -42,24 +42,26 @@ def collect_status(
     service_user: str = "",
     service_scope: str = "",
     service_candidates: str = "",
+    include_bluetooth: bool = True,
 ) -> dict[str, Any]:
     errors: list[dict[str, str]] = []
 
     bluetooth: dict[str, Any] = {"ok": False}
-    try:
-        bt_status = bluetooth_service.status()
-        bt_devices = bluetooth_service.list_devices()
-        devices = bt_devices.get("devices") if isinstance(bt_devices.get("devices"), list) else []
-        connected = [d for d in devices if isinstance(d, dict) and d.get("connected")]
-        bluetooth = {
-            "ok": True,
-            "status": bt_status,
-            "devices": devices,
-            "connected_count": len(connected),
-        }
-    except NetControlError as exc:
-        errors.append({"scope": "bluetooth", "message": exc.message})
-        bluetooth = {"ok": False, "error": exc.message, "detail": exc.detail}
+    if include_bluetooth:
+        try:
+            bt_status = bluetooth_service.status()
+            bt_devices = bluetooth_service.list_devices()
+            devices = bt_devices.get("devices") if isinstance(bt_devices.get("devices"), list) else []
+            connected = [d for d in devices if isinstance(d, dict) and d.get("connected")]
+            bluetooth = {
+                "ok": True,
+                "status": bt_status,
+                "devices": devices,
+                "connected_count": len(connected),
+            }
+        except NetControlError as exc:
+            errors.append({"scope": "bluetooth", "message": exc.message})
+            bluetooth = {"ok": False, "error": exc.message, "detail": exc.detail}
 
     outputs: dict[str, Any] = {"ok": False}
     try:

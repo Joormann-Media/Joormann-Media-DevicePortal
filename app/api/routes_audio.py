@@ -41,7 +41,9 @@ def _error(code: str, message: str, status: int = 400, detail: str = ""):
 @bp_audio.get("/api/audio/status")
 def api_audio_status():
     cfg = _service_env_from_cfg()
-    data = collect_status(**cfg)
+    portal_cfg = ensure_config()
+    include_bluetooth = not bool(portal_cfg.get("audio_node_public"))
+    data = collect_status(**cfg, include_bluetooth=include_bluetooth)
     return _ok(data)
 
 
