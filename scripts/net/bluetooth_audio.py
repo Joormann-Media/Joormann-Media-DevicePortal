@@ -110,6 +110,8 @@ def _parse_devices(raw: str) -> list[tuple[str, str]]:
 def _list_paired_set() -> set[str]:
     try:
         paired = _run(["paired-devices"], timeout=20)
+        if paired.rc != 0 or not paired.out.strip():
+            paired = _run(["devices", "Paired"], timeout=20)
         if paired.rc != 0:
             return set()
         return {mac for mac, _ in _parse_devices(paired.out)}
@@ -120,6 +122,8 @@ def _list_paired_set() -> set[str]:
 def _list_paired_devices() -> list[tuple[str, str]]:
     try:
         paired = _run(["paired-devices"], timeout=20)
+        if paired.rc != 0 or not paired.out.strip():
+            paired = _run(["devices", "Paired"], timeout=20)
         if paired.rc != 0:
             return []
         return _parse_devices(paired.out)
