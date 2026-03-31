@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from app.core.config import ensure_config
 from app.core.jsonio import write_json
-from app.core.netcontrol import NetControlError, audio_output_set
+from app.core.netcontrol import NetControlError, audio_output_set, audio_outputs_status, audio_volume_set
 from app.core.paths import CONFIG_PATH
 from app.core.timeutil import utc_now
 from app.services.audio_service import collect_status
@@ -43,6 +43,42 @@ def api_audio_status():
     cfg = _service_env_from_cfg()
     data = collect_status(**cfg)
     return _ok(data)
+
+
+def _outputs_to_sinks() -> dict:
+    outputs = audio_outputs_status()
+    sinks: list[dict] = []
+    default_sink = None
+    current_output = str(outputs.get("current_output") or "").strip()
+    available = outputs.get("available_outputs") if isinstance(outputs.get("available_outputs"), list) else []
+    for item in available:
+        if not isinstance(item, dict):
+            continue
+        sink_name = str(item.get("sink_name") or "").strip()
+        if not sink_name:
+            continue
+        sink = {
+            "name": sink_name,
+            "description": str(item.get("label") or item.get("description") or sink_name),
+            "output_id": str(item.get("id") or ""),
+            "is_default": str(item.get("id") or "") == current_output,
+            "volume_percent": None,
+        }
+        if sink["is_default"]:
+            default_sink = sink_name
+        sinks.append(sink)
+    return {"ok": True, "default_sink": default_sink, "sinks": sinks, "outputs": outputs}
+
+
+def _resolve_output_id_for_sink(sink_name: str) -> str:
+    outputs = audio_outputs_status()
+    available = outputs.get("available_outputs") if isinstance(outputs.get("available_outputs"), list) else []
+    for item in available:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("sink_name") or "").strip() == sink_name:
+            return str(item.get("id") or "")
+    return ""
 
 
 @bp_audio.get("/api/audio/bluetooth/scan")
@@ -141,6 +177,48 @@ def api_audio_output_set():
     return _ok(payload)
 
 
+@bp_audio.get("/api/audio/sinks")
+def api_audio_sinks():
+    try:
+        payload = _outputs_to_sinks()
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_audio.post("/api/audio/sink/select")
+def api_audio_sink_select():
+    data = request.get_json(force=True, silent=True) or {}
+    sink_name = str(data.get("sink_name") or data.get("name") or "").strip()
+    if not sink_name:
+        return _error("invalid_payload", "Field 'sink_name' is required", status=400)
+    try:
+        output_id = _resolve_output_id_for_sink(sink_name) or sink_name
+        payload = audio_output_set(output_id)
+        payload["selected_sink"] = sink_name
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_audio.post("/api/audio/default")
+def api_audio_default_set():
+    data = request.get_json(force=True, silent=True) or {}
+    sink_name = str(data.get("sink_name") or data.get("name") or "").strip()
+    if not sink_name:
+        return _error("invalid_payload", "Field 'name' is required", status=400)
+    try:
+        output_id = _resolve_output_id_for_sink(sink_name) or sink_name
+        payload = audio_output_set(output_id)
+        payload["selected_sink"] = sink_name
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
 @bp_audio.get("/api/audio/raspotify/status")
 def api_audio_raspotify_status():
     try:
@@ -195,10 +273,26 @@ def api_audio_radio_play():
     return _ok(result)
 
 
+@bp_audio.post("/api/audio/radio/start")
+def api_audio_radio_start():
+    data = request.get_json(force=True, silent=True) or {}
+    stream_url = str(data.get("stream_url") or data.get("url") or data.get("streamUrl") or "").strip()
+    result = radio_service.play(stream_url)
+    if not result.get("ok"):
+        return _error("radio_failed", result.get("message", "Radio-Start fehlgeschlagen"), status=400)
+    return _ok(result)
+
+
 @bp_audio.post("/api/audio/radio/stop")
 def api_audio_radio_stop():
     result = radio_service.stop()
     return _ok(result)
+
+
+@bp_audio.post("/api/audio/stop-all")
+def api_audio_stop_all():
+    radio_result = radio_service.stop()
+    return _ok({"radio": radio_result, "message": "all sources stopped"})
 
 
 @bp_audio.post("/api/audio/tts/test")
@@ -209,3 +303,42 @@ def api_audio_tts_test():
     if not result.get("ok"):
         return _error("tts_failed", result.get("message", "TTS fehlgeschlagen"), status=400)
     return _ok(result)
+
+
+@bp_audio.post("/api/audio/tts/speak")
+def api_audio_tts_speak():
+    data = request.get_json(force=True, silent=True) or {}
+    text = str(data.get("text") or data.get("message") or "").strip()
+    if not text:
+        return _error("invalid_payload", "Field 'text' is required", status=400)
+    result = tts_service.speak(text=text)
+    if not result.get("ok"):
+        return _error("tts_failed", result.get("message", "TTS fehlgeschlagen"), status=400)
+    return _ok(result)
+
+
+@bp_audio.post("/api/audio/volume")
+def api_audio_volume():
+    data = request.get_json(force=True, silent=True) or {}
+    raw_volume = data.get("volume_percent", data.get("volume", data.get("percent", 100)))
+    try:
+        volume = int(raw_volume)
+    except Exception:
+        return _error("invalid_payload", "Field 'volume' must be numeric", status=400)
+    sink_name = str(data.get("sink_name") or data.get("name") or "").strip()
+    try:
+        payload = audio_volume_set(sink_name or None, volume)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_audio.post("/api/audio/sink/volume")
+def api_audio_sink_volume():
+    return api_audio_volume()
+
+
+@bp_audio.post("/api/audio/default/volume")
+def api_audio_default_volume():
+    return api_audio_volume()

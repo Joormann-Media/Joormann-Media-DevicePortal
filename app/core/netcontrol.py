@@ -576,6 +576,21 @@ def audio_output_set(output_id: str) -> dict:
     return payload
 
 
+def audio_volume_set(sink_name: str | None, volume_percent: int) -> dict:
+    target = (sink_name or "").strip()
+    volume = max(0, min(150, int(volume_percent)))
+    args = ["set", str(volume)]
+    if target:
+        args.insert(1, target)
+    rc, out, err = _run_script("audio_volume_ctl.py", args, timeout=15, use_sudo=True)
+    if rc != 0:
+        raise NetControlError(code="audio_volume_failed", message="Failed to set audio volume", detail=err or out)
+    payload = _parse_json_output(out, code="audio_volume_invalid_json", message="Audio volume returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(code="audio_volume_failed", message="Failed to set audio volume", detail=str(payload.get("error") or err or out))
+    return payload
+
+
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     iface = (ifname or "eth0").strip()
     if iface not in _allowed_lan_interfaces():

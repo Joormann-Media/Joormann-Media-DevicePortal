@@ -10,6 +10,33 @@ from app.services.radio_service import radio_service
 from app.services.tts_service import tts_service
 
 
+def _build_sinks_payload(outputs: dict[str, Any]) -> dict[str, Any]:
+    sinks: list[dict[str, Any]] = []
+    default_sink = None
+    current_output = str(outputs.get("current_output") or "").strip()
+    available = outputs.get("available_outputs") if isinstance(outputs.get("available_outputs"), list) else []
+
+    for item in available:
+        if not isinstance(item, dict):
+            continue
+        sink_name = str(item.get("sink_name") or "").strip()
+        if not sink_name:
+            continue
+        sink = {
+            "name": sink_name,
+            "description": str(item.get("label") or item.get("description") or sink_name),
+            "output_id": str(item.get("id") or ""),
+            "type": str(item.get("type") or ""),
+            "is_default": str(item.get("id") or "") == current_output,
+            "volume_percent": None,
+        }
+        if sink["is_default"]:
+            default_sink = sink_name
+        sinks.append(sink)
+
+    return {"default_sink": default_sink, "sinks": sinks}
+
+
 def collect_status(
     service_name: str = "",
     service_user: str = "",
@@ -58,6 +85,8 @@ def collect_status(
     radio = radio_service.status()
     tts = tts_service.status()
 
+    sinks_payload = _build_sinks_payload(outputs if isinstance(outputs, dict) else {})
+
     active_source = "idle"
     if tts.get("running"):
         active_source = "tts"
@@ -70,6 +99,8 @@ def collect_status(
         "raspotify": raspotify,
         "radio": radio,
         "tts": tts,
+        "sources": {"radio": radio, "tts": tts},
+        "sinks": sinks_payload,
         "active_source": active_source,
         "updated_at": utc_now(),
         "errors": errors,
