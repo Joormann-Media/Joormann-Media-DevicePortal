@@ -3927,7 +3927,7 @@
 
   async function spotifyConnectAction(action) {
     const safeAction = String(action || "").trim().toLowerCase();
-    if (!["start", "stop", "restart", "refresh", "enable", "disable"].includes(safeAction)) {
+    if (!["start", "stop", "restart", "refresh", "enable", "disable", "install"].includes(safeAction)) {
       throw new Error("Ungültige Spotify-Action.");
     }
     const payload = await fetchJson(`/api/spotify-connect/${safeAction}`, { method: "POST" });
@@ -5853,6 +5853,7 @@
     q("btn-spotify-connect-stop").addEventListener("click", () => run(() => spotifyConnectAction("stop")));
     q("btn-spotify-connect-restart").addEventListener("click", () => run(() => spotifyConnectAction("restart")));
     q("btn-spotify-connect-refresh").addEventListener("click", () => run(refreshSpotifyConnectStatus));
+    q("btn-spotify-connect-install").addEventListener("click", () => run(() => spotifyConnectAction("install")));
     q("btn-spotify-connect-enable").addEventListener("click", () => run(() => spotifyConnectAction("enable")));
     q("btn-spotify-connect-disable").addEventListener("click", () => run(() => spotifyConnectAction("disable")));
     q("btn-spotify-connect-config-save").addEventListener("click", () => run(saveSpotifyConnectConfig));

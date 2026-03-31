@@ -1343,3 +1343,40 @@ def spotify_connect_service_action(
         "checkedAt": parsed.get("checked_at", ""),
         "message": parsed.get("message", "Spotify Connect status processed"),
     }
+
+
+def spotify_connect_install(
+    service_name: str = "",
+    service_user: str = "",
+    service_scope: str = "",
+    service_candidates: str = "",
+) -> dict:
+    args = ["install"]
+    service = (service_name or "").strip()
+    if service:
+        args.append(service)
+
+    env = os.environ.copy()
+    if service_user:
+        env["SPOTIFY_CONNECT_SERVICE_USER"] = service_user
+    if service_scope:
+        env["SPOTIFY_CONNECT_SERVICE_SCOPE"] = service_scope
+    if service_candidates:
+        env["SPOTIFY_CONNECT_SERVICE_CANDIDATES"] = service_candidates
+
+    rc, out, err = _run_script("spotify_connect_install.sh", args, timeout=300, use_sudo=True, env=env)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "spotify_connect_install_failed"),
+            message=parsed.get("message", "Spotify Connect install failed"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "action": parsed.get("action", "install"),
+        "serviceName": parsed.get("service_name", service),
+        "serviceScope": parsed.get("service_scope", ""),
+        "message": parsed.get("message", "Spotify Connect service installed"),
+    }

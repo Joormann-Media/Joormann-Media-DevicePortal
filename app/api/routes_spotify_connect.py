@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from app.core.config import ensure_config
 from app.core.jsonio import write_json
-from app.core.netcontrol import NetControlError, spotify_connect_service_action
+from app.core.netcontrol import NetControlError, spotify_connect_install, spotify_connect_service_action
 from app.core.paths import CONFIG_PATH
 from app.core.timeutil import utc_now
 
@@ -104,6 +104,17 @@ def api_spotify_connect_disable():
     try:
         cfg = _service_env_from_cfg()
         data = spotify_connect_service_action("disable", **cfg)
+        return _ok(data)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail or "")
+
+
+@bp_spotify_connect.post("/api/spotify-connect/install")
+def api_spotify_connect_install():
+    try:
+        cfg = _service_env_from_cfg()
+        data = spotify_connect_install(**cfg)
         return _ok(data)
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed", "script_missing") else 400
