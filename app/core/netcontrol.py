@@ -94,13 +94,13 @@ def _resolve_script(script_name: str) -> str:
     )
 
 
-def _run_script(script_name: str, args: list[str], timeout: int, use_sudo: bool) -> tuple[int, str, str]:
+def _run_script(script_name: str, args: list[str], timeout: int, use_sudo: bool, env: dict | None = None) -> tuple[int, str, str]:
     script_path = _resolve_script(script_name)
     cmd: list[str] = [script_path] + args
     if use_sudo:
         cmd = ["sudo", "-n"] + cmd
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
     except FileNotFoundError as exc:
         raise NetControlError(code="command_not_found", message="Required runtime command missing", detail=str(exc))
     except subprocess.TimeoutExpired:
@@ -1246,7 +1246,13 @@ def player_service_action(action: str, service_name: str = "joormann-media-devic
     }
 
 
-def spotify_connect_service_action(action: str, service_name: str = "") -> dict:
+def spotify_connect_service_action(
+    action: str,
+    service_name: str = "",
+    service_user: str = "",
+    service_scope: str = "",
+    service_candidates: str = "",
+) -> dict:
     requested = (action or "").strip().lower()
     if requested not in {"start", "stop", "restart", "status", "refresh"}:
         raise NetControlError(code="invalid_action", message="Action must be start|stop|restart|status|refresh")
@@ -1257,7 +1263,15 @@ def spotify_connect_service_action(action: str, service_name: str = "") -> dict:
     if service:
         args.append(service)
 
-    rc, out, err = _run_script("spotify_connect_service.sh", args, timeout=30, use_sudo=True)
+    env = os.environ.copy()
+    if service_user:
+        env["SPOTIFY_CONNECT_SERVICE_USER"] = service_user
+    if service_scope:
+        env["SPOTIFY_CONNECT_SERVICE_SCOPE"] = service_scope
+    if service_candidates:
+        env["SPOTIFY_CONNECT_SERVICE_CANDIDATES"] = service_candidates
+
+    rc, out, err = _run_script("spotify_connect_service.sh", args, timeout=30, use_sudo=True, env=env)
     parsed = _parse_kv_output(out)
     detail = parsed.get("details") or err or out
     if rc != 0:

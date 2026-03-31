@@ -75,7 +75,14 @@ def _build_runtime_viewmodel() -> dict:
     except NetControlError as exc:
         legacy["storage"] = {"ok": False, "error": exc.code, "detail": exc.detail or exc.message}
     try:
-        legacy["spotify_connect"] = spotify_connect_service_action("status")
+        cfg = ensure_config()
+        legacy["spotify_connect"] = spotify_connect_service_action(
+            "status",
+            str(cfg.get("spotify_connect_service_name") or "").strip(),
+            service_user=str(cfg.get("spotify_connect_service_user") or "").strip(),
+            service_scope=str(cfg.get("spotify_connect_service_scope") or "").strip(),
+            service_candidates=str(cfg.get("spotify_connect_service_candidates") or "").strip(),
+        )
     except NetControlError as exc:
         legacy["spotify_connect"] = {"ok": False, "error": exc.code, "detail": exc.detail or exc.message}
 

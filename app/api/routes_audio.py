@@ -16,9 +16,14 @@ from app.services.raspotify_service import status as raspotify_status, start as 
 bp_audio = Blueprint("audio", __name__)
 
 
-def _service_name_from_cfg() -> str:
+def _service_env_from_cfg() -> dict:
     cfg = ensure_config()
-    return str(cfg.get("spotify_connect_service_name") or "").strip()
+    return {
+        "service_name": str(cfg.get("spotify_connect_service_name") or "").strip(),
+        "service_user": str(cfg.get("spotify_connect_service_user") or "").strip(),
+        "service_scope": str(cfg.get("spotify_connect_service_scope") or "").strip(),
+        "service_candidates": str(cfg.get("spotify_connect_service_candidates") or "").strip(),
+    }
 
 
 def _ok(data: dict, status: int = 200):
@@ -35,7 +40,8 @@ def _error(code: str, message: str, status: int = 400, detail: str = ""):
 
 @bp_audio.get("/api/audio/status")
 def api_audio_status():
-    data = collect_status(_service_name_from_cfg())
+    cfg = _service_env_from_cfg()
+    data = collect_status(**cfg)
     return _ok(data)
 
 
@@ -138,7 +144,8 @@ def api_audio_output_set():
 @bp_audio.get("/api/audio/raspotify/status")
 def api_audio_raspotify_status():
     try:
-        data = raspotify_status(_service_name_from_cfg())
+        cfg = _service_env_from_cfg()
+        data = raspotify_status(**cfg)
         return _ok(data)
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed", "script_missing") else 400
@@ -148,7 +155,8 @@ def api_audio_raspotify_status():
 @bp_audio.post("/api/audio/raspotify/start")
 def api_audio_raspotify_start():
     try:
-        data = raspotify_start(_service_name_from_cfg())
+        cfg = _service_env_from_cfg()
+        data = raspotify_start(**cfg)
         return _ok(data)
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed", "script_missing") else 400
@@ -158,7 +166,8 @@ def api_audio_raspotify_start():
 @bp_audio.post("/api/audio/raspotify/stop")
 def api_audio_raspotify_stop():
     try:
-        data = raspotify_stop(_service_name_from_cfg())
+        cfg = _service_env_from_cfg()
+        data = raspotify_stop(**cfg)
         return _ok(data)
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed", "script_missing") else 400
@@ -168,7 +177,8 @@ def api_audio_raspotify_stop():
 @bp_audio.post("/api/audio/raspotify/restart")
 def api_audio_raspotify_restart():
     try:
-        data = raspotify_restart(_service_name_from_cfg())
+        cfg = _service_env_from_cfg()
+        data = raspotify_restart(**cfg)
         return _ok(data)
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed", "script_missing") else 400

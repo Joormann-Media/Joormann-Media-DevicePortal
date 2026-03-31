@@ -10,7 +10,12 @@ from app.services.radio_service import radio_service
 from app.services.tts_service import tts_service
 
 
-def collect_status(service_name: str = "") -> dict[str, Any]:
+def collect_status(
+    service_name: str = "",
+    service_user: str = "",
+    service_scope: str = "",
+    service_candidates: str = "",
+) -> dict[str, Any]:
     errors: list[dict[str, str]] = []
 
     bluetooth: dict[str, Any] = {"ok": False}
@@ -39,7 +44,12 @@ def collect_status(service_name: str = "") -> dict[str, Any]:
 
     raspotify: dict[str, Any] = {"ok": False}
     try:
-        rsp = raspotify_status(service_name)
+        rsp = raspotify_status(
+            service_name=service_name,
+            service_user=service_user,
+            service_scope=service_scope,
+            service_candidates=service_candidates,
+        )
         raspotify = {"ok": True, **rsp}
     except NetControlError as exc:
         errors.append({"scope": "raspotify", "message": exc.message})

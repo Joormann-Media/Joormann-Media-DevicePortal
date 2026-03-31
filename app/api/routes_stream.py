@@ -412,7 +412,13 @@ def api_stream_overview():
 
     spotify_connect = {}
     try:
-        spotify_connect = spotify_connect_service_action('status', str(cfg.get('spotify_connect_service_name') or '').strip())
+        spotify_connect = spotify_connect_service_action(
+            'status',
+            str(cfg.get('spotify_connect_service_name') or '').strip(),
+            service_user=str(cfg.get('spotify_connect_service_user') or '').strip(),
+            service_scope=str(cfg.get('spotify_connect_service_scope') or '').strip(),
+            service_candidates=str(cfg.get('spotify_connect_service_candidates') or '').strip(),
+        )
     except Exception as exc:
         spotify_connect = {'ok': False, 'error': str(exc)}
 
