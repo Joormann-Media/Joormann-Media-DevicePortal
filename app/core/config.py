@@ -75,6 +75,7 @@ DEFAULT_CONFIG: dict = {
     'player_repo_dir': '',
     'player_service_name': 'joormann-media-deviceplayer.service',
     'player_service_user': '',
+    'spotify_connect_service_name': '',
     'player_auto_update_with_portal': True,
     'sentinel_settings': {
         'webhook_url': '',

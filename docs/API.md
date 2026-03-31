@@ -99,12 +99,18 @@ Netzwerk-/WLAN-Endpunkte liefern ein einheitliches Grundschema:
 | network | POST | `/api/system/tailscale/disable-dns` | `routes_network.api_system_tailscale_disable_dns` |
 | network | POST | `/api/system/portal/update` | `routes_network.api_system_portal_update` |
 | network | GET | `/api/system/portal/update/status` | `routes_network.api_system_portal_update_status` |
+| spotify_connect | GET | `/api/spotify-connect/status` | `routes_spotify_connect.api_spotify_connect_status` |
+| spotify_connect | POST | `/api/spotify-connect/start` | `routes_spotify_connect.api_spotify_connect_start` |
+| spotify_connect | POST | `/api/spotify-connect/stop` | `routes_spotify_connect.api_spotify_connect_stop` |
+| spotify_connect | POST | `/api/spotify-connect/restart` | `routes_spotify_connect.api_spotify_connect_restart` |
+| spotify_connect | POST | `/api/spotify-connect/refresh` | `routes_spotify_connect.api_spotify_connect_refresh` |
 
 Quelle der Route-Definitionen:
 - [app/api/routes_status.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/api/routes_status.py)
 - [app/api/routes_panel.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/api/routes_panel.py)
 - [app/api/routes_plan.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/api/routes_plan.py)
 - [app/api/routes_network.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/api/routes_network.py)
+- [app/api/routes_spotify_connect.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/api/routes_spotify_connect.py)
 - [app/web/routes_ui.py](/home/djanebmb/projects/Joormann-Media-Deviceportal/app/web/routes_ui.py)
 
 ---

@@ -11,6 +11,7 @@ from app.core.device import ensure_device
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_fingerprint
 from app.core.gitinfo import get_repo_update_info, get_update_info
 from app.core.netcontrol import NetControlError, get_network_info
+from app.core.netcontrol import spotify_connect_service_action
 from app.core.storage_state import get_storage_state
 from app.core.state import get_state, update_state
 from app.core.systeminfo import format_uptime_human, parse_cpu_temp_c, parse_load_stats, parse_mem_stats_kb, parse_uptime_seconds
@@ -73,6 +74,10 @@ def _build_runtime_viewmodel() -> dict:
         legacy["storage"] = get_storage_state()
     except NetControlError as exc:
         legacy["storage"] = {"ok": False, "error": exc.code, "detail": exc.detail or exc.message}
+    try:
+        legacy["spotify_connect"] = spotify_connect_service_action("status")
+    except NetControlError as exc:
+        legacy["spotify_connect"] = {"ok": False, "error": exc.code, "detail": exc.detail or exc.message}
 
     # DevicePortal classic UI expects these keys, even when empty.
     legacy.setdefault("software_requirements", {})

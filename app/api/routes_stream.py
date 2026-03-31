@@ -18,6 +18,7 @@ from app.core.device import ensure_device
 from app.core.httpclient import http_get_json, http_post_json
 from app.core.jsonio import write_json
 from app.core.netcontrol import NetControlError, player_service_action, player_update, player_update_status
+from app.core.netcontrol import spotify_connect_service_action
 from app.core.paths import CONFIG_PATH, DATA_DIR
 from app.core.storage_state import get_storage_state
 from app.core.timeutil import utc_now
@@ -409,6 +410,12 @@ def api_stream_overview():
     except Exception as exc:
         player = {'ok': False, 'error': str(exc)}
 
+    spotify_connect = {}
+    try:
+        spotify_connect = spotify_connect_service_action('status', str(cfg.get('spotify_connect_service_name') or '').strip())
+    except Exception as exc:
+        spotify_connect = {'ok': False, 'error': str(exc)}
+
     return jsonify(
         ok=True,
         status=status,
@@ -418,6 +425,7 @@ def api_stream_overview():
         storage=storage_info,
         storage_error=storage_error,
         player=player,
+        spotify_connect=spotify_connect,
     )
 
 

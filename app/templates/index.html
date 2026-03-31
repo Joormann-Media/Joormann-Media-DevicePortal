@@ -887,14 +887,40 @@
               </div>
             </div>
             <div class="col-12 col-lg-5">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary mb-2">Player</div>
-                <div id="stream-player-status" class="small mb-2">Status: -</div>
-                <div class="d-flex flex-wrap gap-2">
-                  <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
-                  <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                  <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
-                  <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
+              <div class="d-flex flex-column gap-3 h-100">
+                <div class="border rounded p-3">
+                  <div class="small text-uppercase text-secondary mb-2">Player</div>
+                  <div id="stream-player-status" class="small mb-2">Status: -</div>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
+                    <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                    <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                    <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
+                  </div>
+                </div>
+                <div class="border rounded p-3">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                    <div class="small text-uppercase text-secondary">Spotify Connect</div>
+                    <span id="spotify-connect-ready-badge" class="badge text-bg-secondary">unknown</span>
+                  </div>
+                  <div id="spotify-connect-status" class="small mb-2">Status: -</div>
+                  <dl class="portal-kv mb-2">
+                    <dt>Dienst</dt><dd id="spotify-connect-service-name">-</dd>
+                    <dt>Installiert</dt><dd id="spotify-connect-installed">-</dd>
+                    <dt>Aktiviert</dt><dd id="spotify-connect-enabled">-</dd>
+                    <dt>Läuft</dt><dd id="spotify-connect-running">-</dd>
+                    <dt>Gerätename</dt><dd id="spotify-connect-device-name">-</dd>
+                    <dt>Backend</dt><dd id="spotify-connect-backend">-</dd>
+                    <dt>Output</dt><dd id="spotify-connect-output">-</dd>
+                    <dt>Letzter Check</dt><dd id="spotify-connect-checked-at">-</dd>
+                    <dt>Last Error</dt><dd id="spotify-connect-last-error">-</dd>
+                  </dl>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button id="btn-spotify-connect-start" class="btn btn-outline-success btn-sm">Start</button>
+                    <button id="btn-spotify-connect-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                    <button id="btn-spotify-connect-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                    <button id="btn-spotify-connect-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1130,6 +1156,59 @@
                   <button id="btn-audio-output-set" class="btn btn-outline-primary btn-sm">Output setzen</button>
                 </div>
                 <div class="small text-secondary">Umschaltung zwischen local_hdmi, local_speaker und verbundenen Bluetooth-Outputs.</div>
+              </div>
+
+              <div class="border rounded p-3 mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="small text-uppercase text-secondary mb-0">Audio Status</div>
+                  <button id="btn-audio-status-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                </div>
+                <dl class="portal-kv mb-2">
+                  <dt>Aktive Quelle</dt><dd id="audio-status-source">-</dd>
+                  <dt>Bluetooth</dt><dd id="audio-status-bluetooth">-</dd>
+                  <dt>Output</dt><dd id="audio-status-output">-</dd>
+                  <dt>Letztes Update</dt><dd id="audio-status-updated">-</dd>
+                </dl>
+                <div id="audio-status-errors" class="small text-secondary">-</div>
+              </div>
+
+              <div class="border rounded p-3 mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="small text-uppercase text-secondary mb-0">Raspotify</div>
+                  <span id="audio-raspotify-status-badge" class="badge text-bg-secondary">unknown</span>
+                </div>
+                <div id="audio-raspotify-status" class="small mb-2">Status: -</div>
+                <dl class="portal-kv mb-2">
+                  <dt>Dienst</dt><dd id="audio-raspotify-service">-</dd>
+                  <dt>Device</dt><dd id="audio-raspotify-device-name">-</dd>
+                  <dt>Backend</dt><dd id="audio-raspotify-backend">-</dd>
+                  <dt>Output</dt><dd id="audio-raspotify-output">-</dd>
+                  <dt>Last Error</dt><dd id="audio-raspotify-last-error">-</dd>
+                </dl>
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="btn-audio-raspotify-start" class="btn btn-outline-success btn-sm">Start</button>
+                  <button id="btn-audio-raspotify-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                  <button id="btn-audio-raspotify-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                </div>
+              </div>
+
+              <div class="border rounded p-3 mt-3">
+                <div class="small text-uppercase text-secondary mb-2">Webradio (mpv)</div>
+                <div id="audio-radio-status" class="small mb-2">Status: -</div>
+                <input id="audio-radio-url" type="url" class="form-control form-control-sm mb-2" placeholder="https://example.com/stream.mp3">
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="btn-audio-radio-play" class="btn btn-outline-primary btn-sm">Play</button>
+                  <button id="btn-audio-radio-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                </div>
+              </div>
+
+              <div class="border rounded p-3 mt-3">
+                <div class="small text-uppercase text-secondary mb-2">TTS Test</div>
+                <div id="audio-tts-status" class="small mb-2">Status: -</div>
+                <input id="audio-tts-text" type="text" class="form-control form-control-sm mb-2" placeholder="Text fuer den Test">
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="btn-audio-tts-test" class="btn btn-outline-primary btn-sm">Sprechen</button>
+                </div>
               </div>
             </div>
           </div>

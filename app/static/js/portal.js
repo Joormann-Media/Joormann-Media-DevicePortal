@@ -15,6 +15,7 @@
   let streamAudioVolumeDebounceHandle = null;
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
+  let audioHubPollHandle = null;
   let btDeviceState = {
     devices: [],
     scanDevices: [],
@@ -288,6 +289,7 @@
     const status = legacy.status;
     const network = legacy.network;
     const storage = legacy.storage;
+    const spotifyConnect = legacy.spotify_connect;
     const requirements = legacy.software_requirements;
     const sentinels = legacy.sentinels_status;
 
@@ -299,6 +301,9 @@
     }
     if (storage && typeof storage === "object") {
       renderStorageStatus(storage);
+    }
+    if (spotifyConnect && typeof spotifyConnect === "object") {
+      renderSpotifyConnectStatus(spotifyConnect);
     }
     if (requirements && typeof requirements === "object") {
       renderSoftwareRequirementsSection(requirements);
@@ -3717,6 +3722,7 @@
     const storage = data.storage || {};
     const storageError = String(data.storage_error || "").trim();
     const player = data.player || {};
+    const spotifyConnect = data.spotify_connect || null;
 
     const select = q("stream-select");
     if (select) {
@@ -3780,6 +3786,59 @@
         playerStatusEl.textContent = "Status: -";
       }
     }
+
+    if (spotifyConnect && typeof spotifyConnect === "object") {
+      renderSpotifyConnectStatus(spotifyConnect);
+    }
+  }
+
+  function renderSpotifyConnectStatus(payload) {
+    const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : payload || {};
+    const installed = !!data.serviceInstalled;
+    const enabled = !!data.serviceEnabled;
+    const running = !!data.serviceRunning;
+    const ready = !!data.connectReady;
+    const serviceName = String(data.serviceName || "-");
+    const deviceName = String(data.deviceName || "-");
+    const backend = String(data.backend || "-");
+    const output = String(data.outputDevice || "-");
+    const checkedAt = String(data.checkedAt || "-");
+    const lastError = String(data.lastError || "").trim();
+    const activeState = String(data.serviceActiveState || "-");
+    const subState = String(data.serviceSubState || "-");
+
+    const statusEl = q("spotify-connect-status");
+    if (statusEl) {
+      statusEl.textContent = `Status: ${running ? "läuft" : "inaktiv"} (${activeState}/${subState})`;
+    }
+
+    q("spotify-connect-service-name").textContent = serviceName;
+    q("spotify-connect-installed").textContent = installed ? "ja" : "nein";
+    q("spotify-connect-enabled").textContent = enabled ? "ja" : "nein";
+    q("spotify-connect-running").textContent = running ? "ja" : "nein";
+    q("spotify-connect-device-name").textContent = deviceName || "-";
+    q("spotify-connect-backend").textContent = backend || "-";
+    q("spotify-connect-output").textContent = output || "-";
+    q("spotify-connect-checked-at").textContent = checkedAt || "-";
+    q("spotify-connect-last-error").textContent = lastError || "—";
+
+    const badge = q("spotify-connect-ready-badge");
+    if (badge) {
+      badge.classList.remove("text-bg-success", "text-bg-warning", "text-bg-secondary", "text-bg-danger");
+      if (!installed) {
+        badge.classList.add("text-bg-secondary");
+        badge.textContent = "not installed";
+      } else if (ready) {
+        badge.classList.add("text-bg-success");
+        badge.textContent = "connect ready";
+      } else if (running) {
+        badge.classList.add("text-bg-warning");
+        badge.textContent = "running";
+      } else {
+        badge.classList.add("text-bg-danger");
+        badge.textContent = "not ready";
+      }
+    }
   }
 
   async function refreshStreamOverview() {
@@ -3832,6 +3891,192 @@
         playerStatusEl.textContent = "Status: -";
       }
     }
+  }
+
+  async function refreshSpotifyConnectStatus() {
+    const payload = await fetchJson("/api/spotify-connect/status", { cache: "no-store" });
+    renderSpotifyConnectStatus(payload);
+    return payload;
+  }
+
+  async function spotifyConnectAction(action) {
+    const safeAction = String(action || "").trim().toLowerCase();
+    if (!["start", "stop", "restart", "refresh"].includes(safeAction)) {
+      throw new Error("Ungültige Spotify-Action.");
+    }
+    const payload = await fetchJson(`/api/spotify-connect/${safeAction}`, { method: "POST" });
+    renderSpotifyConnectStatus(payload);
+    toast(`Spotify Connect ${safeAction}`, "success");
+  }
+
+  function renderAudioHubStatus(payload) {
+    const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+    const activeSource = String(data.active_source || "idle");
+    const bluetooth = (data.bluetooth && typeof data.bluetooth === "object") ? data.bluetooth : {};
+    const outputs = (data.outputs && typeof data.outputs === "object") ? data.outputs : {};
+    const raspotify = (data.raspotify && typeof data.raspotify === "object") ? data.raspotify : {};
+    const errors = Array.isArray(data.errors) ? data.errors : [];
+
+    q("audio-status-source").textContent = activeSource || "-";
+    if (bluetooth.ok) {
+      q("audio-status-bluetooth").textContent = `verbunden: ${Number(bluetooth.connected_count || 0)}`;
+    } else {
+      q("audio-status-bluetooth").textContent = "nicht verfuegbar";
+    }
+    if (outputs.ok) {
+      q("audio-status-output").textContent = String(outputs.current_output || "-");
+    } else {
+      q("audio-status-output").textContent = "nicht verfuegbar";
+    }
+    q("audio-status-updated").textContent = String(data.updated_at || "-");
+
+    const errorEl = q("audio-status-errors");
+    if (errorEl) {
+      if (errors.length === 0) {
+        errorEl.textContent = "Keine Fehler erkannt.";
+      } else {
+        errorEl.textContent = errors.map((item) => `${item.scope || "system"}: ${item.message || ""}`.trim()).join(" | ");
+      }
+    }
+
+    const serviceName = String(raspotify.service_name || "-");
+    const deviceName = String(raspotify.device_name || "-");
+    const backend = String(raspotify.backend || "-");
+    const output = String(raspotify.output_device || "-");
+    const lastError = String(raspotify.last_error || "").trim();
+    const running = !!raspotify.service_running;
+    const installed = !!raspotify.service_installed;
+    const activeState = String(raspotify.service_active_state || "-");
+    const subState = String(raspotify.service_sub_state || "-");
+
+    const raspotifyStatusEl = q("audio-raspotify-status");
+    if (raspotifyStatusEl) {
+      raspotifyStatusEl.textContent = `Status: ${running ? "laeuft" : "inaktiv"} (${activeState}/${subState})`;
+    }
+    q("audio-raspotify-service").textContent = serviceName;
+    q("audio-raspotify-device-name").textContent = deviceName || "-";
+    q("audio-raspotify-backend").textContent = backend || "-";
+    q("audio-raspotify-output").textContent = output || "-";
+    q("audio-raspotify-last-error").textContent = lastError || "—";
+
+    const badge = q("audio-raspotify-status-badge");
+    if (badge) {
+      badge.classList.remove("text-bg-success", "text-bg-warning", "text-bg-secondary", "text-bg-danger");
+      if (!installed) {
+        badge.classList.add("text-bg-secondary");
+        badge.textContent = "not installed";
+      } else if (running) {
+        badge.classList.add("text-bg-success");
+        badge.textContent = "running";
+      } else {
+        badge.classList.add("text-bg-warning");
+        badge.textContent = "inactive";
+      }
+    }
+
+    const radio = (data.radio && typeof data.radio === "object") ? data.radio : {};
+    const radioStatus = radio.running ? `laeuft (${radio.stream_url || "-"})` : "inaktiv";
+    q("audio-radio-status").textContent = `Status: ${radioStatus}`;
+
+    const tts = (data.tts && typeof data.tts === "object") ? data.tts : {};
+    const ttsStatus = tts.running ? "laeuft" : "inaktiv";
+    q("audio-tts-status").textContent = `Status: ${ttsStatus}`;
+  }
+
+  async function refreshAudioHubStatus() {
+    const payload = await fetchJson("/api/audio/status", { cache: "no-store" });
+    renderAudioHubStatus(payload);
+    return payload;
+  }
+
+  async function raspotifyAction(action) {
+    const safeAction = String(action || "").trim().toLowerCase();
+    if (!["start", "stop", "restart"].includes(safeAction)) {
+      throw new Error("Ungueltige Raspotify-Action.");
+    }
+    const btn = q(`btn-audio-raspotify-${safeAction}`);
+    const original = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Läuft...';
+    }
+    try {
+      await fetchJson(`/api/audio/raspotify/${safeAction}`, { method: "POST" });
+      await refreshAudioHubStatus();
+      toast(`Raspotify ${safeAction}`, "success");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    }
+  }
+
+  async function audioRadioPlay() {
+    const url = String(q("audio-radio-url")?.value || "").trim();
+    if (!url) throw new Error("Bitte Webradio-URL eingeben.");
+    const btn = q("btn-audio-radio-play");
+    const original = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Start...';
+    }
+    try {
+      await fetchJson("/api/audio/radio/play", { method: "POST", body: { stream_url: url }, timeoutMs: 12000 });
+      await refreshAudioHubStatus();
+      toast("Radio gestartet", "success");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    }
+  }
+
+  async function audioRadioStop() {
+    const btn = q("btn-audio-radio-stop");
+    const original = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Stop...';
+    }
+    try {
+      await fetchJson("/api/audio/radio/stop", { method: "POST", timeoutMs: 8000 });
+      await refreshAudioHubStatus();
+      toast("Radio gestoppt", "success");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    }
+  }
+
+  async function audioTtsTest() {
+    const text = String(q("audio-tts-text")?.value || "").trim();
+    const btn = q("btn-audio-tts-test");
+    const original = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sprechen...';
+    }
+    try {
+      await fetchJson("/api/audio/tts/test", { method: "POST", body: { text }, timeoutMs: 20000 });
+      await refreshAudioHubStatus();
+      toast("TTS gestartet", "success");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    }
+  }
+
+  function startAudioHubPolling() {
+    if (audioHubPollHandle) return;
+    audioHubPollHandle = window.setInterval(() => {
+      refreshAudioHubStatus().catch(() => {});
+    }, 12000);
   }
 
   function renderStreamAudioStatus(payload) {
@@ -5528,6 +5773,10 @@
     q("btn-player-start").addEventListener("click", () => run(() => playerAction("start")));
     q("btn-player-stop").addEventListener("click", () => run(() => playerAction("stop")));
     q("btn-player-restart").addEventListener("click", () => run(() => playerAction("restart")));
+    q("btn-spotify-connect-start").addEventListener("click", () => run(() => spotifyConnectAction("start")));
+    q("btn-spotify-connect-stop").addEventListener("click", () => run(() => spotifyConnectAction("stop")));
+    q("btn-spotify-connect-restart").addEventListener("click", () => run(() => spotifyConnectAction("restart")));
+    q("btn-spotify-connect-refresh").addEventListener("click", () => run(refreshSpotifyConnectStatus));
     q("btn-stream-audio-refresh").addEventListener("click", () => run(async () => {
       await refreshStreamAudioFiles();
       await refreshStreamAudioStatus();
@@ -5598,6 +5847,13 @@
     q("btn-bt-devices-refresh").addEventListener("click", () => run(refreshBluetoothDevices));
     q("btn-audio-output-refresh").addEventListener("click", () => run(refreshAudioOutputs));
     q("btn-audio-output-set").addEventListener("click", () => run(() => setAudioOutput("")));
+    q("btn-audio-status-refresh").addEventListener("click", () => run(refreshAudioHubStatus));
+    q("btn-audio-raspotify-start").addEventListener("click", () => run(() => raspotifyAction("start")));
+    q("btn-audio-raspotify-stop").addEventListener("click", () => run(() => raspotifyAction("stop")));
+    q("btn-audio-raspotify-restart").addEventListener("click", () => run(() => raspotifyAction("restart")));
+    q("btn-audio-radio-play").addEventListener("click", () => run(audioRadioPlay));
+    q("btn-audio-radio-stop").addEventListener("click", () => run(audioRadioStop));
+    q("btn-audio-tts-test").addEventListener("click", () => run(audioTtsTest));
     q("btn-bt-pairing-confirm").addEventListener("click", () => run(confirmBluetoothPairing));
     q("btn-bt-pairing-reject").addEventListener("click", () => run(rejectBluetoothPairing));
     q("btn-bt-pairing-stop").addEventListener("click", () => run(stopBluetoothPairing));
@@ -5895,10 +6151,12 @@
     await run(refreshWifiLogs);
     await run(refreshStorageStatus);
     await run(refreshStreamOverview);
+    await run(refreshSpotifyConnectStatus);
     await run(refreshStreamAudioFiles);
     await run(refreshStreamAudioStatus);
     await run(refreshBluetoothDevices);
     await run(refreshAudioOutputs);
+    await run(refreshAudioHubStatus);
     await run(loadPlayerRepoConfig);
     await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
@@ -5910,6 +6168,7 @@
     flushPersistedUpdateResultFlash();
     startApPolling();
     startStoragePolling();
+    startAudioHubPolling();
     setWpsTarget(null);
   }
 
