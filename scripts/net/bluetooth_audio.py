@@ -117,13 +117,25 @@ def _list_paired_set() -> set[str]:
         return set()
 
 
+def _list_paired_devices() -> list[tuple[str, str]]:
+    try:
+        paired = _run(["paired-devices"], timeout=20)
+        if paired.rc != 0:
+            return []
+        return _parse_devices(paired.out)
+    except Exception:
+        return []
+
+
 def _collect_devices() -> list[dict]:
-    listed = _run(["devices"], timeout=10)
+    listed = _run(["devices"], timeout=12)
     if listed.rc != 0:
         raise RuntimeError((listed.err or listed.out or "bluetoothctl devices failed").strip())
     paired_set = _list_paired_set()
     rows: list[dict] = []
+    seen: set[str] = set()
     for mac, listed_name in _parse_devices(listed.out):
+        seen.add(mac)
         info = _run(["info", mac], timeout=10)
         info_text = info.out if info.rc == 0 else ""
         alias = _extract_alias(info_text) or listed_name or mac
@@ -132,6 +144,23 @@ def _collect_devices() -> list[dict]:
                 "id": mac,
                 "name": alias,
                 "paired": mac in paired_set or _bool_from_info(info_text, "Paired"),
+                "trusted": _bool_from_info(info_text, "Trusted"),
+                "connected": _bool_from_info(info_text, "Connected"),
+                "audio_capable": _audio_capable(info_text),
+            }
+        )
+    # Ensure paired devices are listed even when "devices" is empty.
+    for mac, listed_name in _list_paired_devices():
+        if mac in seen:
+            continue
+        info = _run(["info", mac], timeout=10)
+        info_text = info.out if info.rc == 0 else ""
+        alias = _extract_alias(info_text) or listed_name or mac
+        rows.append(
+            {
+                "id": mac,
+                "name": alias,
+                "paired": True,
                 "trusted": _bool_from_info(info_text, "Trusted"),
                 "connected": _bool_from_info(info_text, "Connected"),
                 "audio_capable": _audio_capable(info_text),
