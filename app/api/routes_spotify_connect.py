@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shlex
+
 from flask import Blueprint, jsonify, request
 
 from app.core.config import ensure_config
@@ -36,12 +38,35 @@ def _update_raspotify_conf(device_name: str) -> None:
             key, value = line.split("=", 1)
             existing[key.strip()] = value.strip().strip('"').strip("'")
     existing["DEVICE_NAME"] = device_name
-    # Ensure OPTIONS contains --name override while keeping other options.
-    opts = existing.get("OPTIONS", "")
-    if "--name" in opts:
-        opts = " ".join([part for part in opts.split() if part != "--name" and not part.startswith("--name=")])
-    opts = f'{opts} --name "{device_name}"'.strip()
-    existing["OPTIONS"] = opts
+    backend = existing.get("BACKEND", "").strip()
+    device = existing.get("DEVICE", "").strip()
+
+    opts_raw = existing.get("OPTIONS", "").strip()
+    try:
+        tokens = shlex.split(opts_raw)
+    except ValueError:
+        tokens = opts_raw.split()
+
+    filtered: list[str] = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token in ("--name", "--backend", "--device"):
+            i += 2
+            continue
+        if token.startswith("--name=") or token.startswith("--backend=") or token.startswith("--device="):
+            i += 1
+            continue
+        filtered.append(token)
+        i += 1
+
+    new_tokens: list[str] = ["--name", device_name]
+    if backend:
+        new_tokens += ["--backend", backend]
+    if device:
+        new_tokens += ["--device", device]
+    new_tokens += filtered
+    existing["OPTIONS"] = " ".join(shlex.quote(t) for t in new_tokens if t)
     lines = [f'{k}="{v}"' for k, v in existing.items()]
     conf_path.write_text("\n".join(lines) + "\n")
 
