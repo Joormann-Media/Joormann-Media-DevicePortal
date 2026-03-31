@@ -64,7 +64,7 @@ def _outputs_to_sinks() -> dict:
             "description": str(item.get("label") or item.get("description") or sink_name),
             "output_id": str(item.get("id") or ""),
             "is_default": str(item.get("id") or "") == current_output,
-            "volume_percent": None,
+            "volume_percent": item.get("volume_percent"),
         }
         if sink["is_default"]:
             default_sink = sink_name

@@ -71,6 +71,20 @@ def _collect_sinks_pactl() -> tuple[str, list[dict]]:
                     if sink["name"] == current_name and "description" not in sink:
                         sink["description"] = desc
                         break
+            if stripped.startswith("Volume:") and current_name:
+                # Example: Volume: front-left: 65536 / 100% / 0.00 dB, front-right: 65536 / 100% / 0.00 dB
+                if "%" in stripped:
+                    percent_raw = stripped.split("%", 1)[0]
+                    percent_token = percent_raw.split()[-1]
+                    try:
+                        percent = int(percent_token)
+                    except Exception:
+                        percent = None
+                    if percent is not None:
+                        for sink in sinks:
+                            if sink["name"] == current_name and "volume_percent" not in sink:
+                                sink["volume_percent"] = percent
+                                break
     return default_sink, sinks
 
 
@@ -136,12 +150,13 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
                     "available": True,
                     "connected": True,
                     "sink_name": sink_name,
+                    "volume_percent": sink.get("volume_percent"),
                 }
             )
         if "hdmi" in token:
-            hdmi_candidates.append({"sink_name": sink_name, "description": sink_desc})
+            hdmi_candidates.append({"sink_name": sink_name, "description": sink_desc, "volume_percent": sink.get("volume_percent")})
         if any(marker in token for marker in ("analog", "speaker", "headphone", "headset", "lineout")):
-            speaker_candidates.append({"sink_name": sink_name, "description": sink_desc})
+            speaker_candidates.append({"sink_name": sink_name, "description": sink_desc, "volume_percent": sink.get("volume_percent")})
 
     local_hdmi = {
         "id": "local_hdmi",
@@ -149,6 +164,7 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
         "type": "local",
         "available": len(hdmi_candidates) > 0,
         "sink_name": (hdmi_candidates[0]["sink_name"] if hdmi_candidates else ""),
+        "volume_percent": (hdmi_candidates[0].get("volume_percent") if hdmi_candidates else None),
     }
     local_speaker = {
         "id": "local_speaker",
@@ -156,6 +172,7 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
         "type": "local",
         "available": len(speaker_candidates) > 0,
         "sink_name": (speaker_candidates[0]["sink_name"] if speaker_candidates else ""),
+        "volume_percent": (speaker_candidates[0].get("volume_percent") if speaker_candidates else None),
     }
     available_outputs.extend([local_hdmi, local_speaker])
     available_outputs.extend(bluetooth_candidates)
