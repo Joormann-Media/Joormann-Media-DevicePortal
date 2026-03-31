@@ -4219,15 +4219,36 @@
   async function loadPlayerRepoConfig() {
     const payload = await fetchJson("/api/stream/player/repo", { timeoutMs: 10000 });
     const cfg = payload.config || {};
-    q("stream-player-repo-dir").value = String(cfg.player_repo_link || cfg.player_repo_dir || "");
-    q("stream-player-service-name").value = String(cfg.player_service_name || "joormann-media-deviceplayer.service");
-    q("stream-player-service-user").value = String(cfg.player_service_user || "");
+    const repoValue = String(cfg.player_repo_link || cfg.player_repo_dir || "");
+    const serviceNameValue = String(cfg.player_service_name || "joormann-media-deviceplayer.service");
+    const serviceUserValue = String(cfg.player_service_user || "");
+    q("stream-player-repo-dir").value = repoValue;
+    q("stream-player-service-name").value = serviceNameValue;
+    q("stream-player-service-user").value = serviceUserValue;
+    const repoQuick = q("stream-player-repo-dir-quick");
+    const nameQuick = q("stream-player-service-name-quick");
+    const userQuick = q("stream-player-service-user-quick");
+    if (repoQuick) repoQuick.value = repoValue;
+    if (nameQuick) nameQuick.value = serviceNameValue;
+    if (userQuick) userQuick.value = serviceUserValue;
+  }
+
+  function getPlayerFormValues() {
+    const repoQuick = String(q("stream-player-repo-dir-quick")?.value || "").trim();
+    const nameQuick = String(q("stream-player-service-name-quick")?.value || "").trim();
+    const userQuick = String(q("stream-player-service-user-quick")?.value || "").trim();
+    const repoMain = String(q("stream-player-repo-dir")?.value || "").trim();
+    const nameMain = String(q("stream-player-service-name")?.value || "").trim();
+    const userMain = String(q("stream-player-service-user")?.value || "").trim();
+    return {
+      player_repo_link: repoQuick || repoMain,
+      player_service_name: (nameQuick || nameMain || "joormann-media-deviceplayer.service").trim(),
+      player_service_user: (userQuick || userMain || "").trim(),
+    };
   }
 
   async function savePlayerRepoConfig() {
-    const player_repo_link = String(q("stream-player-repo-dir")?.value || "").trim();
-    const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
-    const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
+    const { player_repo_link, player_service_name, player_service_user } = getPlayerFormValues();
     await fetchJson("/api/stream/player/repo", {
       method: "POST",
       body: { player_repo_link, player_service_name, player_service_user },
@@ -4421,9 +4442,7 @@
   }
 
   async function startStreamPlayerInstallUpdate() {
-    const player_repo_link = String(q("stream-player-repo-dir")?.value || "").trim();
-    const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
-    const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
+    const { player_repo_link, player_service_name, player_service_user } = getPlayerFormValues();
     if (!player_repo_link) {
       throw new Error("Bitte zuerst Player-Repo Link/Pfad setzen.");
     }
@@ -4445,9 +4464,7 @@
   }
 
   async function installPlayerService() {
-    const player_repo_link = String(q("stream-player-repo-dir")?.value || "").trim();
-    const player_service_name = String(q("stream-player-service-name")?.value || "").trim() || "joormann-media-deviceplayer.service";
-    const player_service_user = String(q("stream-player-service-user")?.value || "").trim();
+    const { player_repo_link, player_service_name, player_service_user } = getPlayerFormValues();
     if (!player_repo_link) {
       throw new Error("Bitte zuerst Player-Repo Link/Pfad setzen.");
     }
@@ -5837,6 +5854,14 @@
     q("btn-stream-player-repo-save").addEventListener("click", () => run(savePlayerRepoConfig));
     q("btn-stream-player-install-update").addEventListener("click", () => run(startStreamPlayerInstallUpdate));
     q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
+    const repoSaveQuick = q("btn-stream-player-repo-save-quick");
+    if (repoSaveQuick) {
+      repoSaveQuick.addEventListener("click", () => run(savePlayerRepoConfig));
+    }
+    const installUpdateQuick = q("btn-stream-player-install-update-quick");
+    if (installUpdateQuick) {
+      installUpdateQuick.addEventListener("click", () => run(startStreamPlayerInstallUpdate));
+    }
     q("btn-panel-sync-check").addEventListener("click", () => run(panelSyncCheck));
     q("btn-panel-sync-now").addEventListener("click", () => run(panelSyncNow));
     const syncRefreshBtn = q("btn-sync-refresh-config");
