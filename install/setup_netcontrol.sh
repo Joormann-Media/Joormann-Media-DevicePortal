@@ -35,7 +35,7 @@ install -m 0750 "$SRC_DIR/bluetooth_pairing_feedback.sh" "$DST_DIR/bluetooth_pai
 install -m 0750 "$SRC_DIR/bluetooth_pairing_session.sh" "$DST_DIR/bluetooth_pairing_session.sh"
 install -m 0750 "$SRC_DIR/bluetooth_pairing_action.sh" "$DST_DIR/bluetooth_pairing_action.sh"
 install -m 0750 "$SRC_DIR/bluetooth_paired_devices.sh" "$DST_DIR/bluetooth_paired_devices.sh"
-install -m 0750 "$SRC_DIR/bluetooth_audio.py" "$DST_DIR/bluetooth_audio.py"
+install -m 0755 "$SRC_DIR/bluetooth_audio.py" "$DST_DIR/bluetooth_audio.py"
 install -m 0755 "$SRC_DIR/audio_output_ctl.py" "$DST_DIR/audio_output_ctl.py"
 install -m 0755 "$SRC_DIR/audio_volume_ctl.py" "$DST_DIR/audio_volume_ctl.py"
 install -m 0750 "$SRC_DIR/lan_toggle.sh" "$DST_DIR/lan_toggle.sh"
