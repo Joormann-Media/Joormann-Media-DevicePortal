@@ -95,7 +95,7 @@ _user_proc_start() {
   if [[ -z "${user}" ]]; then
     return 1
   fi
-  sudo -n -u "${user}" bash -lc 'set -a; [ -f ~/.config/raspotify/conf ] && . ~/.config/raspotify/conf; [ -f ~/.config/raspotify/env ] && . ~/.config/raspotify/env; [ -f /etc/default/raspotify ] && . /etc/default/raspotify; set +a; nohup /usr/bin/raspotify >/tmp/raspotify.log 2>&1 & disown' >/dev/null 2>&1 || true
+  sudo -n -u "${user}" bash -lc 'set -a; [ -f ~/.config/raspotify/conf ] && . ~/.config/raspotify/conf; [ -f ~/.config/raspotify/env ] && . ~/.config/raspotify/env; [ -f /etc/default/raspotify ] && . /etc/default/raspotify; set +a; BIN=""; [ -x /usr/bin/raspotify ] && BIN="/usr/bin/raspotify"; [ -z "$BIN" ] && [ -x /usr/bin/librespot ] && BIN="/usr/bin/librespot"; [ -z "$BIN" ] && exit 0; nohup $BIN ${OPTIONS:-} >/tmp/raspotify.log 2>&1 & disown' >/dev/null 2>&1 || true
 }
 
 _user_marker_path() {

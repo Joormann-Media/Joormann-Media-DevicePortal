@@ -6,6 +6,7 @@ from app.core.config import ensure_config
 from app.core.jsonio import write_json
 from app.core.netcontrol import NetControlError, spotify_connect_install, spotify_connect_service_action
 from app.core.paths import CONFIG_PATH
+from pathlib import Path
 from app.core.timeutil import utc_now
 
 bp_spotify_connect = Blueprint("spotify_connect", __name__)
@@ -19,6 +20,30 @@ def _service_env_from_cfg() -> dict:
         "service_scope": str(cfg.get("spotify_connect_service_scope") or "").strip(),
         "service_candidates": str(cfg.get("spotify_connect_service_candidates") or "").strip(),
     }
+
+
+def _update_raspotify_conf(device_name: str) -> None:
+    if not device_name:
+        return
+    conf_dir = Path.home() / ".config" / "raspotify"
+    conf_dir.mkdir(parents=True, exist_ok=True)
+    conf_path = conf_dir / "conf"
+    existing: dict[str, str] = {}
+    if conf_path.exists():
+        for line in conf_path.read_text().splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            existing[key.strip()] = value.strip().strip('"').strip("'")
+    existing["DEVICE_NAME"] = device_name
+    # Ensure OPTIONS contains --name override while keeping other options.
+    opts = existing.get("OPTIONS", "")
+    if "--name" in opts:
+        opts = " ".join([part for part in opts.split() if part != "--name" and not part.startswith("--name=")])
+    opts = f'{opts} --name "{device_name}"'.strip()
+    existing["OPTIONS"] = opts
+    lines = [f'{k}="{v}"' for k, v in existing.items()]
+    conf_path.write_text("\n".join(lines) + "\n")
 
 
 def _ok(data: dict, status: int = 200):
@@ -130,6 +155,7 @@ def api_spotify_connect_config_get():
             "service_user": str(cfg.get("spotify_connect_service_user") or "").strip(),
             "service_scope": str(cfg.get("spotify_connect_service_scope") or "").strip() or "auto",
             "service_candidates": str(cfg.get("spotify_connect_service_candidates") or "").strip(),
+            "device_name": str(cfg.get("spotify_connect_device_name") or "").strip(),
         }
     )
 
@@ -142,7 +168,9 @@ def api_spotify_connect_config_set():
     cfg["spotify_connect_service_user"] = str(data.get("service_user") or "").strip()
     cfg["spotify_connect_service_scope"] = str(data.get("service_scope") or "").strip()
     cfg["spotify_connect_service_candidates"] = str(data.get("service_candidates") or "").strip()
+    cfg["spotify_connect_device_name"] = str(data.get("device_name") or "").strip()
     cfg["updated_at"] = utc_now()
+    _update_raspotify_conf(cfg.get("spotify_connect_device_name") or "")
     ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok:
         return _error("config_write_failed", "Could not persist spotify connect config", status=500, detail=write_err)
@@ -152,5 +180,6 @@ def api_spotify_connect_config_set():
             "service_user": str(cfg.get("spotify_connect_service_user") or "").strip(),
             "service_scope": str(cfg.get("spotify_connect_service_scope") or "").strip(),
             "service_candidates": str(cfg.get("spotify_connect_service_candidates") or "").strip(),
+            "device_name": str(cfg.get("spotify_connect_device_name") or "").strip(),
         }
     )

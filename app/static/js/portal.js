@@ -3908,6 +3908,7 @@
     q("spotify-connect-config-user").value = String(data.service_user || "");
     q("spotify-connect-config-scope").value = String(data.service_scope || "auto");
     q("spotify-connect-config-candidates").value = String(data.service_candidates || "");
+    q("spotify-connect-config-device-name").value = String(data.device_name || "");
     return payload;
   }
 
@@ -3916,9 +3917,10 @@
     const service_user = String(q("spotify-connect-config-user")?.value || "").trim();
     const service_scope = String(q("spotify-connect-config-scope")?.value || "auto").trim();
     const service_candidates = String(q("spotify-connect-config-candidates")?.value || "").trim();
+    const device_name = String(q("spotify-connect-config-device-name")?.value || "").trim();
     await fetchJson("/api/spotify-connect/config", {
       method: "POST",
-      body: { service_name, service_user, service_scope, service_candidates },
+      body: { service_name, service_user, service_scope, service_candidates, device_name },
       timeoutMs: 12000,
     });
     toast("Spotify Connect Konfiguration gespeichert", "success");
