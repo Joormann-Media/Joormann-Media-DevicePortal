@@ -57,7 +57,7 @@ class TtsService:
             self.stop()
             try:
                 self._process = subprocess.Popen(
-                    [mpv, "--no-video", "--really-quiet", "--idle=no", str(path)],
+                    [mpv, "--no-video", "--really-quiet", "--idle=no", "--ao=pulse", str(path)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     text=True,

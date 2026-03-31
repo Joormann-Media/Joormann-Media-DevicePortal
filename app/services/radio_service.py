@@ -37,6 +37,7 @@ class RadioService:
                     "--no-ytdl",
                     "--really-quiet",
                     "--idle=no",
+                    "--ao=pulse",
                     url,
                 ]
             ]
@@ -50,6 +51,7 @@ class RadioService:
                         "--no-ytdl",
                         "--really-quiet",
                         "--idle=no",
+                        "--ao=pulse",
                         "--rtsp-transport=tcp",
                         url,
                     ],
