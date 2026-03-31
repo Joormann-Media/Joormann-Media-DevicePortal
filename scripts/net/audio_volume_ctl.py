@@ -26,8 +26,23 @@ def _default_sink_pactl() -> str:
     return ""
 
 
+def _first_sink_pactl() -> str:
+    code, out, _ = _run(["pactl", "list", "short", "sinks"], timeout=6)
+    if code != 0:
+        return ""
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[1].strip():
+            return parts[1].strip()
+    return ""
+
+
 def _set_volume_pactl(sink: str, volume: int) -> tuple[bool, str]:
     target = sink or _default_sink_pactl()
+    if not target:
+        target = _first_sink_pactl()
+        if target:
+            _run(["pactl", "set-default-sink", target], timeout=6)
     if not target:
         return False, "no default sink"
     code, _, err = _run(["pactl", "set-sink-volume", target, f"{volume}%"], timeout=8)
