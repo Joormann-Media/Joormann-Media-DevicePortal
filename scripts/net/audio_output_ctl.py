@@ -9,6 +9,7 @@ import sys
 
 
 MAC_FROM_BLUEZ_RE = re.compile(r"bluez_output\.([0-9A-Fa-f_]{17})")
+MAC_RE = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 
 
 def _run(args: list[str], timeout: int = 12) -> tuple[int, str, str]:
@@ -27,7 +28,10 @@ def _norm(value: str) -> str:
 def _extract_mac(value: str) -> str:
     match = MAC_FROM_BLUEZ_RE.search(value or "")
     if not match:
-        return ""
+        match = MAC_RE.search(value or "")
+        if not match:
+            return ""
+        return match.group(0).upper()
     return match.group(1).replace("_", ":").upper()
 
 
@@ -202,7 +206,16 @@ def _move_streams_to_sink(sink_name: str) -> None:
         _run(["pactl", "move-sink-input", sink_input_id, sink_name], timeout=8)
 
 
-def _select_output(target_output: str, available_outputs: list[dict]) -> dict:
+def _find_bluetooth_sink(mac: str, sinks: list[dict]) -> str:
+    needle = mac.replace(":", "_").upper()
+    for sink in sinks:
+        name = str(sink.get("name") or "")
+        if needle and needle in name.upper():
+            return name
+    return ""
+
+
+def _select_output(target_output: str, available_outputs: list[dict], sinks: list[dict]) -> dict:
     wanted = (target_output or "").strip()
     if not wanted:
         raise ValueError("output is required")
@@ -211,12 +224,20 @@ def _select_output(target_output: str, available_outputs: list[dict]) -> dict:
         if str(item.get("id") or "") == wanted:
             selected = item
             break
+    if selected is None and wanted.startswith("bluetooth:"):
+        mac = wanted.split(":", 1)[1].strip().upper()
+        sink_name = _find_bluetooth_sink(mac, sinks)
+        if sink_name:
+            selected = {"id": wanted, "available": True, "sink_name": sink_name}
     if selected is None:
         raise ValueError(f"output not available: {wanted}")
     if not selected.get("available"):
         raise ValueError(f"output currently unavailable: {wanted}")
 
     sink_name = str(selected.get("sink_name") or "").strip()
+    if not sink_name and wanted.startswith("bluetooth:"):
+        mac = wanted.split(":", 1)[1].strip().upper()
+        sink_name = _find_bluetooth_sink(mac, sinks)
     if not sink_name:
         raise ValueError("sink mapping missing")
 
@@ -256,7 +277,7 @@ def main() -> int:
         if mode == "set":
             if len(sys.argv) < 3:
                 raise ValueError("target output required")
-            result = _select_output(sys.argv[2], base.get("available_outputs", []))
+            result = _select_output(sys.argv[2], base.get("available_outputs", []), sinks)
             if _has("pactl"):
                 default_sink, sinks = _collect_sinks_pactl()
             else:
