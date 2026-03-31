@@ -67,7 +67,46 @@ _systemctl_user() {
   shift
   local env
   env="$(_user_env "${user}")" || return 1
-  sudo -n -u "${user}" env ${env} systemctl --user "$@"
+  if command -v timeout >/dev/null 2>&1; then
+    sudo -n -u "${user}" env ${env} timeout 4 systemctl --user "$@"
+  else
+    sudo -n -u "${user}" env ${env} systemctl --user "$@"
+  fi
+}
+
+_user_proc_running() {
+  local user="$1"
+  if [[ -z "${user}" ]]; then
+    return 1
+  fi
+  pgrep -u "${user}" -f 'raspotify|librespot' >/dev/null 2>&1
+}
+
+_user_proc_stop() {
+  local user="$1"
+  if [[ -z "${user}" ]]; then
+    return 1
+  fi
+  pkill -u "${user}" -f 'raspotify|librespot' >/dev/null 2>&1 || true
+}
+
+_user_proc_start() {
+  local user="$1"
+  if [[ -z "${user}" ]]; then
+    return 1
+  fi
+  sudo -n -u "${user}" bash -lc 'set -a; [ -f ~/.config/raspotify/conf ] && . ~/.config/raspotify/conf; [ -f ~/.config/raspotify/env ] && . ~/.config/raspotify/env; [ -f /etc/default/raspotify ] && . /etc/default/raspotify; set +a; nohup /usr/bin/raspotify >/tmp/raspotify.log 2>&1 & disown' >/dev/null 2>&1 || true
+}
+
+_user_marker_path() {
+  local user="$1"
+  local home
+  home="$(_user_home "${user}")"
+  if [[ -z "${home}" ]]; then
+    echo ""
+    return 1
+  fi
+  echo "${home}/.config/raspotify/.portal_enabled"
 }
 
 choose_service_system() {
@@ -138,6 +177,20 @@ build_status() {
       enabled_state="$(_systemctl_user "${SERVICE_USER}" is-enabled "${service_name}" 2>/dev/null || true)"
       active_state="$(_systemctl_user "${SERVICE_USER}" show "${service_name}" --property=ActiveState --value 2>/dev/null || true)"
       sub_state="$(_systemctl_user "${SERVICE_USER}" show "${service_name}" --property=SubState --value 2>/dev/null || true)"
+      if [[ -z "${enabled_state}" && -z "${active_state}" ]]; then
+        local marker
+        marker="$(_user_marker_path "${SERVICE_USER}")"
+        if [[ -n "${marker}" && -f "${marker}" ]]; then
+          enabled_state="enabled"
+        fi
+        if _user_proc_running "${SERVICE_USER}"; then
+          active_state="active"
+          sub_state="running"
+        else
+          active_state="inactive"
+          sub_state="dead"
+        fi
+      fi
     else
       enabled_state="$(systemctl is-enabled "${service_name}" 2>/dev/null || true)"
       active_state="$(systemctl show "${service_name}" --property=ActiveState --value 2>/dev/null || true)"
@@ -267,11 +320,13 @@ build_status() {
 
 chosen_service=""
 chosen_scope="system"
+first_candidate="${CANDIDATES_RAW%% *}"
 if [[ "${SERVICE_SCOPE}" == "user" ]]; then
   if chosen_service="$(choose_service_user)"; then
     chosen_scope="user"
   else
-    chosen_service=""
+    chosen_scope="user"
+    chosen_service="${REQUESTED_SERVICE:-${first_candidate}}"
   fi
 elif [[ "${SERVICE_SCOPE}" == "system" ]]; then
   if chosen_service="$(choose_service_system)"; then
@@ -280,12 +335,24 @@ elif [[ "${SERVICE_SCOPE}" == "system" ]]; then
     chosen_service=""
   fi
 else
-  if chosen_service="$(choose_service_system)"; then
-    chosen_scope="system"
-  elif chosen_service="$(choose_service_user)"; then
-    chosen_scope="user"
+  # auto: prefer user scope when a service user is configured
+  if [[ -n "${SERVICE_USER}" ]]; then
+    if chosen_service="$(choose_service_user)"; then
+      chosen_scope="user"
+    elif chosen_service="$(choose_service_system)"; then
+      chosen_scope="system"
+    else
+      chosen_scope="user"
+      chosen_service="${REQUESTED_SERVICE:-${first_candidate}}"
+    fi
   else
-    chosen_service=""
+    if chosen_service="$(choose_service_system)"; then
+      chosen_scope="system"
+    elif chosen_service="$(choose_service_user)"; then
+      chosen_scope="user"
+    else
+      chosen_service=""
+    fi
   fi
 fi
 
@@ -303,12 +370,27 @@ case "${ACTION}" in
     fi
     if [[ "${chosen_scope}" == "user" ]]; then
       if ! _systemctl_user "${SERVICE_USER}" "${ACTION}" "${chosen_service}" >/dev/null 2>&1; then
-        emit "success" "false"
-        emit "code" "service_action_failed"
-        emit "message" "Failed to ${ACTION} user service"
-        emit "service_name" "${chosen_service}"
-        emit "service_scope" "${chosen_scope}"
-        exit 5
+        # Fallback: process control when user systemd is unavailable
+        if [[ "${ACTION}" == "enable" ]]; then
+          marker="$(_user_marker_path "${SERVICE_USER}")"
+          if [[ -n "${marker}" ]]; then
+            sudo -n -u "${SERVICE_USER}" mkdir -p "$(dirname "${marker}")"
+            sudo -n -u "${SERVICE_USER}" touch "${marker}"
+          fi
+        elif [[ "${ACTION}" == "disable" ]]; then
+          marker="$(_user_marker_path "${SERVICE_USER}")"
+          if [[ -n "${marker}" && -f "${marker}" ]]; then
+            sudo -n -u "${SERVICE_USER}" rm -f "${marker}"
+          fi
+          _user_proc_stop "${SERVICE_USER}"
+        elif [[ "${ACTION}" == "start" ]]; then
+          _user_proc_start "${SERVICE_USER}"
+        elif [[ "${ACTION}" == "stop" ]]; then
+          _user_proc_stop "${SERVICE_USER}"
+        elif [[ "${ACTION}" == "restart" ]]; then
+          _user_proc_stop "${SERVICE_USER}"
+          _user_proc_start "${SERVICE_USER}"
+        fi
       fi
     elif ! systemctl "${ACTION}" "${chosen_service}" >/dev/null 2>&1; then
       emit "success" "false"
