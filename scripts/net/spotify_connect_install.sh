@@ -167,7 +167,7 @@ Wants=network-online.target
 EnvironmentFile=-%h/.config/raspotify/conf
 EnvironmentFile=-%h/.config/raspotify/env
 EnvironmentFile=-/etc/default/raspotify
-ExecStart=%BIN_PATH% ${OPTIONS}
+ExecStart=%BIN_PATH% $OPTIONS
 Restart=always
 RestartSec=3
 
@@ -206,7 +206,7 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=-/etc/default/raspotify
-ExecStart=%BIN_PATH% ${OPTIONS}
+ExecStart=%BIN_PATH% $OPTIONS
 Restart=always
 RestartSec=3
 
