@@ -5,6 +5,8 @@ import os
 import subprocess
 import getpass
 import re
+import shutil
+import pwd
 from pathlib import Path
 
 from app.core.paths import ASSET_DIR
@@ -108,6 +110,23 @@ def _run_script(script_name: str, args: list[str], timeout: int, use_sudo: bool,
     except Exception as exc:
         raise NetControlError(code="execution_failed", message="Could not execute netcontrol command", detail=str(exc))
     return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+
+def _runtime_env_for_user(user: str | None = None) -> dict | None:
+    try:
+        if user:
+            uid = pwd.getpwnam(user).pw_uid
+        else:
+            uid = os.getuid()
+    except Exception:
+        uid = os.getuid()
+    runtime_dir = f"/run/user/{uid}"
+    if not os.path.isdir(runtime_dir):
+        return None
+    env = dict(os.environ)
+    env.setdefault("XDG_RUNTIME_DIR", runtime_dir)
+    env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={runtime_dir}/bus")
+    return env
 
 
 def _parse_kv_output(raw: str) -> dict[str, str]:
@@ -554,7 +573,8 @@ def bluetooth_audio_action(action: str, device_id: str) -> dict:
 
 
 def audio_outputs_status() -> dict:
-    rc, out, err = _run_script("audio_output_ctl.py", ["status"], timeout=20, use_sudo=True)
+    env = _runtime_env_for_user(getpass.getuser())
+    rc, out, err = _run_script("audio_output_ctl.py", ["status"], timeout=20, use_sudo=False, env=env)
     if rc != 0:
         raise NetControlError(code="audio_outputs_failed", message="Failed to read audio outputs", detail=err or out)
     payload = _parse_json_output(out, code="audio_outputs_invalid_json", message="Audio outputs returned invalid JSON")
@@ -567,7 +587,8 @@ def audio_output_set(output_id: str) -> dict:
     target = (output_id or "").strip()
     if not target:
         raise NetControlError(code="invalid_payload", message="output is required")
-    rc, out, err = _run_script("audio_output_ctl.py", ["set", target], timeout=25, use_sudo=True)
+    env = _runtime_env_for_user(getpass.getuser())
+    rc, out, err = _run_script("audio_output_ctl.py", ["set", target], timeout=25, use_sudo=False, env=env)
     if rc != 0:
         raise NetControlError(code="audio_output_set_failed", message="Failed to set audio output", detail=err or out)
     payload = _parse_json_output(out, code="audio_output_set_invalid_json", message="Audio output set returned invalid JSON")
@@ -582,7 +603,8 @@ def audio_volume_set(sink_name: str | None, volume_percent: int) -> dict:
     args = ["set", str(volume)]
     if target:
         args.insert(1, target)
-    rc, out, err = _run_script("audio_volume_ctl.py", args, timeout=15, use_sudo=True)
+    env = _runtime_env_for_user(getpass.getuser())
+    rc, out, err = _run_script("audio_volume_ctl.py", args, timeout=15, use_sudo=False, env=env)
     if rc != 0:
         raise NetControlError(code="audio_volume_failed", message="Failed to set audio volume", detail=err or out)
     payload = _parse_json_output(out, code="audio_volume_invalid_json", message="Audio volume returned invalid JSON")
