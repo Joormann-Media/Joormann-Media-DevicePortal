@@ -7,6 +7,12 @@ REQUESTED_SERVICE="${2:-}"
 CANDIDATES_RAW="${SPOTIFY_CONNECT_SERVICE_CANDIDATES:-raspotify.service librespot.service}"
 SERVICE_SCOPE="${SPOTIFY_CONNECT_SERVICE_SCOPE:-auto}"
 SERVICE_USER="${SPOTIFY_CONNECT_SERVICE_USER:-${SUDO_USER:-}}"
+if [[ -z "${SERVICE_USER}" ]]; then
+  current_user="$(id -un 2>/dev/null || true)"
+  if [[ -n "${current_user}" && "${current_user}" != "root" ]]; then
+    SERVICE_USER="${current_user}"
+  fi
+fi
 if [[ -n "${REQUESTED_SERVICE}" ]]; then
   CANDIDATES_RAW="${REQUESTED_SERVICE}"
 fi
@@ -109,11 +115,18 @@ _user_marker_path() {
   echo "${home}/.config/raspotify/.portal_enabled"
 }
 
+_user_marker_enabled() {
+  local user="$1"
+  local marker
+  marker="$(_user_marker_path "${user}")"
+  [[ -n "${marker}" && -f "${marker}" ]]
+}
+
 choose_service_system() {
   local candidate load_state
   for candidate in ${CANDIDATES_RAW}; do
     load_state="$(systemctl show "${candidate}" --property=LoadState --value 2>/dev/null || true)"
-    if [[ -n "${load_state}" && "${load_state}" != "not-found" ]]; then
+    if [[ -n "${load_state}" && "${load_state}" != "not-found" && "${load_state}" != "masked" ]]; then
       echo "${candidate}"
       return 0
     fi
@@ -337,7 +350,10 @@ elif [[ "${SERVICE_SCOPE}" == "system" ]]; then
 else
   # auto: prefer user scope when a service user is configured
   if [[ -n "${SERVICE_USER}" ]]; then
-    if chosen_service="$(choose_service_user)"; then
+    if _user_proc_running "${SERVICE_USER}" || _user_marker_enabled "${SERVICE_USER}"; then
+      chosen_scope="user"
+      chosen_service="${REQUESTED_SERVICE:-${first_candidate}}"
+    elif chosen_service="$(choose_service_user)"; then
       chosen_scope="user"
     elif chosen_service="$(choose_service_system)"; then
       chosen_scope="system"
