@@ -7,6 +7,12 @@ REQUESTED_SERVICE="${2:-}"
 CANDIDATES_RAW="${SPOTIFY_CONNECT_SERVICE_CANDIDATES:-raspotify.service librespot.service}"
 SERVICE_SCOPE="${SPOTIFY_CONNECT_SERVICE_SCOPE:-auto}"
 SERVICE_USER="${SPOTIFY_CONNECT_SERVICE_USER:-${SUDO_USER:-}}"
+if [[ -z "${SERVICE_USER}" ]]; then
+  current_user="$(id -un 2>/dev/null || true)"
+  if [[ -n "${current_user}" && "${current_user}" != "root" ]]; then
+    SERVICE_USER="${current_user}"
+  fi
+fi
 if [[ -n "${REQUESTED_SERVICE}" ]]; then
   CANDIDATES_RAW="${REQUESTED_SERVICE}"
 fi
@@ -111,6 +117,18 @@ ensure_pkg() {
   return 1
 }
 
+resolve_bin() {
+  if command -v raspotify >/dev/null 2>&1; then
+    echo "/usr/bin/raspotify"
+    return 0
+  fi
+  if command -v librespot >/dev/null 2>&1; then
+    echo "/usr/bin/librespot"
+    return 0
+  fi
+  return 1
+}
+
 install_user_unit() {
   local user="${SERVICE_USER}"
   if [[ -z "${user}" ]]; then
@@ -130,6 +148,14 @@ install_user_unit() {
   local unit_dir="${home}/.config/systemd/user"
   local service_name
   service_name="${REQUESTED_SERVICE:-raspotify.service}"
+  local bin_path
+  bin_path="$(resolve_bin 2>/dev/null || true)"
+  if [[ -z "${bin_path}" ]]; then
+    emit "success" "false"
+    emit "code" "raspotify_missing"
+    emit "message" "raspotify/librespot not installed"
+    exit 5
+  fi
   sudo -n -u "${user}" mkdir -p "${unit_dir}"
   sudo -n -u "${user}" tee "${unit_dir}/${service_name}" >/dev/null <<'EOF'
 [Unit]
@@ -141,15 +167,21 @@ Wants=network-online.target
 EnvironmentFile=-%h/.config/raspotify/conf
 EnvironmentFile=-%h/.config/raspotify/env
 EnvironmentFile=-/etc/default/raspotify
-ExecStart=/usr/bin/raspotify
+ExecStart=%BIN_PATH%
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=default.target
 EOF
-  _systemctl_user "${user}" daemon-reload
-  _systemctl_user "${user}" enable "${service_name}"
+  sudo -n -u "${user}" sed -i "s#%BIN_PATH%#${bin_path}#g" "${unit_dir}/${service_name}"
+  if _systemctl_user "${user}" daemon-reload; then
+    _systemctl_user "${user}" enable "${service_name}" || true
+  else
+    # no user systemd available: mark as enabled for portal fallback
+    mkdir -p "${home}/.config/raspotify" >/dev/null 2>&1 || true
+    touch "${home}/.config/raspotify/.portal_enabled" >/dev/null 2>&1 || true
+  fi
 }
 
 install_system_unit() {
@@ -157,6 +189,14 @@ install_system_unit() {
   service_name="${REQUESTED_SERVICE:-raspotify.service}"
   local load_state
   load_state="$(systemctl show "${service_name}" --property=LoadState --value 2>/dev/null || true)"
+  local bin_path
+  bin_path="$(resolve_bin 2>/dev/null || true)"
+  if [[ -z "${bin_path}" ]]; then
+    emit "success" "false"
+    emit "code" "raspotify_missing"
+    emit "message" "raspotify/librespot not installed"
+    exit 5
+  fi
   if [[ -z "${load_state}" || "${load_state}" == "not-found" ]]; then
     cat >/etc/systemd/system/${service_name} <<'EOF'
 [Unit]
@@ -166,13 +206,14 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=-/etc/default/raspotify
-ExecStart=/usr/bin/raspotify
+ExecStart=%BIN_PATH%
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
+    sed -i "s#%BIN_PATH%#${bin_path}#g" "/etc/systemd/system/${service_name}"
     systemctl daemon-reload
   fi
   systemctl enable "${service_name}" >/dev/null 2>&1 || true
@@ -185,9 +226,19 @@ if ! ensure_pkg; then
   exit 5
 fi
 
+BIN_PATH="$(resolve_bin 2>/dev/null || true)"
+if [[ -z "${BIN_PATH}" ]]; then
+  emit "success" "false"
+  emit "code" "raspotify_missing"
+  emit "message" "raspotify/librespot not installed"
+  exit 5
+fi
+
 chosen_scope="${SERVICE_SCOPE}"
 if [[ "${chosen_scope}" == "auto" || -z "${chosen_scope}" ]]; then
-  if choose_service_user >/dev/null 2>&1; then
+  if [[ -n "${SERVICE_USER}" ]]; then
+    chosen_scope="user"
+  elif choose_service_user >/dev/null 2>&1; then
     chosen_scope="user"
   elif choose_service_system >/dev/null 2>&1; then
     chosen_scope="system"
