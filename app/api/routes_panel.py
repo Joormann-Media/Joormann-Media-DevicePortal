@@ -1917,10 +1917,9 @@ def api_panel_sync_status():
 
     data = request.get_json(force=True, silent=True) or {}
     panel_state = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
-    panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
     linked = bool(panel_state.get('linked'))
-    has_api_key = bool(str(panel_keys.get('raspi_to_admin') or '').strip())
-    if not linked or not has_api_key:
+    has_auth_key = bool(str(dev.get('auth_key') or '').strip())
+    if not linked and not has_auth_key:
         return jsonify(
             ok=False,
             error='device_not_linked',

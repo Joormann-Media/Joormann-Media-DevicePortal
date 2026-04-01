@@ -45,6 +45,11 @@ fi
 
 "${INSTALLER}" "${REPO_DIR}" "${SERVICE_USER}" >/dev/null
 
+NETCONTROL_INSTALLER="${REPO_DIR}/install/setup_netcontrol.sh"
+if [[ -x "${NETCONTROL_INSTALLER}" ]]; then
+  "${NETCONTROL_INSTALLER}" "${REPO_DIR}" "${SERVICE_USER}" >/dev/null
+fi
+
 ACTIVE_STATE="$(systemctl show "${SERVICE_NAME}" --property=ActiveState --value 2>/dev/null || true)"
 SUB_STATE="$(systemctl show "${SERVICE_NAME}" --property=SubState --value 2>/dev/null || true)"
 FRAGMENT_PATH="$(systemctl show "${SERVICE_NAME}" --property=FragmentPath --value 2>/dev/null || true)"

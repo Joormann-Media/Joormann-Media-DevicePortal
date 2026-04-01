@@ -6306,6 +6306,19 @@
     }
   }
 
+  async function runQuiet(fn, suppressed = []) {
+    try {
+      await fn();
+    } catch (err) {
+      const msg = String((err && err.message) ? err.message : err || "").toLowerCase();
+      if (suppressed.some((needle) => msg.includes(String(needle).toLowerCase()))) {
+        return;
+      }
+      // Quiet mode for boot: keep console trace, avoid noisy startup toasts.
+      try { console.warn("boot task failed:", err); } catch (_) {}
+    }
+  }
+
   function initRefs() {
     els.alertHost = q("alert-host");
     els.heroStatus = q("hero-status");
@@ -6327,7 +6340,7 @@
     await run(refreshStatus);
     await run(refreshPanelFlagsLive);
     await run(refreshSyncStatus);
-    await run(panelSyncCheck);
+    await runQuiet(panelSyncCheck, ["device_not_linked", "setup_required"]);
     await run(refreshNetwork);
     await run(refreshWifiScan);
     await run(refreshWifiProfiles);
@@ -6335,13 +6348,13 @@
     await run(refreshWifiLogs);
     await run(refreshStorageStatus);
     await run(refreshStreamOverview);
-    await run(refreshSpotifyConnectStatus);
-    await run(refreshSpotifyConnectConfig);
+    await runQuiet(refreshSpotifyConnectStatus, ["spotify connect action failed", "sudo: ein passwort ist notwendig"]);
+    await runQuiet(refreshSpotifyConnectConfig, ["spotify connect action failed", "sudo: ein passwort ist notwendig"]);
     await run(refreshStreamAudioFiles);
-    await run(refreshStreamAudioStatus);
+    await runQuiet(refreshStreamAudioStatus, ["audio_control_unreachable", "connection refused"]);
     await run(refreshBluetoothDevices);
     await run(refreshAudioOutputs);
-    await run(refreshAudioHubStatus);
+    await runQuiet(refreshAudioHubStatus, ["audio_control_unreachable", "connection refused"]);
     await run(loadPlayerRepoConfig);
     await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
