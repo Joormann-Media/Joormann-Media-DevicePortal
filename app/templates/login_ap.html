@@ -66,6 +66,19 @@
         <div class="alert alert-danger">
           {{ error_message }}
         </div>
+        {% if 'Auth-Script fehlt' in error_message %}
+          <div class="alert alert-info">
+            Lokale Authentifizierung ist noch nicht eingerichtet.
+            <a href="{{ url_for('auth.setup_page') }}">Jetzt über /setup installieren</a>.
+          </div>
+        {% endif %}
+      {% endif %}
+
+      {% if auth_mode == 'local_system' and not local_auth_available %}
+        <div class="alert alert-info">
+          Lokale Authentifizierung nicht verfügbar (Auth-Script fehlt).
+          <a href="{{ url_for('auth.setup_page') }}">/setup öffnen</a>
+        </div>
       {% endif %}
 
       {% if connectivity_setup_mode is defined and connectivity_setup_mode.active %}

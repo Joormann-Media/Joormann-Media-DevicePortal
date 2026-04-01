@@ -73,6 +73,8 @@ def create_app() -> Flask:
             "/login",
             "/login/2fa",
             "/logout",
+            "/setup",
+            "/setup/local-auth/install",
             "/ap-display",
             "/api/auth/mode",
             "/api/auth/status",

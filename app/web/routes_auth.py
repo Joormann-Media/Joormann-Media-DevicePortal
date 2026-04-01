@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import ipaddress
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
@@ -23,6 +28,11 @@ from app.core.config import ensure_config
 from app.core.device import ensure_device
 
 bp_auth = Blueprint("auth", __name__)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_NETCONTROL_BIN = Path(os.getenv("NETCONTROL_BIN_DIR", "/opt/deviceportal/bin"))
+DEFAULT_LOCAL_AUTH_TARGET = DEFAULT_NETCONTROL_BIN / "local_auth.sh"
+DEFAULT_LOCAL_AUTH_SOURCE = REPO_ROOT / "scripts" / "net" / "local_auth.sh"
+DEFAULT_SUDOERS_FILE = Path("/etc/sudoers.d/deviceportal-local-auth")
 
 
 def _safe_next(value: str) -> str:
@@ -36,6 +46,133 @@ def _safe_next(value: str) -> str:
 
 def _mode_human(mode: str) -> str:
     return "Login über Adminpanel" if mode == "panel_remote" else "Lokaler System-Login"
+
+
+def _service_user() -> str:
+    env_user = (os.getenv("PORTAL_SERVICE_USER") or os.getenv("DEVICEPORTAL_SERVICE_USER") or "").strip()
+    if env_user:
+        return env_user
+    return (os.getenv("USER") or "").strip() or "www-data"
+
+
+def _local_auth_script_installed() -> bool:
+    script = DEFAULT_LOCAL_AUTH_TARGET
+    return script.exists() and script.is_file() and os.access(script, os.X_OK)
+
+
+def _setup_access_allowed() -> bool:
+    setup_mode = detect_connectivity_setup_mode()
+    return bool(setup_mode.get("active")) or _is_ap_request() or _is_local_display_request()
+
+
+def _run_privileged(cmd: list[str], *, timeout: int = 120) -> tuple[int, str, str]:
+    run_cmd = cmd
+    if os.geteuid() != 0:
+        run_cmd = ["sudo", "-n"] + cmd
+    proc = subprocess.run(
+        run_cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+
+def _install_local_auth_script(service_user: str) -> dict:
+    source = DEFAULT_LOCAL_AUTH_SOURCE
+    target = DEFAULT_LOCAL_AUTH_TARGET
+    sudoers_file = DEFAULT_SUDOERS_FILE
+
+    if not source.exists():
+        return {
+            "ok": False,
+            "message": f"Quelle fehlt: {source}",
+            "detail": "scripts/net/local_auth.sh nicht gefunden.",
+            "installed": _local_auth_script_installed(),
+        }
+
+    install_log: list[str] = []
+    rc, out, err = _run_privileged(["install", "-d", "-m", "0755", str(target.parent)])
+    if rc != 0:
+        return {
+            "ok": False,
+            "message": "Konnte Zielverzeichnis nicht anlegen.",
+            "detail": err or out or "install -d fehlgeschlagen",
+            "installed": _local_auth_script_installed(),
+        }
+    install_log.append("bin_dir_ok")
+
+    rc, out, err = _run_privileged(["install", "-m", "0750", str(source), str(target)])
+    if rc != 0:
+        return {
+            "ok": False,
+            "message": "Konnte local_auth.sh nicht installieren.",
+            "detail": err or out or "install local_auth fehlgeschlagen",
+            "installed": _local_auth_script_installed(),
+        }
+    install_log.append("script_ok")
+
+    sudoers_content = (
+        f"Defaults:{service_user} !requiretty\n"
+        f"{service_user} ALL=(root) NOPASSWD: {target} *\n"
+    )
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", delete=False, prefix="deviceportal-local-auth-", suffix=".sudoers") as tmp:
+            tmp.write(sudoers_content)
+            tmp_path = Path(tmp.name)
+
+        rc, out, err = _run_privileged(["install", "-m", "0440", str(tmp_path), str(sudoers_file)])
+        if rc != 0:
+            return {
+                "ok": False,
+                "message": "Konnte sudoers-Datei nicht installieren.",
+                "detail": err or out or "install sudoers fehlgeschlagen",
+                "installed": _local_auth_script_installed(),
+            }
+        install_log.append("sudoers_ok")
+
+        rc, out, err = _run_privileged(["visudo", "-cf", str(sudoers_file)])
+        if rc != 0:
+            return {
+                "ok": False,
+                "message": "Sudoers-Validierung fehlgeschlagen.",
+                "detail": err or out or "visudo check fehlgeschlagen",
+                "installed": _local_auth_script_installed(),
+            }
+        install_log.append("visudo_ok")
+    finally:
+        if tmp_path:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    if shutil.which("pamtester") is None:
+        rc, out, err = _run_privileged(["apt-get", "update"], timeout=240)
+        if rc == 0:
+            rc, out, err = _run_privileged(["apt-get", "install", "-y", "pamtester"], timeout=240)
+        if rc != 0:
+            return {
+                "ok": False,
+                "message": "local_auth.sh ist installiert, aber pamtester konnte nicht installiert werden.",
+                "detail": err or out or "apt-get install pamtester fehlgeschlagen",
+                "installed": _local_auth_script_installed(),
+                "log": install_log,
+            }
+        install_log.append("pamtester_ok")
+
+    return {
+        "ok": True,
+        "message": "Lokale Authentifizierung wurde installiert.",
+        "detail": "",
+        "installed": _local_auth_script_installed(),
+        "target": str(target),
+        "sudoers": str(sudoers_file),
+        "service_user": service_user,
+        "log": install_log,
+    }
 
 
 def _is_dev_mode() -> bool:
@@ -123,6 +260,7 @@ def login_page():
         twofa_user=(pending_2fa.get("display_name") or pending_2fa.get("username") or "") if isinstance(pending_2fa, dict) else "",
         dev_mode=dev_mode,
         connectivity_setup_mode=setup_mode,
+        local_auth_available=_local_auth_script_installed(),
     )
 
 
@@ -167,6 +305,7 @@ def login_submit():
             twofa_user="",
             dev_mode=dev_mode,
             connectivity_setup_mode=setup_mode,
+            local_auth_available=_local_auth_script_installed(),
         ), 400
 
     try:
@@ -199,6 +338,7 @@ def login_submit():
                     twofa_user=str(pending_2fa.get("display_name") or pending_2fa.get("username") or username),
                     dev_mode=dev_mode,
                     connectivity_setup_mode=setup_mode,
+                    local_auth_available=_local_auth_script_installed(),
                 ), 200
             login_user(
                 username=str(result.get("username") or username),
@@ -228,6 +368,7 @@ def login_submit():
             twofa_user="",
             dev_mode=dev_mode,
             connectivity_setup_mode=setup_mode,
+            local_auth_available=_local_auth_script_installed(),
         ), 401
 
     if _is_ap_request() and next_url == "/":
@@ -271,6 +412,7 @@ def login_submit_2fa():
             twofa_user="",
             dev_mode=dev_mode,
             connectivity_setup_mode=setup_mode,
+            local_auth_available=_local_auth_script_installed(),
         ), 401
 
     code = (request.form.get("otp_code") or request.form.get("_auth_code") or "").strip()
@@ -290,6 +432,7 @@ def login_submit_2fa():
             twofa_user=str(pending_2fa.get("display_name") or pending_2fa.get("username") or ""),
             dev_mode=dev_mode,
             connectivity_setup_mode=setup_mode,
+            local_auth_available=_local_auth_script_installed(),
         ), 401
 
     login_user(
@@ -300,6 +443,47 @@ def login_submit_2fa():
     )
     clear_pending_panel_2fa()
     return redirect(next_url)
+
+
+@bp_auth.get("/setup")
+def setup_page():
+    if not _setup_access_allowed():
+        return redirect(url_for("auth.login_page"))
+
+    setup_mode = detect_connectivity_setup_mode()
+    return render_template(
+        "setup.html",
+        setup_mode=setup_mode,
+        local_auth_available=_local_auth_script_installed(),
+        local_auth_target=str(DEFAULT_LOCAL_AUTH_TARGET),
+        local_auth_source=str(DEFAULT_LOCAL_AUTH_SOURCE),
+        service_user=_service_user(),
+        result=None,
+    )
+
+
+@bp_auth.post("/setup/local-auth/install")
+def setup_install_local_auth():
+    if not _setup_access_allowed():
+        return jsonify(ok=False, message="Setup ist nur im lokalen Setup/AP-Kontext erlaubt."), 403
+
+    service_user = (request.form.get("service_user") or _service_user()).strip() or _service_user()
+    result = _install_local_auth_script(service_user)
+
+    setup_mode = detect_connectivity_setup_mode()
+    status = 200 if result.get("ok") else 500
+    if request.headers.get("Accept", "").lower().find("application/json") >= 0:
+        return jsonify(result), status
+
+    return render_template(
+        "setup.html",
+        setup_mode=setup_mode,
+        local_auth_available=_local_auth_script_installed(),
+        local_auth_target=str(DEFAULT_LOCAL_AUTH_TARGET),
+        local_auth_source=str(DEFAULT_LOCAL_AUTH_SOURCE),
+        service_user=service_user,
+        result=result,
+    ), status
 
 
 @bp_auth.post("/logout")

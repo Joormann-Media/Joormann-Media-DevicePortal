@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevicePortal Setup</title>
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/portal.css') }}">
+</head>
+<body class="portal-body">
+  <div class="container py-4 py-lg-5">
+    <div class="portal-login-shell mx-auto">
+      <section class="portal-card portal-login-card p-4 p-lg-5">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <img src="{{ url_for('static', filename='Joormann_Media_Logo2024.png') }}" alt="Logo" style="height:28px; width:auto;">
+          <span class="badge rounded-pill text-bg-dark">DevicePortal Setup</span>
+        </div>
+
+        <h1 class="h4 mb-2">Lokale Authentifizierung einrichten</h1>
+        <p class="text-secondary mb-3">
+          Diese Seite installiert <code>local_auth.sh</code> sowie den nötigen <code>sudoers</code>-Eintrag für den Portal-User.
+        </p>
+
+        {% if setup_mode is defined and setup_mode.active %}
+          <div class="alert alert-warning py-2">Setup/AP-Modus ist aktiv.</div>
+        {% endif %}
+
+        {% if local_auth_available %}
+          <div class="alert alert-success py-2">
+            Lokale Authentifizierung ist bereits aktiv: <code>{{ local_auth_target }}</code>
+          </div>
+        {% else %}
+          <div class="alert alert-info py-2">
+            Aktuell fehlt das Auth-Script: <code>{{ local_auth_target }}</code>
+          </div>
+        {% endif %}
+
+        {% if result %}
+          <div class="alert {% if result.ok %}alert-success{% else %}alert-danger{% endif %} py-2">
+            <strong>{{ result.message }}</strong>
+            {% if result.detail %}<div class="small mt-1">{{ result.detail }}</div>{% endif %}
+          </div>
+        {% endif %}
+
+        <dl class="row small mb-3">
+          <dt class="col-4 col-lg-3">Quelle</dt>
+          <dd class="col-8 col-lg-9"><code>{{ local_auth_source }}</code></dd>
+          <dt class="col-4 col-lg-3">Ziel</dt>
+          <dd class="col-8 col-lg-9"><code>{{ local_auth_target }}</code></dd>
+          <dt class="col-4 col-lg-3">Service-User</dt>
+          <dd class="col-8 col-lg-9"><code>{{ service_user }}</code></dd>
+        </dl>
+
+        <form method="post" action="{{ url_for('auth.setup_install_local_auth') }}">
+          <div class="mb-3">
+            <label for="service-user" class="form-label">Portal Service-User</label>
+            <input id="service-user" name="service_user" type="text" class="form-control" value="{{ service_user }}">
+            <div class="form-text">Beispiel: <code>djanebmb</code> oder <code>www-data</code>.</div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">local_auth installieren</button>
+        </form>
+
+        <div class="mt-3 d-grid gap-2">
+          <a class="btn btn-outline-secondary" href="{{ url_for('auth.login_page') }}">Zurück zum Login</a>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
