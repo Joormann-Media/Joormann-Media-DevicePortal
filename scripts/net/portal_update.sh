@@ -362,6 +362,65 @@ EOF
     exit 0
   fi
 
+  # Self-heal: if the portal unit does not exist yet, bootstrap it once.
+  if ! systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -Fxq "${SERVICE_NAME}"; then
+    echo "[service] ${SERVICE_NAME} not found, bootstrapping service via install/setup_portal.sh"
+    if [[ ! -x "${REPO_DIR}/install/setup_portal.sh" ]]; then
+      echo "[service] missing installer: ${REPO_DIR}/install/setup_portal.sh"
+      cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=${GIT_STATUS}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
+player_update_triggered=false
+player_update_job_id=
+player_update_reason=portal_service_missing
+player_update_needed=unknown
+player_update_repo=
+player_update_service_name=
+player_update_service_user=
+player_update_error=
+EOF
+      exit 0
+    fi
+    "${REPO_DIR}/install/setup_portal.sh" "${REPO_DIR}" "${SERVICE_USER}"
+    SETUP_PORTAL_RC=$?
+    if [[ ${SETUP_PORTAL_RC} -ne 0 ]]; then
+      echo "[service] setup_portal.sh failed rc=${SETUP_PORTAL_RC}"
+      cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=${GIT_STATUS}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
+player_update_triggered=false
+player_update_job_id=
+player_update_reason=portal_service_install_failed
+player_update_needed=unknown
+player_update_repo=
+player_update_service_name=
+player_update_service_user=
+player_update_error=
+EOF
+      exit 0
+    fi
+  fi
+
   cat > "${STATE_FILE}" <<EOF
 status=restarting
 success=false

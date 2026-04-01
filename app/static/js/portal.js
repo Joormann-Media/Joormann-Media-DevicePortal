@@ -5211,7 +5211,11 @@
   async function refreshSentinelStatus(options = {}) {
     const notify = !(options && options.notify === false);
     const warmupData = consumeWarmupData(["sections", "legacy", "sentinels_status"]);
-    if (warmupData && typeof warmupData === "object") {
+    const warmupHasSentinels =
+      !!warmupData &&
+      typeof warmupData === "object" &&
+      Array.isArray(warmupData.sentinels);
+    if (warmupHasSentinels) {
       applySentinelPayload(warmupData);
       return { ok: true, data: warmupData, source: "runtime_warmup" };
     }
