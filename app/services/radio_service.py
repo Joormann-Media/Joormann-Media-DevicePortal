@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import os
 import subprocess
 import threading
 import time
@@ -17,6 +18,16 @@ class RadioService:
 
     def _mpv_path(self) -> str | None:
         return shutil.which("mpv")
+
+    def _pulse_env(self) -> dict[str, str]:
+        env = dict(os.environ)
+        uid = os.getuid()
+        runtime_dir = env.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}"
+        env["XDG_RUNTIME_DIR"] = runtime_dir
+        pulse_socket = f"{runtime_dir}/pulse/native"
+        if os.path.exists(pulse_socket):
+            env["PULSE_SERVER"] = f"unix:{pulse_socket}"
+        return env
 
     def play(self, stream_url: str) -> dict[str, Any]:
         url = (stream_url or "").strip().replace("&amp;", "&")
@@ -65,6 +76,7 @@ class RadioService:
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.PIPE,
                         text=True,
+                        env=self._pulse_env(),
                     )
                     self._stream_url = url
                 except Exception as exc:

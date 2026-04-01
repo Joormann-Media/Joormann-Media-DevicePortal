@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 import shutil
+import os
 
 from app.core.paths import DATA_DIR
 
@@ -21,6 +22,16 @@ class TtsService:
 
     def _espeak_path(self) -> str | None:
         return shutil.which("espeak")
+
+    def _pulse_env(self) -> dict[str, str]:
+        env = dict(os.environ)
+        uid = os.getuid()
+        runtime_dir = env.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}"
+        env["XDG_RUNTIME_DIR"] = runtime_dir
+        pulse_socket = f"{runtime_dir}/pulse/native"
+        if os.path.exists(pulse_socket):
+            env["PULSE_SERVER"] = f"unix:{pulse_socket}"
+        return env
 
     def speak(self, text: str = "", file_path: str = "") -> dict[str, Any]:
         text = (text or "").strip()
@@ -61,6 +72,7 @@ class TtsService:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     text=True,
+                    env=self._pulse_env(),
                 )
                 self._active_file = str(path)
                 self._last_error = None
