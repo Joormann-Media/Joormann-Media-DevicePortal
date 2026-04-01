@@ -2116,6 +2116,16 @@ def api_panel_validate_token():
     dev = ensure_device()
 
     data = request.get_json(force=True, silent=True) or {}
+    raw_node_type = str(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'raspi_node').strip().lower()
+    node_type_aliases = {
+        'raspi': 'raspi_node',
+        'raspberrypi': 'raspi_node',
+        'raspi_node': 'raspi_node',
+        'raspi-node': 'raspi_node',
+        'server': 'server',
+        'workstation': 'workstation',
+    }
+    node_type = node_type_aliases.get(raw_node_type, 'raspi_node')
     request_base = _safe_base_url((data.get('admin_base_url') or ''))
     base_url = request_base or _safe_base_url(cfg.get('admin_base_url', ''))
     if not base_url:
@@ -2125,44 +2135,149 @@ def api_panel_validate_token():
     if not token:
         return jsonify(ok=False, error='registration_token missing'), 400
 
-    verify_url = _panel_verify_token_url(base_url)
     payload = {
+        'registerToken': token,
         'registrationToken': token,
+        'register_token': token,
         'token': token,
         'deviceUuid': dev.get('device_uuid') or '',
         'device_uuid': dev.get('device_uuid') or '',
     }
-    code, resp, err = http_post_json(verify_url, payload, timeout=8)
-    if code is None:
-        return jsonify(ok=False, error='token_verify_failed', detail=str(err), verify_url=verify_url), 502
-    if code in (404, 405):
-        # Backward-compatible fallback: older panels may not expose a dedicated verify endpoint.
+
+    if node_type == 'raspi_node':
+        verify_url = _panel_verify_token_url(base_url)
+        code, resp, err = http_post_json(verify_url, payload, timeout=8)
+        if code is None:
+            return jsonify(ok=False, error='token_verify_failed', detail=str(err), verify_url=verify_url), 502
+        if code in (404, 405):
+            # Backward-compatible fallback: older panels may not expose a dedicated verify endpoint.
+            return jsonify(
+                ok=True,
+                valid=True,
+                skipped=True,
+                message='Token-Prüfung wird beim Registrieren durchgeführt.',
+                http=code,
+                verify_url=verify_url,
+                response=resp,
+            ), 200
+
+        valid = _response_indicates_success(code, resp)
+        if request_base and valid:
+            cfg['admin_base_url'] = request_base
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+        if valid:
+            return jsonify(ok=True, valid=True, node_type=node_type, http=code, verify_url=verify_url, response=resp), 200
+
+        # Auto-fallback: if raspi verify says invalid, try hardware verify endpoints as well.
+        verify_candidates: list[str] = [
+            str(cfg.get('panel_hardware_verify_path') or '/api/hardware-device/verify-token').strip(),
+            '/api/hardware-device/verify-token',
+            '/api/hardware/device/verify-token',
+        ]
+        deduped_paths: list[str] = []
+        for candidate in verify_candidates:
+            candidate = str(candidate or '').strip()
+            if not candidate:
+                continue
+            if not candidate.startswith('http://') and not candidate.startswith('https://') and not candidate.startswith('/'):
+                candidate = f'/{candidate}'
+            if candidate not in deduped_paths:
+                deduped_paths.append(candidate)
+
+        for path in deduped_paths:
+            hw_verify_url = path if path.startswith('http://') or path.startswith('https://') else f'{base_url}{path}'
+            hw_code, hw_resp, _hw_err = http_post_json(hw_verify_url, payload, timeout=8)
+            if hw_code is None or hw_code in (404, 405):
+                continue
+            hw_valid = _response_indicates_success(hw_code, hw_resp) or (bool((hw_resp or {}).get('valid')) if isinstance(hw_resp, dict) else False)
+            if hw_valid:
+                if request_base:
+                    cfg['admin_base_url'] = request_base
+                    cfg['panel_hardware_verify_path'] = path
+                    cfg['node_runtime_type'] = 'server'
+                    cfg['updated_at'] = utc_now()
+                    write_json(CONFIG_PATH, cfg, mode=0o600)
+                return jsonify(
+                    ok=True,
+                    valid=True,
+                    node_type='server',
+                    auto_detected='hardware',
+                    http=hw_code,
+                    verify_url=hw_verify_url,
+                    response=hw_resp,
+                ), 200
+
+        panel_msg = _extract_response_message(resp) or 'Token ungültig oder abgelaufen.'
+        return jsonify(
+            ok=False,
+            error='token_invalid',
+            detail=panel_msg,
+            valid=False,
+            node_type=node_type,
+            http=code,
+            verify_url=verify_url,
+            response=resp,
+        ), 400
+
+    configured_verify_path = str(cfg.get('panel_hardware_verify_path') or '/api/hardware-device/verify-token').strip()
+    verify_candidates: list[str] = [configured_verify_path, '/api/hardware-device/verify-token', '/api/hardware/device/verify-token']
+    deduped_paths: list[str] = []
+    for candidate in verify_candidates:
+        candidate = str(candidate or '').strip()
+        if not candidate:
+            continue
+        if not candidate.startswith('http://') and not candidate.startswith('https://') and not candidate.startswith('/'):
+            candidate = f'/{candidate}'
+        if candidate not in deduped_paths:
+            deduped_paths.append(candidate)
+
+    last_code = None
+    last_resp = None
+    last_err = None
+    resolved_verify_url = ''
+    for path in deduped_paths:
+        verify_url = path if path.startswith('http://') or path.startswith('https://') else f'{base_url}{path}'
+        code, resp, err = http_post_json(verify_url, payload, timeout=8)
+        resolved_verify_url = verify_url
+        last_code, last_resp, last_err = code, resp, err
+        if code is None:
+            continue
+        if code in (404, 405):
+            continue
+        valid = _response_indicates_success(code, resp) or (bool((resp or {}).get('valid')) if isinstance(resp, dict) else False)
+        if valid:
+            if request_base:
+                cfg['admin_base_url'] = request_base
+                cfg['panel_hardware_verify_path'] = path
+                cfg['node_runtime_type'] = node_type
+                cfg['updated_at'] = utc_now()
+                write_json(CONFIG_PATH, cfg, mode=0o600)
+            return jsonify(ok=True, valid=True, node_type=node_type, http=code, verify_url=verify_url, response=resp), 200
+
+    if last_code in (404, 405) or (last_code is None and deduped_paths):
         return jsonify(
             ok=True,
             valid=True,
             skipped=True,
-            message='Token-Prüfung wird beim Registrieren durchgeführt.',
-            http=code,
-            verify_url=verify_url,
-            response=resp,
+            node_type=node_type,
+            message='Hardware-Token-Prüfung wird beim Registrieren durchgeführt.',
+            http=last_code,
+            verify_url=resolved_verify_url,
+            response=last_resp,
         ), 200
 
-    valid = _response_indicates_success(code, resp)
-    if request_base and valid:
-        cfg['admin_base_url'] = request_base
-        cfg['updated_at'] = utc_now()
-        write_json(CONFIG_PATH, cfg, mode=0o600)
-    if valid:
-        return jsonify(ok=True, valid=True, http=code, verify_url=verify_url, response=resp), 200
-    panel_msg = _extract_response_message(resp) or 'Token ungültig oder abgelaufen.'
+    panel_msg = _extract_response_message(last_resp) if isinstance(last_resp, dict) else ''
+    panel_msg = panel_msg or (str(last_err) if last_err else '') or 'Token ungültig oder abgelaufen.'
     return jsonify(
         ok=False,
         error='token_invalid',
         detail=panel_msg,
         valid=False,
-        http=code,
-        verify_url=verify_url,
-        response=resp,
+        node_type=node_type,
+        http=last_code,
+        verify_url=resolved_verify_url,
+        response=last_resp,
     ), 400
 
 

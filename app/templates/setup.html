@@ -261,11 +261,13 @@
       async function doTokenValidate() {
         const domain = String(q("fr-domain").value || "").trim();
         const token = String(q("fr-token").value || "").trim();
+        const nodeType = String(q("fr-node-type").value || "raspi_node").trim();
         if (!domain) throw new Error("Bitte zuerst Domain eingeben.");
         if (!token) throw new Error("Bitte Register-Token eingeben.");
         const data = await fetchJson("/api/panel/validate-token", {
           admin_base_url: domain,
           registration_token: token,
+          node_type: nodeType,
         });
         q("fr-step2-result").textContent = `Token gültig (HTTP ${data.http || "-"})`;
         return data;
