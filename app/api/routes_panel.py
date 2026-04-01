@@ -69,7 +69,8 @@ def _current_linked(cfg: dict) -> bool:
 
 
 def _response_indicates_unlinked(code: int | None, resp: object) -> bool:
-    if code in (401, 403, 404, 410):
+    # 404 can be a route/proxy mismatch and should not hard-unlink immediately.
+    if code in (401, 403, 410):
         return True
     if not isinstance(resp, dict):
         return False
@@ -1919,7 +1920,10 @@ def api_panel_sync_status():
     panel_state = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
     linked = bool(panel_state.get('linked'))
     has_auth_key = bool(str(dev.get('auth_key') or '').strip())
-    if not linked and not has_auth_key:
+    has_device_uuid = bool(str(dev.get('device_uuid') or '').strip())
+    has_base_url = bool(_safe_base_url(cfg.get('admin_base_url', '')))
+    can_attempt_recovery = has_base_url and has_auth_key and has_device_uuid
+    if not linked and not can_attempt_recovery:
         return jsonify(
             ok=False,
             error='device_not_linked',
