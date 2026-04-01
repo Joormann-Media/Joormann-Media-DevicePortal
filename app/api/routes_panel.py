@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
+import json
 from pathlib import Path
+import re
 from urllib.parse import urlencode
 
 from flask import Blueprint, jsonify, request
@@ -132,6 +135,288 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
     snapshots = _collect_runtime_snapshots(cfg, dev, fp, host, ip)
     payload.update(snapshots)
     return payload
+
+
+def _safe_slug(value: str, fallback: str = 'deviceportal-node') -> str:
+    raw = (value or '').strip().lower()
+    if not raw:
+        return fallback
+    slug = re.sub(r'[^a-z0-9]+', '-', raw).strip('-')
+    return slug or fallback
+
+
+def _safe_read_text(path: str) -> str:
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            return (handle.read() or '').strip()
+    except Exception:
+        return ''
+
+
+def _cpu_vendor() -> str:
+    try:
+        with open('/proc/cpuinfo', 'r', encoding='utf-8') as handle:
+            for line in handle:
+                lowered = line.lower()
+                if lowered.startswith('vendor_id') or lowered.startswith('hardware'):
+                    return line.split(':', 1)[1].strip()
+    except Exception:
+        return ''
+    return ''
+
+
+def _detect_public_ip() -> str:
+    # Optional best-effort lookup; failures are acceptable.
+    for service_url in ('https://api.ipify.org', 'https://ifconfig.me/ip'):
+        code, text, _err = http_get_text(service_url, timeout=4)
+        if code is not None and 200 <= code < 300:
+            ip = (text or '').strip()
+            if ip and len(ip) <= 128:
+                return ip
+    return ''
+
+
+def _network_identity(network: dict, fallback_ip: str) -> tuple[str, str, str, str]:
+    interfaces = network.get('network_info', {}).get('interfaces') if isinstance(network.get('network_info'), dict) else {}
+    lan = interfaces.get('lan') if isinstance(interfaces, dict) and isinstance(interfaces.get('lan'), dict) else {}
+    wifi = interfaces.get('wifi') if isinstance(interfaces, dict) and isinstance(interfaces.get('wifi'), dict) else {}
+    tailscale = network.get('tailscale') if isinstance(network.get('tailscale'), dict) else {}
+
+    local_lan_ip = str(lan.get('ip') or wifi.get('ip') or fallback_ip or '').strip()
+    primary_mac = str(lan.get('mac') or wifi.get('mac') or '').strip()
+    tailscale_ip = str(tailscale.get('ip') or '').strip()
+    public_ip = _detect_public_ip()
+    return local_lan_ip, public_ip, tailscale_ip, primary_mac
+
+
+def _hardware_components_from_snapshots(fp: dict, snapshots: dict, primary_mac: str, local_lan_ip: str) -> list[dict]:
+    components: list[dict] = []
+    sort_order = 10
+    now = utc_now()
+
+    network_info = snapshots.get('network', {}).get('network_info') if isinstance(snapshots.get('network'), dict) else {}
+    interfaces = network_info.get('interfaces') if isinstance(network_info, dict) and isinstance(network_info.get('interfaces'), dict) else {}
+    for if_key in ('lan', 'wifi'):
+        iface = interfaces.get(if_key)
+        if not isinstance(iface, dict):
+            continue
+        ifname = str(iface.get('ifname') or if_key).strip()
+        mac = str(iface.get('mac') or '').strip()
+        ipv4 = str(iface.get('ip') or '').strip()
+        is_primary = bool((primary_mac and mac and primary_mac.lower() == mac.lower()) or (local_lan_ip and ipv4 and local_lan_ip == ipv4))
+        components.append(
+            {
+                'componentType': 'network_interface',
+                'name': ifname,
+                'manufacturer': '',
+                'vendor': '',
+                'model': ifname,
+                'serialNumber': '',
+                'firmwareVersion': '',
+                'interfaceType': if_key,
+                'capacityBytes': None,
+                'sizeLabel': '',
+                'slotName': ifname,
+                'macAddress': mac,
+                'ipv4': ipv4,
+                'ipv6': '',
+                'isPrimary': is_primary,
+                'sortOrder': sort_order,
+                'rawData': iface,
+                'fingerprintRelevant': True,
+                'notes': '',
+                'createdAt': now,
+                'updatedAt': now,
+            }
+        )
+        sort_order += 10
+
+    disks = fp.get('disks') if isinstance(fp.get('disks'), dict) else {}
+    block_devices = disks.get('blockdevices') if isinstance(disks, dict) and isinstance(disks.get('blockdevices'), list) else []
+    for disk in block_devices:
+        if not isinstance(disk, dict):
+            continue
+        dev_type = str(disk.get('type') or '').strip().lower()
+        if dev_type not in ('disk', 'part'):
+            continue
+        size_label = str(disk.get('size') or '').strip()
+        name = str(disk.get('name') or '').strip()
+        mountpoint = str(disk.get('mountpoint') or '').strip()
+        components.append(
+            {
+                'componentType': 'storage',
+                'name': name,
+                'manufacturer': '',
+                'vendor': '',
+                'model': str(disk.get('model') or name),
+                'serialNumber': '',
+                'firmwareVersion': '',
+                'interfaceType': str(disk.get('tran') or '').strip(),
+                'capacityBytes': None,
+                'sizeLabel': size_label,
+                'slotName': mountpoint,
+                'macAddress': '',
+                'ipv4': '',
+                'ipv6': '',
+                'isPrimary': bool(mountpoint in ('/', '/boot', '/boot/firmware')),
+                'sortOrder': sort_order,
+                'rawData': disk,
+                'fingerprintRelevant': False,
+                'notes': '',
+                'createdAt': now,
+                'updatedAt': now,
+            }
+        )
+        sort_order += 10
+
+    cpu_model = ((fp.get('cpu') or {}).get('model') if isinstance(fp.get('cpu'), dict) else '') or ''
+    if cpu_model:
+        components.append(
+            {
+                'componentType': 'cpu',
+                'name': 'cpu',
+                'manufacturer': '',
+                'vendor': _cpu_vendor(),
+                'model': str(cpu_model),
+                'serialNumber': str(((fp.get('cpu') or {}).get('serial') if isinstance(fp.get('cpu'), dict) else '') or ''),
+                'firmwareVersion': '',
+                'interfaceType': '',
+                'capacityBytes': None,
+                'sizeLabel': '',
+                'slotName': '',
+                'macAddress': '',
+                'ipv4': '',
+                'ipv6': '',
+                'isPrimary': True,
+                'sortOrder': sort_order,
+                'rawData': fp.get('cpu') if isinstance(fp.get('cpu'), dict) else {},
+                'fingerprintRelevant': True,
+                'notes': '',
+                'createdAt': now,
+                'updatedAt': now,
+            }
+        )
+        sort_order += 10
+
+    mem_total_kb = int(((fp.get('memory') or {}).get('mem_total_kb') if isinstance(fp.get('memory'), dict) else 0) or 0)
+    if mem_total_kb > 0:
+        components.append(
+            {
+                'componentType': 'memory',
+                'name': 'ram',
+                'manufacturer': '',
+                'vendor': '',
+                'model': 'system memory',
+                'serialNumber': '',
+                'firmwareVersion': '',
+                'interfaceType': '',
+                'capacityBytes': int(mem_total_kb) * 1024,
+                'sizeLabel': f"{round(mem_total_kb / 1024 / 1024, 1)} GB",
+                'slotName': '',
+                'macAddress': '',
+                'ipv4': '',
+                'ipv6': '',
+                'isPrimary': True,
+                'sortOrder': sort_order,
+                'rawData': fp.get('memory') if isinstance(fp.get('memory'), dict) else {},
+                'fingerprintRelevant': True,
+                'notes': '',
+                'createdAt': now,
+                'updatedAt': now,
+            }
+        )
+
+    return components
+
+
+def _panel_hardware_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, token: str, node_type: str) -> dict:
+    snapshots = _collect_runtime_snapshots(cfg, dev, fp, host, ip)
+    network = snapshots.get('network') if isinstance(snapshots.get('network'), dict) else {}
+    local_lan_ip, public_ip, tailscale_ip, primary_mac = _network_identity(network, ip)
+    now = utc_now()
+
+    os_info = fp.get('os') if isinstance(fp.get('os'), dict) else {}
+    mem_total_kb = int(((fp.get('memory') or {}).get('mem_total_kb') if isinstance(fp.get('memory'), dict) else 0) or 0)
+    fingerprint_hash = hashlib.sha256(
+        json.dumps(fp if isinstance(fp, dict) else {}, ensure_ascii=False, sort_keys=True).encode('utf-8')
+    ).hexdigest()
+
+    hardware_device = {
+        'id': None,
+        'uuid': str(dev.get('device_uuid') or ''),
+        'slug': _safe_slug(host),
+        'deviceName': str(host or 'DevicePortal Node'),
+        'hostname': str(host or ''),
+        'description': f"DevicePortal First-Run ({node_type})",
+        'type': node_type,
+        'lifecycleStatus': 'active',
+        'isActive': True,
+        'isLocked': False,
+        'registerToken': token,
+        'registerTokenCreatedAt': now,
+        'registerTokenExpiresAt': None,
+        'registeredAt': now,
+        'linkedAt': now,
+        'lastSeenAt': now,
+        'lastSyncAt': now,
+        'apiCommunicationEnabled': True,
+        'clientId': str(dev.get('machine_id') or dev.get('device_uuid') or host or ''),
+        'developerApiKey': str((((cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}) or {}).get('raspi_to_admin') or '')).strip(),
+        'fingerprintHash': fingerprint_hash,
+        'fingerprintVersion': 'v1',
+        'osName': str(os_info.get('pretty_name') or os_info.get('id') or ''),
+        'osVersion': str(os_info.get('version') or ''),
+        'architecture': str(fp.get('machine') or ''),
+        'machineId': str(dev.get('machine_id') or fp.get('machine_id') or ''),
+        'productUuid': _safe_read_text('/sys/class/dmi/id/product_uuid'),
+        'biosVersion': _safe_read_text('/sys/class/dmi/id/bios_version'),
+        'biosVendor': _safe_read_text('/sys/class/dmi/id/bios_vendor'),
+        'boardVendor': _safe_read_text('/sys/class/dmi/id/board_vendor'),
+        'boardName': _safe_read_text('/sys/class/dmi/id/board_name'),
+        'boardSerial': _safe_read_text('/sys/class/dmi/id/board_serial'),
+        'cpuVendor': _cpu_vendor(),
+        'cpuModel': str(((fp.get('cpu') or {}).get('model') if isinstance(fp.get('cpu'), dict) else '') or ''),
+        'ramTotal': int(mem_total_kb) * 1024 if mem_total_kb > 0 else None,
+        'primaryMacAddress': primary_mac,
+        'localLanIp': local_lan_ip,
+        'publicIp': public_ip,
+        'tailscaleIp': tailscale_ip,
+        'local_lan_ip': local_lan_ip,
+        'public_ip': public_ip,
+        'tailscale_ip': tailscale_ip,
+        'rawData': snapshots,
+        'searchSanitized': f"{host} {node_type} {local_lan_ip} {tailscale_ip} {primary_mac}".strip().lower(),
+        'notes': '',
+        'nodeCapabilityProfile': snapshots.get('capabilities') if isinstance(snapshots.get('capabilities'), dict) else {},
+        'nodeRuntimeStatus': snapshots.get('runtime') if isinstance(snapshots.get('runtime'), dict) else {},
+        'nodeConfiguration': {
+            'panel_register_path': str(cfg.get('panel_register_path') or ''),
+            'panel_hardware_register_path': str(cfg.get('panel_hardware_register_path') or ''),
+        },
+        'createdAt': now,
+        'updatedAt': now,
+    }
+    components = _hardware_components_from_snapshots(fp, snapshots, primary_mac=primary_mac, local_lan_ip=local_lan_ip)
+    hardware_device['components'] = components
+
+    return {
+        'registerToken': token,
+        'register_token': token,
+        'nodeType': node_type,
+        'node_type': node_type,
+        'deviceUuid': dev.get('device_uuid') or '',
+        'device_uuid': dev.get('device_uuid') or '',
+        'machineId': dev.get('machine_id') or fp.get('machine_id') or '',
+        'machine_id': dev.get('machine_id') or fp.get('machine_id') or '',
+        'authKey': dev.get('auth_key') or '',
+        'auth_key': dev.get('auth_key') or '',
+        'hardwareDevice': hardware_device,
+        'hardware_device': hardware_device,
+        'hardwareComponents': components,
+        'hardware_components': components,
+        'fingerprint': fp,
+        'runtimeSnapshots': snapshots,
+    }
 
 
 def _panel_sync_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str) -> dict:
@@ -1229,6 +1514,16 @@ def api_panel_register():
     ip = get_ip()
 
     data = request.get_json(force=True, silent=True) or {}
+    raw_node_type = str(data.get('node_type') or data.get('nodeType') or '').strip().lower()
+    node_type_aliases = {
+        'raspi': 'raspi_node',
+        'raspberrypi': 'raspi_node',
+        'raspi_node': 'raspi_node',
+        'raspi-node': 'raspi_node',
+        'server': 'server',
+        'workstation': 'workstation',
+    }
+    node_type = node_type_aliases.get(raw_node_type, '')
     request_base = _safe_base_url((data.get('admin_base_url') or ''))
     if request_base:
         cfg['admin_base_url'] = request_base
@@ -1290,6 +1585,8 @@ def api_panel_register():
 
     if _response_indicates_success(code, resp):
         cfg['registration_token'] = token
+        if node_type:
+            cfg['node_runtime_type'] = node_type
         linked_user_ids, linked_customer_ids = _extract_link_ids(resp if isinstance(resp, dict) else None)
         linked_user_rows, linked_customer_rows = _extract_link_rows(resp if isinstance(resp, dict) else None)
         if link_target_type == 'user' and link_target_id.isdigit():
@@ -1339,6 +1636,113 @@ def api_panel_register():
         response=resp,
         http=code,
         resolved_url=url,
+    ), 400
+
+
+@bp_panel.post('/api/panel/register-hardware')
+def api_panel_register_hardware():
+    cfg = ensure_config()
+    dev = ensure_device()
+    fp = collect_fingerprint()
+    host = get_hostname()
+    ip = get_ip()
+
+    data = request.get_json(force=True, silent=True) or {}
+    request_base = _safe_base_url((data.get('admin_base_url') or ''))
+    if request_base:
+        cfg['admin_base_url'] = request_base
+
+    raw_node_type = str(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'server').strip().lower()
+    node_type_aliases = {
+        'raspi': 'raspi_node',
+        'raspberrypi': 'raspi_node',
+        'raspi_node': 'raspi_node',
+        'raspi-node': 'raspi_node',
+        'server': 'server',
+        'workstation': 'workstation',
+    }
+    node_type = node_type_aliases.get(raw_node_type, 'server')
+
+    token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
+    if not token:
+        return jsonify(ok=False, error='registration_token missing'), 400
+
+    base = _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base:
+        return jsonify(ok=False, error='admin_base_url missing'), 400
+
+    configured_path = str(cfg.get('panel_hardware_register_path') or '/api/hardware/device/register').strip()
+    candidates: list[str] = [configured_path, '/api/hardware/device/register', '/api/hardware-device/register']
+    deduped_paths: list[str] = []
+    for candidate in candidates:
+        candidate = str(candidate or '').strip()
+        if not candidate:
+            continue
+        if not candidate.startswith('http://') and not candidate.startswith('https://') and not candidate.startswith('/'):
+            candidate = f'/{candidate}'
+        if candidate not in deduped_paths:
+            deduped_paths.append(candidate)
+
+    payload = _panel_hardware_register_payload(cfg, dev, fp, host, ip, token, node_type=node_type)
+    last_error = 'register failed'
+    last_http = None
+    last_resp = None
+    resolved_url = ''
+
+    for path in deduped_paths:
+        url = path if path.startswith('http://') or path.startswith('https://') else f'{base}{path}'
+        code, resp, err = http_post_json(url, payload, timeout=10)
+        resolved_url = url
+        last_http = code
+        last_resp = resp
+        if code is None:
+            last_error = str(err or 'request failed')
+            continue
+        if 200 <= code < 300 and _response_indicates_success(code, resp):
+            cfg['registration_token'] = token
+            cfg['node_runtime_type'] = node_type
+            cfg['panel_hardware_register_path'] = path
+            if isinstance(resp, dict):
+                slug = str(
+                    resp.get('slug')
+                    or resp.get('deviceSlug')
+                    or ((resp.get('data') or {}).get('slug') if isinstance(resp.get('data'), dict) else '')
+                    or ((resp.get('data') or {}).get('deviceSlug') if isinstance(resp.get('data'), dict) else '')
+                ).strip()
+                if slug:
+                    cfg['device_slug'] = slug
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+            st = _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
+            mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
+            update_state(cfg, dev, fp, mode=mode, message='hardware register', panel_state_overrides=st)
+            return jsonify(
+                ok=True,
+                node_type=node_type,
+                panel_link_state=st,
+                response=resp,
+                http=code,
+                resolved_url=url,
+            ), 200
+        last_error = _extract_response_message(resp if isinstance(resp, dict) else None) or (str(err or '') if code is None else f'http {code}')
+
+    st = _update_panel_link_state(
+        cfg,
+        linked=_sticky_linked(cfg, False, last_http, last_resp),
+        last_http=last_http,
+        last_response=last_resp,
+        last_error=last_error,
+    )
+    mode = 'play' if st.get('linked') and cfg.get('selected_stream_slug') else 'setup'
+    update_state(cfg, dev, fp, mode=mode, message='hardware register failed', panel_state_overrides=st)
+    return jsonify(
+        ok=False,
+        error='register_hardware_failed',
+        detail=last_error,
+        panel_link_state=st,
+        response=last_resp,
+        http=last_http,
+        resolved_url=resolved_url,
     ), 400
 
 

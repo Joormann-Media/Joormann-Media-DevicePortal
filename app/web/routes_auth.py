@@ -481,6 +481,7 @@ def setup_page():
         return redirect(url_for("auth.login_page"))
 
     setup_mode = detect_connectivity_setup_mode()
+    cfg = ensure_config()
     return render_template(
         "setup.html",
         setup_mode=setup_mode,
@@ -488,6 +489,9 @@ def setup_page():
         local_auth_target=str(DEFAULT_LOCAL_AUTH_TARGET),
         local_auth_source=str(DEFAULT_LOCAL_AUTH_SOURCE),
         service_user=_service_user(),
+        admin_base_url=str(cfg.get("admin_base_url") or ""),
+        registration_token=str(cfg.get("registration_token") or ""),
+        node_runtime_type=str(cfg.get("node_runtime_type") or "raspi_node"),
         result=None,
     )
 
@@ -502,6 +506,7 @@ def setup_install_local_auth():
     result = _install_local_auth_script(service_user, sudo_password=sudo_password)
 
     setup_mode = detect_connectivity_setup_mode()
+    cfg = ensure_config()
     status = 200 if result.get("ok") else 500
     if request.headers.get("Accept", "").lower().find("application/json") >= 0:
         return jsonify(result), status
@@ -513,6 +518,9 @@ def setup_install_local_auth():
         local_auth_target=str(DEFAULT_LOCAL_AUTH_TARGET),
         local_auth_source=str(DEFAULT_LOCAL_AUTH_SOURCE),
         service_user=service_user,
+        admin_base_url=str(cfg.get("admin_base_url") or ""),
+        registration_token=str(cfg.get("registration_token") or ""),
+        node_runtime_type=str(cfg.get("node_runtime_type") or "raspi_node"),
         result=result,
     ), status
 

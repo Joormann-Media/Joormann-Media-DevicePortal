@@ -8,9 +8,11 @@ from app.core.timeutil import utc_now
 
 DEFAULT_CONFIG: dict = {
     'admin_base_url': '',
+    'node_runtime_type': 'raspi_node',
     'poll_seconds': 60,
     'registration_token': '',
     'panel_register_path': '/api/device/link/register',
+    'panel_hardware_register_path': '/api/hardware/device/register',
     'panel_ping_path': '/api/device/ping',
     'selected_stream_slug': '',
     'selected_stream_name': '',

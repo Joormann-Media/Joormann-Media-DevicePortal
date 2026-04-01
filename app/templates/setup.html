@@ -28,11 +28,95 @@
         </div>
 
         <div class="setup-hero mb-4">
+          <div class="setup-hero-icon"><i class="bi bi-diagram-3"></i></div>
+          <div>
+            <h1 class="h4 mb-2">First-Run Wizard</h1>
+            <p class="text-secondary mb-0">
+              Domain prüfen, Node-Typ wählen, Token eintragen und Gerät verknüpfen.
+            </p>
+          </div>
+        </div>
+
+        <section class="portal-card p-3 mb-3">
+          <h2 class="h6 mb-3">1. Panel-Domain prüfen</h2>
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg-8">
+              <label for="fr-domain" class="form-label fw-semibold">Domain / Adminpanel URL</label>
+              <input
+                id="fr-domain"
+                class="form-control"
+                type="text"
+                placeholder="https://joormann-family.de"
+                value="{{ admin_base_url or '' }}"
+                autocomplete="url"
+              >
+              <div class="form-text">Die URL wird wie gehabt in der lokalen Portal-Konfiguration gespeichert.</div>
+            </div>
+            <div class="col-12 col-lg-4 d-grid">
+              <button id="fr-test-domain" type="button" class="btn btn-outline-primary">
+                <i class="bi bi-globe2 me-1"></i>
+                Domain prüfen
+              </button>
+            </div>
+          </div>
+          <div id="fr-step1-result" class="small mt-2 text-secondary">Noch nicht geprüft.</div>
+        </section>
+
+        <section class="portal-card p-3 mb-3">
+          <h2 class="h6 mb-3">2. Node-Typ und Token</h2>
+          <div class="row g-2">
+            <div class="col-12 col-lg-6">
+              <label for="fr-node-type" class="form-label fw-semibold">Dieser Host ist ein</label>
+              <select id="fr-node-type" class="form-select">
+                <option value="raspi_node" {% if (node_runtime_type or '') == 'raspi_node' %}selected{% endif %}>Raspi-Node</option>
+                <option value="server" {% if (node_runtime_type or '') == 'server' %}selected{% endif %}>Server</option>
+                <option value="workstation" {% if (node_runtime_type or '') == 'workstation' %}selected{% endif %}>Workstation</option>
+              </select>
+              <div class="form-text">
+                Raspi-Node nutzt den bisherigen Flow. Server/Workstation registrieren über Hardware-Device.
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <label for="fr-token" class="form-label fw-semibold">Register-Token</label>
+              <input
+                id="fr-token"
+                class="form-control"
+                type="text"
+                value="{{ registration_token or '' }}"
+                autocomplete="off"
+                placeholder="Token aus dem Panel"
+              >
+            </div>
+            <div class="col-12 d-grid d-lg-flex gap-2">
+              <button id="fr-validate-token" type="button" class="btn btn-outline-secondary">
+                <i class="bi bi-key me-1"></i>
+                Token prüfen
+              </button>
+              <button id="fr-register" type="button" class="btn btn-primary">
+                <i class="bi bi-link-45deg me-1"></i>
+                Registrieren und verknüpfen
+              </button>
+            </div>
+          </div>
+          <div id="fr-step2-result" class="small mt-2 text-secondary">Noch nicht registriert.</div>
+        </section>
+
+        <div id="fr-alert" class="alert d-none py-2"></div>
+        <div class="d-grid gap-2 mb-4">
+          <a id="fr-login-link" class="btn btn-success d-none" href="{{ url_for('auth.login_page') }}">
+            <i class="bi bi-box-arrow-in-right me-1"></i>
+            Weiter zum Login
+          </a>
+        </div>
+
+        <hr class="my-4">
+
+        <div class="setup-hero mb-4">
           <div class="setup-hero-icon"><i class="bi bi-shield-lock"></i></div>
           <div>
-            <h1 class="h4 mb-2">Lokale Authentifizierung einrichten</h1>
+            <h2 class="h5 mb-2">Lokale Authentifizierung</h2>
             <p class="text-secondary mb-0">
-              Diese Seite installiert <code>local_auth.sh</code> sowie den nötigen <code>sudoers</code>-Eintrag für den Portal-User.
+              Optional: <code>local_auth.sh</code> und <code>sudoers</code>-Eintrag für lokalen System-Login installieren.
             </p>
           </div>
         </div>
@@ -134,33 +218,152 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     (() => {
+      function q(id) {
+        return document.getElementById(id);
+      }
+
+      async function fetchJson(url, payload) {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify(payload || {}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ok === false) {
+          const msg = data.detail || data.error || data.message || `HTTP ${response.status}`;
+          throw new Error(String(msg || "Request failed"));
+        }
+        return data;
+      }
+
+      function setAlert(kind, text) {
+        const box = q("fr-alert");
+        if (!box) return;
+        if (!text) {
+          box.className = "alert d-none py-2";
+          box.textContent = "";
+          return;
+        }
+        box.className = `alert alert-${kind} py-2`;
+        box.textContent = text;
+      }
+
+      async function doDomainCheck() {
+        const domain = String(q("fr-domain").value || "").trim();
+        if (!domain) {
+          throw new Error("Bitte Domain eingeben.");
+        }
+        const data = await fetchJson("/api/panel/test-url", { url: domain });
+        q("fr-step1-result").textContent = `OK: ${data.base_url || domain} (HTTP ${data.http || "-"})`;
+        return data;
+      }
+
+      async function doTokenValidate() {
+        const domain = String(q("fr-domain").value || "").trim();
+        const token = String(q("fr-token").value || "").trim();
+        if (!domain) throw new Error("Bitte zuerst Domain eingeben.");
+        if (!token) throw new Error("Bitte Register-Token eingeben.");
+        const data = await fetchJson("/api/panel/validate-token", {
+          admin_base_url: domain,
+          registration_token: token,
+        });
+        q("fr-step2-result").textContent = `Token gültig (HTTP ${data.http || "-"})`;
+        return data;
+      }
+
+      async function doRegister() {
+        const domain = String(q("fr-domain").value || "").trim();
+        const token = String(q("fr-token").value || "").trim();
+        const nodeType = String(q("fr-node-type").value || "raspi_node").trim();
+        if (!domain) throw new Error("Bitte Domain eingeben.");
+        if (!token) throw new Error("Bitte Register-Token eingeben.");
+
+        const endpoint = nodeType === "raspi_node" ? "/api/panel/register" : "/api/panel/register-hardware";
+        const payload = {
+          admin_base_url: domain,
+          registration_token: token,
+          node_type: nodeType,
+        };
+        const data = await fetchJson(endpoint, payload);
+        q("fr-step2-result").textContent = `Registriert via ${endpoint} (HTTP ${data.http || "-"})`;
+        const loginLink = q("fr-login-link");
+        if (loginLink) loginLink.classList.remove("d-none");
+        return data;
+      }
+
+      const domainBtn = q("fr-test-domain");
+      const tokenBtn = q("fr-validate-token");
+      const registerBtn = q("fr-register");
+      if (domainBtn) {
+        domainBtn.addEventListener("click", async () => {
+          setAlert("", "");
+          try {
+            domainBtn.disabled = true;
+            await doDomainCheck();
+            setAlert("success", "Domain erfolgreich geprüft.");
+          } catch (err) {
+            setAlert("danger", err && err.message ? err.message : String(err || "Fehler"));
+          } finally {
+            domainBtn.disabled = false;
+          }
+        });
+      }
+      if (tokenBtn) {
+        tokenBtn.addEventListener("click", async () => {
+          setAlert("", "");
+          try {
+            tokenBtn.disabled = true;
+            await doTokenValidate();
+            setAlert("success", "Token ist gültig.");
+          } catch (err) {
+            setAlert("danger", err && err.message ? err.message : String(err || "Fehler"));
+          } finally {
+            tokenBtn.disabled = false;
+          }
+        });
+      }
+      if (registerBtn) {
+        registerBtn.addEventListener("click", async () => {
+          setAlert("", "");
+          try {
+            registerBtn.disabled = true;
+            await doRegister();
+            setAlert("success", "Verknüpfung erfolgreich. Login ist jetzt wie gewohnt möglich.");
+          } catch (err) {
+            setAlert("danger", err && err.message ? err.message : String(err || "Fehler"));
+          } finally {
+            registerBtn.disabled = false;
+          }
+        });
+      }
+
       const form = document.getElementById("local-auth-install-form");
       const modalEl = document.getElementById("setupSudoModal");
       const passInput = document.getElementById("setup-sudo-password");
       const hidden = document.getElementById("setup-sudo-password-hidden");
       const submitBtn = document.getElementById("setup-sudo-submit");
-      if (!form || !modalEl || !passInput || !hidden || !submitBtn || !window.bootstrap) return;
+      if (form && modalEl && passInput && hidden && submitBtn && window.bootstrap) {
+        const modal = new bootstrap.Modal(modalEl);
+        let confirmed = false;
 
-      const modal = new bootstrap.Modal(modalEl);
-      let confirmed = false;
+        form.addEventListener("submit", (event) => {
+          if (confirmed) return;
+          event.preventDefault();
+          modal.show();
+          window.setTimeout(() => passInput.focus(), 120);
+        });
 
-      form.addEventListener("submit", (event) => {
-        if (confirmed) return;
-        event.preventDefault();
-        modal.show();
-        window.setTimeout(() => passInput.focus(), 120);
-      });
+        submitBtn.addEventListener("click", () => {
+          hidden.value = passInput.value || "";
+          confirmed = true;
+          modal.hide();
+          form.submit();
+        });
 
-      submitBtn.addEventListener("click", () => {
-        hidden.value = passInput.value || "";
-        confirmed = true;
-        modal.hide();
-        form.submit();
-      });
-
-      modalEl.addEventListener("hidden.bs.modal", () => {
-        passInput.value = "";
-      });
+        modalEl.addEventListener("hidden.bs.modal", () => {
+          passInput.value = "";
+        });
+      }
     })();
   </script>
 </body>
