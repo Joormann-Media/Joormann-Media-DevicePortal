@@ -285,14 +285,70 @@ def _copy_script(defn: SentinelDef, source_dir: Path) -> Path:
 
 
 def _install_dispatch_helper(source_dir: Path) -> None:
-    src = source_dir / "lib" / "webhook_dispatch.sh"
-    if not src.exists() or not src.is_file():
-        raise SentinelManagerError("script_missing", "Webhook dispatch helper missing", str(src))
-    _sudo_checked(
-        ["install", "-m", "0755", str(src), str(TARGET_DISPATCH_HELPER)],
-        code="install_failed",
-        message="Could not install webhook dispatch helper",
-    )
+    helper_candidates: list[Path] = [source_dir / "lib" / "webhook_dispatch.sh"]
+    for candidate_root in _source_dir_candidates():
+        helper_candidates.append(candidate_root / "lib" / "webhook_dispatch.sh")
+
+    for src in helper_candidates:
+        if src.exists() and src.is_file():
+            _sudo_checked(
+                ["install", "-m", "0755", str(src), str(TARGET_DISPATCH_HELPER)],
+                code="install_failed",
+                message="Could not install webhook dispatch helper",
+            )
+            return
+
+    # Last-resort built-in helper: keep sentinel installation functional even if the repo
+    # is missing lib/webhook_dispatch.sh (legacy checkouts).
+    fallback = """#!/usr/bin/env bash
+set -euo pipefail
+
+WEBHOOK_MODE="${WEBHOOK_MODE:-discord}"
+DISCORD_WEBHOOK="${DISCORD_WEBHOOK:-}"
+DISCORD_WEBHOOK_PRIMARY="${DISCORD_WEBHOOK_PRIMARY:-}"
+INTERNAL_WEBHOOK_URL="${INTERNAL_WEBHOOK_URL:-}"
+INTERNAL_WEBHOOK_SECRET="${INTERNAL_WEBHOOK_SECRET:-}"
+
+payload="${1:-}"
+if [ -z "${payload}" ]; then
+  payload="$(cat)"
+fi
+if [ -z "${payload}" ]; then
+  exit 0
+fi
+
+send_to() {
+  local target="$1"
+  [ -n "${target}" ] || return 0
+  curl -fsS -H "Content-Type: application/json" -X POST -d "${payload}" "${target}" >/dev/null 2>&1 || true
+}
+
+case "${WEBHOOK_MODE}" in
+  internal)
+    target="${INTERNAL_WEBHOOK_URL}"
+    if [ -n "${target}" ] && [ -n "${INTERNAL_WEBHOOK_SECRET}" ]; then
+      sep='?'
+      case "${target}" in *\\?*) sep='&';; esac
+      target="${target}${sep}secret=${INTERNAL_WEBHOOK_SECRET}"
+    fi
+    send_to "${target}"
+    ;;
+  both)
+    send_to "${DISCORD_WEBHOOK_PRIMARY:-${DISCORD_WEBHOOK}}"
+    target="${INTERNAL_WEBHOOK_URL}"
+    if [ -n "${target}" ] && [ -n "${INTERNAL_WEBHOOK_SECRET}" ]; then
+      sep='?'
+      case "${target}" in *\\?*) sep='&';; esac
+      target="${target}${sep}secret=${INTERNAL_WEBHOOK_SECRET}"
+    fi
+    send_to "${target}"
+    ;;
+  *)
+    send_to "${DISCORD_WEBHOOK_PRIMARY:-${DISCORD_WEBHOOK}}"
+    ;;
+esac
+"""
+    _write_file_sudo(TARGET_DISPATCH_HELPER, fallback, mode=0o755)
 
 
 def _service_unit_content(defn: SentinelDef, script_path: Path) -> str:

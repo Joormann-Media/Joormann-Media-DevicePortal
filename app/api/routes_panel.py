@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlencode
 
+import requests
 from flask import Blueprint, jsonify, request
 
 from app.core.config import _panel_url, _safe_base_url, ensure_config
@@ -416,6 +417,103 @@ def _panel_hardware_register_payload(cfg: dict, dev: dict, fp: dict, host: str, 
         'hardware_components': components,
         'fingerprint': fp,
         'runtimeSnapshots': snapshots,
+    }
+
+
+def _http_post_json_with_headers(url: str, payload: dict, headers: dict[str, str], timeout: int = 10) -> tuple[int | None, dict | None, str]:
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        try:
+            data = response.json()
+        except Exception:
+            data = {'raw': (response.text or '')[:2000]}
+        return response.status_code, data, ''
+    except Exception as exc:
+        return None, None, str(exc)
+
+
+def _normalize_component_type(value: str) -> str:
+    raw = (value or '').strip().lower()
+    mapping = {
+        'network_interface': 'nic',
+        'storage': 'disk',
+        'memory': 'ram',
+    }
+    return mapping.get(raw, raw if raw in {'disk', 'cpu', 'ram', 'mainboard', 'nic', 'gpu', 'other'} else 'other')
+
+
+def _panel_hardware_auto_import(base_url: str, client_id: str, api_key: str, register_payload: dict) -> dict:
+    if not base_url or not client_id or not api_key:
+        return {'ok': False, 'error': 'missing_import_credentials'}
+
+    hardware_device = register_payload.get('hardwareDevice') if isinstance(register_payload.get('hardwareDevice'), dict) else {}
+    hardware_components = register_payload.get('hardwareComponents') if isinstance(register_payload.get('hardwareComponents'), list) else []
+    network = (register_payload.get('runtimeSnapshots') or {}).get('network') if isinstance(register_payload.get('runtimeSnapshots'), dict) else {}
+
+    hardware_payload = {
+        'deviceName': str(hardware_device.get('deviceName') or '').strip(),
+        'hostname': str(hardware_device.get('hostname') or '').strip(),
+        'description': str(hardware_device.get('description') or '').strip(),
+        'osName': str(hardware_device.get('osName') or '').strip(),
+        'osVersion': str(hardware_device.get('osVersion') or '').strip(),
+        'architecture': str(hardware_device.get('architecture') or '').strip(),
+        'machineId': str(hardware_device.get('machineId') or '').strip(),
+        'productUuid': str(hardware_device.get('productUuid') or '').strip(),
+        'biosVersion': str(hardware_device.get('biosVersion') or '').strip(),
+        'biosVendor': str(hardware_device.get('biosVendor') or '').strip(),
+        'boardVendor': str(hardware_device.get('boardVendor') or '').strip(),
+        'boardName': str(hardware_device.get('boardName') or '').strip(),
+        'boardSerial': str(hardware_device.get('boardSerial') or '').strip(),
+        'cpuVendor': str(hardware_device.get('cpuVendor') or '').strip(),
+        'cpuModel': str(hardware_device.get('cpuModel') or '').strip(),
+        'ramTotal': hardware_device.get('ramTotal'),
+        'primaryMacAddress': str(hardware_device.get('primaryMacAddress') or '').strip(),
+        'localLanIp': str(hardware_device.get('localLanIp') or '').strip(),
+        'publicIp': str(hardware_device.get('publicIp') or '').strip(),
+        'tailscaleIp': str(hardware_device.get('tailscaleIp') or '').strip(),
+        'network': network if isinstance(network, dict) else {},
+        'rawData': register_payload.get('runtimeSnapshots') if isinstance(register_payload.get('runtimeSnapshots'), dict) else register_payload,
+    }
+
+    components_payload = {
+        'components': [
+            {
+                **item,
+                'componentType': _normalize_component_type(str(item.get('componentType') or '')),
+                'name': str(item.get('name') or item.get('slotName') or 'component').strip() or 'component',
+            }
+            for item in hardware_components
+            if isinstance(item, dict)
+        ]
+    }
+
+    headers = {'X-Client-Id': client_id, 'X-API-Key': api_key}
+    hardware_candidates = ['/api/hardware-device/hardware-import', '/api/hardware/device/hardware-import']
+    component_candidates = ['/api/hardware-device/component-import', '/api/hardware/device/component-import']
+
+    hardware_result = {'ok': False, 'http': None, 'path': '', 'error': ''}
+    for path in hardware_candidates:
+        code, resp, err = _http_post_json_with_headers(f'{base_url}{path}', hardware_payload, headers, timeout=10)
+        if code is not None and 200 <= code < 300:
+            hardware_result = {'ok': True, 'http': code, 'path': path, 'response': resp}
+            break
+        hardware_result = {'ok': False, 'http': code, 'path': path, 'response': resp, 'error': _extract_response_message(resp) or str(err or '')}
+
+    component_result = {'ok': False, 'http': None, 'path': '', 'error': ''}
+    if components_payload['components']:
+        for path in component_candidates:
+            code, resp, err = _http_post_json_with_headers(f'{base_url}{path}', components_payload, headers, timeout=10)
+            if code is not None and 200 <= code < 300:
+                component_result = {'ok': True, 'http': code, 'path': path, 'response': resp}
+                break
+            component_result = {'ok': False, 'http': code, 'path': path, 'response': resp, 'error': _extract_response_message(resp) or str(err or '')}
+    else:
+        component_result = {'ok': True, 'http': 0, 'path': '', 'response': {'status': 'skipped', 'reason': 'no_components'}}
+
+    return {
+        'ok': bool(hardware_result.get('ok')) and bool(component_result.get('ok')),
+        'hardware_import': hardware_result,
+        'component_import': component_result,
     }
 
 
@@ -1702,6 +1800,8 @@ def api_panel_register_hardware():
             cfg['registration_token'] = token
             cfg['node_runtime_type'] = node_type
             cfg['panel_hardware_register_path'] = path
+            exchanged_key = ''
+            resolved_client_id = ''
             if isinstance(resp, dict):
                 api_key_exchange = resp.get('apiKeyExchange')
                 if isinstance(api_key_exchange, dict):
@@ -1713,6 +1813,9 @@ def api_panel_register_hardware():
                         keys['raspi_to_admin'] = exchanged_key
                         keys['updated_at'] = utc_now()
                         cfg['panel_api_keys'] = keys
+                device_payload = resp.get('device')
+                if isinstance(device_payload, dict):
+                    resolved_client_id = str(device_payload.get('clientId') or '').strip()
             if isinstance(resp, dict):
                 slug = str(
                     resp.get('slug')
@@ -1722,6 +1825,16 @@ def api_panel_register_hardware():
                 ).strip()
                 if slug:
                     cfg['device_slug'] = slug
+            if not resolved_client_id:
+                resolved_client_id = str(cfg.get('client_id') or '').strip()
+            import_api_key = exchanged_key
+            if not import_api_key:
+                keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+                if isinstance(keys, dict):
+                    import_api_key = str(keys.get('raspi_to_admin') or '').strip()
+            auto_import = {'ok': False, 'error': 'auto_import_not_attempted'}
+            if resolved_client_id and import_api_key:
+                auto_import = _panel_hardware_auto_import(base, resolved_client_id, import_api_key, payload)
             cfg['updated_at'] = utc_now()
             write_json(CONFIG_PATH, cfg, mode=0o600)
             st = _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
@@ -1734,6 +1847,7 @@ def api_panel_register_hardware():
                 response=resp,
                 http=code,
                 resolved_url=url,
+                auto_import=auto_import,
             ), 200
         last_error = _extract_response_message(resp if isinstance(resp, dict) else None) or (str(err or '') if code is None else f'http {code}')
 

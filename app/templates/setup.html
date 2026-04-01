@@ -269,7 +269,21 @@
           registration_token: token,
           node_type: nodeType,
         });
-        q("fr-step2-result").textContent = `Token gültig (HTTP ${data.http || "-"})`;
+        const effectiveNodeType = String(data.node_type || nodeType || "").trim();
+        const autoDetected = String(data.auto_detected || "").trim().toLowerCase();
+        const nodeTypeSelect = q("fr-node-type");
+        if (nodeTypeSelect && (autoDetected === "hardware" || (effectiveNodeType && effectiveNodeType !== nodeType))) {
+          if (effectiveNodeType === "server" || effectiveNodeType === "workstation" || effectiveNodeType === "raspi_node") {
+            nodeTypeSelect.value = effectiveNodeType;
+          } else if (autoDetected === "hardware") {
+            nodeTypeSelect.value = "server";
+          }
+        }
+        const activeNodeType = String((nodeTypeSelect && nodeTypeSelect.value) || effectiveNodeType || nodeType || "").trim();
+        const nodeTypeLabel = activeNodeType === "raspi_node"
+          ? "Raspi-Node"
+          : (activeNodeType === "workstation" ? "Workstation" : "Server");
+        q("fr-step2-result").textContent = `Token gültig (HTTP ${data.http || "-"}) - Flow: ${nodeTypeLabel}`;
         return data;
       }
 
@@ -286,11 +300,42 @@
           registration_token: token,
           node_type: nodeType,
         };
-        const data = await fetchJson(endpoint, payload);
-        q("fr-step2-result").textContent = `Registriert via ${endpoint} (HTTP ${data.http || "-"})`;
-        const loginLink = q("fr-login-link");
-        if (loginLink) loginLink.classList.remove("d-none");
-        return data;
+        try {
+          const data = await fetchJson(endpoint, payload);
+          q("fr-step2-result").textContent = `Registriert via ${endpoint} (HTTP ${data.http || "-"})`;
+          const loginLink = q("fr-login-link");
+          if (loginLink) loginLink.classList.remove("d-none");
+          return data;
+        } catch (err) {
+          const message = String((err && err.message) || "");
+          const shouldTryHardwareFallback = (
+            nodeType === "raspi_node" &&
+            (
+              /token/i.test(message) ||
+              /invalid/i.test(message) ||
+              /abgelaufen/i.test(message) ||
+              /register_token_/i.test(message)
+            )
+          );
+          if (!shouldTryHardwareFallback) {
+            throw err;
+          }
+
+          const fallbackPayload = {
+            admin_base_url: domain,
+            registration_token: token,
+            node_type: "server",
+          };
+          const fallbackData = await fetchJson("/api/panel/register-hardware", fallbackPayload);
+          const nodeTypeSelect = q("fr-node-type");
+          if (nodeTypeSelect) {
+            nodeTypeSelect.value = "server";
+          }
+          q("fr-step2-result").textContent = `Registriert via /api/panel/register-hardware (HTTP ${fallbackData.http || "-"})`;
+          const loginLink = q("fr-login-link");
+          if (loginLink) loginLink.classList.remove("d-none");
+          return fallbackData;
+        }
       }
 
       const domainBtn = q("fr-test-domain");
