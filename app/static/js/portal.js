@@ -100,6 +100,7 @@
     mode: "setup",
     panelUrl: "",
     token: "",
+    nodeType: "raspi_node",
     verifiedUrl: false,
     registered: false,
     linkType: "skip",
@@ -1076,6 +1077,13 @@
     return checked ? String(checked.value || "skip") : "skip";
   }
 
+  function getSetupNodeType() {
+    const el = q("setup-node-type");
+    const value = String(el && el.value ? el.value : "raspi_node").trim().toLowerCase();
+    if (value === "server" || value === "workstation" || value === "raspi_node") return value;
+    return "raspi_node";
+  }
+
   function setSetupError(message = "") {
     const box = q("setup-wizard-error");
     if (!box) return;
@@ -1196,6 +1204,7 @@
     setupWizardState.step = assignOnly ? 3 : 1;
     setupWizardState.panelUrl = String(cfg.admin_base_url || "").trim();
     setupWizardState.token = String(cfg.registration_token || "").trim();
+    setupWizardState.nodeType = String(cfg.node_runtime_type || "raspi_node").trim().toLowerCase() || "raspi_node";
     setupWizardState.verifiedUrl = assignOnly;
     setupWizardState.registered = assignOnly;
     setupWizardState.linkType = "skip";
@@ -1207,6 +1216,7 @@
       setupWizardState.searchTimer = null;
     }
     q("setup-panel-url").value = setupWizardState.panelUrl;
+    q("setup-node-type").value = setupWizardState.nodeType;
     q("setup-registration-token").value = setupWizardState.token;
     q("setup-step-1-result").textContent = "Noch nicht geprüft.";
     q("setup-step-2-result").textContent = assignOnly ? "Bereits verknüpft. Optionale Zuordnung möglich." : "Noch nicht verknüpft.";
@@ -1273,6 +1283,7 @@
 
   async function wizardRegisterWithToken() {
     setupWizardState.token = String(q("setup-registration-token").value || "").trim();
+    setupWizardState.nodeType = getSetupNodeType();
     if (!setupWizardState.token) {
       throw new Error("Bitte einen Registrierungstoken eingeben.");
     }
@@ -1281,6 +1292,7 @@
       body: {
         admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
         registration_token: setupWizardState.token,
+        node_type: setupWizardState.nodeType,
       },
       timeoutMs: REQUEST_TIMEOUTS.panelTokenValidateMs,
     });
@@ -1292,10 +1304,23 @@
       body: {
         admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
         registration_token: setupWizardState.token,
+        node_type: setupWizardState.nodeType,
       },
       timeoutMs: REQUEST_TIMEOUTS.panelRegisterMs,
     });
     setupWizardState.registered = !!registerPayload.ok;
+    const serverResp = registerPayload && typeof registerPayload.response === "object" ? registerPayload.response : {};
+    const serverDevice = serverResp && typeof serverResp.device === "object" ? serverResp.device : {};
+    const rotatedToken = String(
+      serverDevice.registerToken
+      || serverResp.registerToken
+      || (serverResp.data && typeof serverResp.data === "object" ? serverResp.data.registerToken : "")
+      || ""
+    ).trim();
+    if (rotatedToken) {
+      setupWizardState.token = rotatedToken;
+      q("setup-registration-token").value = rotatedToken;
+    }
     if (els.regToken) els.regToken.value = setupWizardState.token;
     const result = q("setup-step-2-result");
     if (result) {
@@ -1320,6 +1345,7 @@
       q: qv,
       registration_token: setupWizardState.token,
       admin_base_url: setupWizardState.panelUrl,
+      node_type: setupWizardState.nodeType,
     });
     const payload = await fetchJson(`/api/panel/search-${target}?${params.toString()}`, {
       cache: "no-store",
@@ -1346,6 +1372,7 @@
       body: {
         admin_base_url: setupWizardState.panelUrl,
         registration_token: setupWizardState.token,
+        node_type: setupWizardState.nodeType,
         target_type: setupWizardState.linkType,
         target_id: setupWizardState.selectedLinkItem.id,
         selected_user: setupWizardState.linkType === "user" ? setupWizardState.selectedLinkItem : null,

@@ -1807,7 +1807,7 @@ def api_panel_register_hardware():
             last_error = str(err or 'request failed')
             continue
         if 200 <= code < 300 and _response_indicates_success(code, resp):
-            cfg['registration_token'] = token
+            next_token = token
             cfg['node_runtime_type'] = node_type
             cfg['panel_hardware_register_path'] = path
             exchanged_key = ''
@@ -1826,6 +1826,9 @@ def api_panel_register_hardware():
                 device_payload = resp.get('device')
                 if isinstance(device_payload, dict):
                     resolved_client_id = str(device_payload.get('clientId') or '').strip()
+                    rotated_token = str(device_payload.get('registerToken') or '').strip()
+                    if rotated_token:
+                        next_token = rotated_token
             if isinstance(resp, dict):
                 slug = str(
                     resp.get('slug')
@@ -1835,6 +1838,15 @@ def api_panel_register_hardware():
                 ).strip()
                 if slug:
                     cfg['device_slug'] = slug
+                if not next_token:
+                    alt_token = str(
+                        ((resp.get('data') or {}).get('registerToken') if isinstance(resp.get('data'), dict) else '')
+                        or resp.get('registerToken')
+                        or ''
+                    ).strip()
+                    if alt_token:
+                        next_token = alt_token
+            cfg['registration_token'] = next_token or token
             if not resolved_client_id:
                 resolved_client_id = str(cfg.get('client_id') or '').strip()
             import_api_key = exchanged_key
