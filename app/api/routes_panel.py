@@ -1877,6 +1877,19 @@ def api_panel_sync_status():
     dev = ensure_device()
 
     data = request.get_json(force=True, silent=True) or {}
+    panel_state = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
+    panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+    linked = bool(panel_state.get('linked'))
+    has_api_key = bool(str(panel_keys.get('raspi_to_admin') or '').strip())
+    if not linked or not has_api_key:
+        return jsonify(
+            ok=False,
+            error='device_not_linked',
+            detail='Gerät ist noch nicht verknüpft. Bitte Setup-Assistent erneut ausführen.',
+            hint='setup_required',
+            panel_link_state=panel_state,
+        ), 409
+
     request_base = _safe_base_url((data.get('admin_base_url') or ''))
     base_url = request_base or _safe_base_url(cfg.get('admin_base_url', ''))
     if not base_url:
