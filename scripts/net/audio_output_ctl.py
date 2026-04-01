@@ -89,6 +89,29 @@ def _collect_sinks_pactl() -> tuple[str, list[dict]]:
                             if sink["name"] == current_name and "volume_percent" not in sink:
                                 sink["volume_percent"] = percent
                                 break
+
+    if not default_sink and sinks:
+        # Try to pick a reasonable default if Pulse hasn't set one.
+        preferred = ""
+        for sink in sinks:
+            name = str(sink.get("name") or "")
+            desc = str(sink.get("description") or name)
+            token = f"{name} {desc}".lower()
+            if any(marker in token for marker in ("analog", "speaker", "headphone", "lineout", "mailbox")):
+                preferred = name
+                break
+        if not preferred:
+            for sink in sinks:
+                name = str(sink.get("name") or "")
+                desc = str(sink.get("description") or name)
+                if "hdmi" in f"{name} {desc}".lower():
+                    preferred = name
+                    break
+        if not preferred:
+            preferred = str(sinks[0].get("name") or "")
+        if preferred:
+            _run(["pactl", "set-default-sink", preferred], timeout=8)
+            default_sink = preferred
     return default_sink, sinks
 
 
