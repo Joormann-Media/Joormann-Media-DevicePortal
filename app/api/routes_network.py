@@ -715,10 +715,31 @@ def _has_uplink(network_info: dict) -> bool:
     interfaces = (network_info or {}).get("interfaces") or {}
     lan = interfaces.get("lan") or {}
     wifi = interfaces.get("wifi") or {}
+    routes = (network_info or {}).get("routes") or {}
+    tailscale = (network_info or {}).get("tailscale") or {}
 
-    lan_up = bool(lan.get("carrier")) or bool(_norm_text(lan.get("ip")))
-    wifi_up = bool(wifi.get("connected"))
-    return bool(lan_up or wifi_up)
+    def _has_non_local_ip(value) -> bool:
+        ip = _norm_text(value)
+        if not ip:
+            return False
+        if ip.startswith("127.") or ip == "0.0.0.0":
+            return False
+        return True
+
+    lan_up = bool(lan.get("carrier")) or _has_non_local_ip(lan.get("ip"))
+    wifi_up = bool(wifi.get("connected")) or _has_non_local_ip(wifi.get("ip"))
+    default_route_up = bool(_norm_text(routes.get("gateway")))
+    tailscale_up = _has_non_local_ip(tailscale.get("ip"))
+
+    any_interface_ip_up = False
+    for entry in interfaces.values():
+        if not isinstance(entry, dict):
+            continue
+        if _has_non_local_ip(entry.get("ip")) or _has_non_local_ip(entry.get("ipv4")):
+            any_interface_ip_up = True
+            break
+
+    return bool(lan_up or wifi_up or default_route_up or tailscale_up or any_interface_ip_up)
 
 
 def _get_audio_output_profile(cfg: dict) -> dict:
