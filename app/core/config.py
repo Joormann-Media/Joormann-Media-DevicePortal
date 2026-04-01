@@ -12,7 +12,7 @@ DEFAULT_CONFIG: dict = {
     'poll_seconds': 60,
     'registration_token': '',
     'panel_register_path': '/api/device/link/register',
-    'panel_hardware_register_path': '/api/hardware/device/register',
+    'panel_hardware_register_path': '/api/hardware-device/register',
     'panel_ping_path': '/api/device/ping',
     'selected_stream_slug': '',
     'selected_stream_name': '',
@@ -191,6 +191,16 @@ def ensure_config() -> dict:
     # Auto-migrate legacy admin endpoint to the new link-wizard register route.
     if (cfg.get('panel_register_path') or '').strip() == '/api/device/register':
         cfg['panel_register_path'] = '/api/device/link/register'
+        changed = True
+
+    # Auto-migrate legacy hardware register route to current API route.
+    if (cfg.get('panel_hardware_register_path') or '').strip() == '/api/hardware/device/register':
+        cfg['panel_hardware_register_path'] = '/api/hardware-device/register'
+        changed = True
+
+    # Auto-migrate legacy hardware verify route to current API route.
+    if (cfg.get('panel_hardware_verify_path') or '').strip() == '/api/hardware/device/verify-token':
+        cfg['panel_hardware_verify_path'] = '/api/hardware-device/verify-token'
         changed = True
 
     if 'created_at' not in cfg:

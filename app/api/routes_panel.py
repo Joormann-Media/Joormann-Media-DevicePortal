@@ -1671,8 +1671,8 @@ def api_panel_register_hardware():
     if not base:
         return jsonify(ok=False, error='admin_base_url missing'), 400
 
-    configured_path = str(cfg.get('panel_hardware_register_path') or '/api/hardware/device/register').strip()
-    candidates: list[str] = [configured_path, '/api/hardware/device/register', '/api/hardware-device/register']
+    configured_path = str(cfg.get('panel_hardware_register_path') or '/api/hardware-device/register').strip()
+    candidates: list[str] = [configured_path, '/api/hardware-device/register', '/api/hardware/device/register']
     deduped_paths: list[str] = []
     for candidate in candidates:
         candidate = str(candidate or '').strip()
@@ -1702,6 +1702,17 @@ def api_panel_register_hardware():
             cfg['registration_token'] = token
             cfg['node_runtime_type'] = node_type
             cfg['panel_hardware_register_path'] = path
+            if isinstance(resp, dict):
+                api_key_exchange = resp.get('apiKeyExchange')
+                if isinstance(api_key_exchange, dict):
+                    exchanged_key = str(api_key_exchange.get('apiKey') or '').strip()
+                    if exchanged_key:
+                        keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+                        if not isinstance(keys, dict):
+                            keys = {}
+                        keys['raspi_to_admin'] = exchanged_key
+                        keys['updated_at'] = utc_now()
+                        cfg['panel_api_keys'] = keys
             if isinstance(resp, dict):
                 slug = str(
                     resp.get('slug')
