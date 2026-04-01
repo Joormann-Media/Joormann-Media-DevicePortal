@@ -68,12 +68,12 @@
             <div class="col-12 col-lg-6">
               <label for="fr-node-type" class="form-label fw-semibold">Dieser Host ist ein</label>
               <select id="fr-node-type" class="form-select">
-                <option value="raspi_node" {% if (node_runtime_type or '') == 'raspi_node' %}selected{% endif %}>Raspi-Node</option>
+                <option value="raspi_node" {% if (node_runtime_type or '') == 'raspi_node' %}selected{% endif %}>DeviceNode (Raspberry Pi)</option>
                 <option value="server" {% if (node_runtime_type or '') == 'server' %}selected{% endif %}>Server</option>
                 <option value="workstation" {% if (node_runtime_type or '') == 'workstation' %}selected{% endif %}>Workstation</option>
               </select>
               <div class="form-text">
-                Raspi-Node nutzt den bisherigen Flow. Server/Workstation registrieren über Hardware-Device.
+                DeviceNode (Raspberry Pi) nutzt den bisherigen Flow. Server/Workstation registrieren über Hardware-Device.
               </div>
             </div>
             <div class="col-12 col-lg-6">
@@ -281,7 +281,7 @@
         }
         const activeNodeType = String((nodeTypeSelect && nodeTypeSelect.value) || effectiveNodeType || nodeType || "").trim();
         const nodeTypeLabel = activeNodeType === "raspi_node"
-          ? "Raspi-Node"
+          ? "DeviceNode (Raspberry Pi)"
           : (activeNodeType === "workstation" ? "Workstation" : "Server");
         q("fr-step2-result").textContent = `Token gültig (HTTP ${data.http || "-"}) - Flow: ${nodeTypeLabel}`;
         return data;

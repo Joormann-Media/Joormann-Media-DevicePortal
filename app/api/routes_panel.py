@@ -26,7 +26,7 @@ from app.core.netcontrol import (
     get_wifi_status,
     player_service_action,
 )
-from app.core.paths import CONFIG_PATH
+from app.core.paths import CONFIG_PATH, DEVICE_PATH
 from app.core.state import update_state
 from app.core.storage_state import get_storage_state
 from app.core.systeminfo import get_hostname, get_ip, parse_load_stats, parse_mem_stats_kb
@@ -1406,6 +1406,73 @@ def _extract_panel_device_flags(resp: dict | None) -> dict | None:
     return None
 
 
+def _extract_rotated_device_credentials(resp: dict | None) -> dict:
+    if not isinstance(resp, dict):
+        return {}
+    sources: list[dict] = [resp]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        sources.append(data)
+        nested_device = data.get('device')
+        if isinstance(nested_device, dict):
+            sources.append(nested_device)
+    device_block = resp.get('device')
+    if isinstance(device_block, dict):
+        sources.append(device_block)
+    credentials_block = resp.get('credentials')
+    if isinstance(credentials_block, dict):
+        sources.append(credentials_block)
+    if isinstance(data, dict):
+        nested_credentials = data.get('credentials')
+        if isinstance(nested_credentials, dict):
+            sources.append(nested_credentials)
+
+    device_uuid = ''
+    auth_key = ''
+    for source in sources:
+        if not device_uuid:
+            device_uuid = str(
+                source.get('deviceUuid')
+                or source.get('device_uuid')
+                or source.get('uuid')
+                or ''
+            ).strip()
+        if not auth_key:
+            auth_key = str(
+                source.get('authKey')
+                or source.get('auth_key')
+                or source.get('deviceAuthKey')
+                or source.get('device_auth_key')
+                or ''
+            ).strip()
+        if device_uuid and auth_key:
+            break
+    out: dict = {}
+    if device_uuid:
+        out['device_uuid'] = device_uuid
+    if auth_key:
+        out['auth_key'] = auth_key
+    return out
+
+
+def _apply_rotated_device_credentials(dev: dict, resp: dict | None) -> bool:
+    rotated = _extract_rotated_device_credentials(resp)
+    if not rotated:
+        return False
+    changed = False
+    new_uuid = str(rotated.get('device_uuid') or '').strip()
+    new_auth = str(rotated.get('auth_key') or '').strip()
+    if new_uuid and new_uuid != str(dev.get('device_uuid') or '').strip():
+        dev['device_uuid'] = new_uuid
+        changed = True
+    if new_auth and new_auth != str(dev.get('auth_key') or '').strip():
+        dev['auth_key'] = new_auth
+        changed = True
+    if changed:
+        write_json(DEVICE_PATH, dev, mode=0o600)
+    return changed
+
+
 def _portal_auth_valid(data: dict, dev: dict, cfg: dict | None = None) -> tuple[bool, str]:
     uuid_in = str(data.get('deviceUuid') or data.get('device_uuid') or '').strip()
     auth_in = str(data.get('authKey') or data.get('auth_key') or '').strip()
@@ -1717,6 +1784,8 @@ def api_panel_register():
     panel_error = '' if linked else (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
 
     if _response_indicates_success(code, resp):
+        if isinstance(resp, dict):
+            _apply_rotated_device_credentials(dev, resp)
         cfg['registration_token'] = token
         if node_type:
             cfg['node_runtime_type'] = node_type
@@ -1825,6 +1894,8 @@ def api_panel_register_hardware():
             last_error = str(err or 'request failed')
             continue
         if 200 <= code < 300 and _response_indicates_success(code, resp):
+            if isinstance(resp, dict):
+                _apply_rotated_device_credentials(dev, resp)
             next_token = token
             cfg['node_runtime_type'] = node_type
             cfg['panel_hardware_register_path'] = path
@@ -1944,6 +2015,11 @@ def api_panel_sync_status():
         'authKey': dev.get('auth_key') or '',
         'auth_key': dev.get('auth_key') or '',
     }
+    panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+    portal_api_key = str((panel_keys.get('raspi_to_admin') if isinstance(panel_keys, dict) else '') or '').strip()
+    if portal_api_key:
+        payload['apiKey'] = portal_api_key
+        payload['portalApiKey'] = portal_api_key
 
     code, resp, err = http_post_json(sync_url, payload, timeout=8)
     if code is None:
