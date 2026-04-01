@@ -1042,12 +1042,20 @@
       ? config.panel_device_flags
       : {};
 
-    const renderSwitch = (key, wrapId, badgeId, valueId, onText, offText, trueClass, falseClass) => {
+    const readFlag = (...keys) => {
+      for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(flags, key)) {
+          return normalizeOptionalBoolean(flags[key]);
+        }
+      }
+      return null;
+    };
+
+    const renderSwitch = (value, wrapId, badgeId, valueId, onText, offText, trueClass, falseClass) => {
       const wrap = q(wrapId);
       const badge = q(badgeId);
       const valueEl = q(valueId);
       if (!wrap || !badge || !valueEl) return;
-      const value = normalizeOptionalBoolean(flags[key]);
       wrap.classList.toggle("is-unknown", value === null);
       valueEl.textContent = value === null ? "unknown" : (value ? onText : offText);
       badge.classList.remove("text-bg-success", "text-bg-danger", "text-bg-warning", "text-bg-secondary");
@@ -1063,12 +1071,14 @@
       }
     };
 
-    renderSwitch("is_active", "hero-flag-active-wrap", "hero-flag-active-badge", "hero-flag-active-value", "active", "inactive", "text-bg-success", "text-bg-warning");
-    renderSwitch("is_locked", "hero-flag-locked-wrap", "hero-flag-locked-badge", "hero-flag-locked-value", "locked", "unlocked", "text-bg-danger", "text-bg-success");
+    const isActive = readFlag("is_active", "isActive", "active");
+    const isLocked = readFlag("is_locked", "isLocked", "locked");
+    renderSwitch(isActive, "hero-flag-active-wrap", "hero-flag-active-badge", "hero-flag-active-value", "active", "inactive", "text-bg-success", "text-bg-warning");
+    renderSwitch(isLocked, "hero-flag-locked-wrap", "hero-flag-locked-badge", "hero-flag-locked-value", "locked", "unlocked", "text-bg-danger", "text-bg-success");
 
     const updatedEl = q("hero-flag-updated");
     if (updatedEl) {
-      updatedEl.textContent = String(flags.updated_at || "-");
+      updatedEl.textContent = String(flags.updated_at || flags.updatedAt || "-");
     }
   }
 

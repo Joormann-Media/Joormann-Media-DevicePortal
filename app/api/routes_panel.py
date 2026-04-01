@@ -627,21 +627,38 @@ def _software_snapshot(update_info: dict, player_update_info: dict, network_info
 
 def _resolve_player_repo_path(cfg: dict) -> str:
     raw = str(cfg.get('player_repo_dir') or cfg.get('player_repo_link') or '').strip()
-    if raw == '':
+    repo_root = Path(__file__).resolve().parents[2]
+    workspace_root = repo_root.parent
+
+    def _from_existing_path(path: Path) -> str:
+        if path.exists() and (path / '.git').exists():
+            return str(path.resolve())
         return ''
 
     # Local path already configured.
-    if '://' not in raw and Path(raw).expanduser().exists():
-        return str(Path(raw).expanduser().resolve())
+    if raw != '' and '://' not in raw:
+        direct = Path(raw).expanduser()
+        resolved = _from_existing_path(direct)
+        if resolved:
+            return resolved
 
     # URL-style config: infer clone target from update script convention.
-    if '://' in raw or raw.startswith('git@') or raw.startswith('ssh://'):
-        service_user = str(cfg.get('player_service_user') or '').strip()
-        repo_name = raw.rstrip('/').split('/')[-1].replace('.git', '').strip() or 'Joormann-Media-DevicePlayer'
-        if service_user:
-            inferred = Path(f"/home/{service_user}/projects/{repo_name}")
-            if inferred.exists():
-                return str(inferred.resolve())
+    service_user = str(cfg.get('player_service_user') or '').strip()
+    repo_name = 'Joormann-Media-DevicePlayer'
+    if raw != '' and ('://' in raw or raw.startswith('git@') or raw.startswith('ssh://')):
+        repo_name = raw.rstrip('/').split('/')[-1].replace('.git', '').strip() or repo_name
+
+    candidates: list[Path] = []
+    if service_user:
+        candidates.append(Path(f"/home/{service_user}/projects/{repo_name}"))
+        candidates.append(Path(f"/home/{service_user}/{repo_name}"))
+    candidates.append(workspace_root / repo_name)
+    candidates.append(workspace_root / "Joormann-Media-DevicePlayer")
+
+    for candidate in candidates:
+        resolved = _from_existing_path(candidate)
+        if resolved:
+            return resolved
 
     return ''
 
