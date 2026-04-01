@@ -35,6 +35,19 @@ from app.core.timeutil import utc_now
 bp_panel = Blueprint('panel', __name__)
 
 
+def _normalize_node_type(value: str) -> str:
+    raw = str(value or '').strip().lower()
+    aliases = {
+        'raspi': 'raspi_node',
+        'raspberrypi': 'raspi_node',
+        'raspi_node': 'raspi_node',
+        'raspi-node': 'raspi_node',
+        'server': 'server',
+        'workstation': 'workstation',
+    }
+    return aliases.get(raw, 'raspi_node')
+
+
 def _update_panel_link_state(cfg: dict, **kwargs) -> dict:
     st = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
     st.setdefault('linked', False)
@@ -1628,6 +1641,10 @@ def api_panel_register():
         cfg['updated_at'] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
 
+    node_type = _normalize_node_type(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'raspi_node')
+    if node_type in ('server', 'workstation'):
+        return api_panel_register_hardware()
+
     token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
     if not token:
         return jsonify(ok=False, error='registration_token missing'), 400
@@ -1750,16 +1767,9 @@ def api_panel_register_hardware():
     if request_base:
         cfg['admin_base_url'] = request_base
 
-    raw_node_type = str(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'server').strip().lower()
-    node_type_aliases = {
-        'raspi': 'raspi_node',
-        'raspberrypi': 'raspi_node',
-        'raspi_node': 'raspi_node',
-        'raspi-node': 'raspi_node',
-        'server': 'server',
-        'workstation': 'workstation',
-    }
-    node_type = node_type_aliases.get(raw_node_type, 'server')
+    node_type = _normalize_node_type(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'server')
+    if node_type == 'raspi_node':
+        node_type = 'server'
 
     token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
     if not token:
