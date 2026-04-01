@@ -16,6 +16,23 @@ REQUIREMENTS_FILE="$REPO_DIR/requirements.txt"
 SERVICE_FILE_DST="/etc/systemd/system/device-portal.service"
 ENV_FILE="/etc/default/jm-deviceportal"
 INTERNAL_STORAGE_SETUP="$REPO_DIR/install/setup_internal_storage.sh"
+OLD_CONFIG_PATH=""
+OLD_STORAGE_CONFIG_PATH=""
+OLD_DEVICE_PATH=""
+OLD_FINGERPRINT_PATH=""
+OLD_STATE_PATH=""
+OLD_PLAN_PATH=""
+
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE" || true
+  OLD_CONFIG_PATH="${CONFIG_PATH:-}"
+  OLD_STORAGE_CONFIG_PATH="${STORAGE_CONFIG_PATH:-}"
+  OLD_DEVICE_PATH="${DEVICE_PATH:-}"
+  OLD_FINGERPRINT_PATH="${FINGERPRINT_PATH:-}"
+  OLD_STATE_PATH="${STATE_PATH:-}"
+  OLD_PLAN_PATH="${PLAN_PATH:-}"
+fi
 
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   echo "Service user does not exist: $SERVICE_USER" >&2
@@ -84,6 +101,25 @@ for f in config.json device.json fingerprint.json state.json plan.json; do
     chmod 0640 "$REPO_DIR/var/data/${f}" || true
   fi
 done
+
+# Preserve runtime JSON from a previously configured portal path (important when
+# service/env is reinstalled and points to a new repository directory).
+copy_if_missing() {
+  local src="$1"
+  local dst="$2"
+  if [[ -n "$src" && -f "$src" && ! -f "$dst" ]]; then
+    cp "$src" "$dst"
+    chown "$SERVICE_USER:$SERVICE_USER" "$dst"
+    chmod 0640 "$dst" || true
+  fi
+}
+
+copy_if_missing "$OLD_CONFIG_PATH" "$REPO_DIR/var/data/config.json"
+copy_if_missing "$OLD_STORAGE_CONFIG_PATH" "$REPO_DIR/var/data/config-storage.json"
+copy_if_missing "$OLD_DEVICE_PATH" "$REPO_DIR/var/data/device.json"
+copy_if_missing "$OLD_FINGERPRINT_PATH" "$REPO_DIR/var/data/fingerprint.json"
+copy_if_missing "$OLD_STATE_PATH" "$REPO_DIR/var/data/state.json"
+copy_if_missing "$OLD_PLAN_PATH" "$REPO_DIR/var/data/plan.json"
 
 if [[ ! -x "$VENV_DIR/bin/python" ]]; then
   sudo -u "$SERVICE_USER" python3 -m venv "$VENV_DIR"
