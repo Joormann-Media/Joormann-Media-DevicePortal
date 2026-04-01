@@ -162,6 +162,18 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
         if any(marker in token for marker in ("analog", "speaker", "headphone", "headset", "lineout")):
             speaker_candidates.append({"sink_name": sink_name, "description": sink_desc, "volume_percent": sink.get("volume_percent")})
 
+    if not speaker_candidates:
+        for sink in sinks:
+            sink_name = str(sink.get("name") or "")
+            sink_desc = str(sink.get("description") or sink_name)
+            token = f"{sink_name} {sink_desc}".lower()
+            if "bluez_output" in token or "bluetooth" in token:
+                continue
+            if "hdmi" in token:
+                continue
+            speaker_candidates.append({"sink_name": sink_name, "description": sink_desc, "volume_percent": sink.get("volume_percent")})
+            break
+
     local_hdmi = {
         "id": "local_hdmi",
         "label": "HDMI",
