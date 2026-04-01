@@ -75,7 +75,7 @@ def _collect_sinks_pactl() -> tuple[str, list[dict]]:
                     if sink["name"] == current_name and "description" not in sink:
                         sink["description"] = desc
                         break
-            if stripped.startswith("Volume:") and current_name:
+            if current_name and (stripped.startswith("Volume:") or stripped.startswith("Lautstärke:")):
                 # Example: Volume: front-left: 65536 / 100% / 0.00 dB, front-right: 65536 / 100% / 0.00 dB
                 if "%" in stripped:
                     percent_raw = stripped.split("%", 1)[0]
