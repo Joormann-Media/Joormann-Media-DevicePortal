@@ -1204,6 +1204,44 @@ def player_service_install(repo_dir: str, service_user: str, service_name: str, 
     }
 
 
+def portal_service_install(repo_dir: str, service_user: str, service_name: str = "device-portal.service") -> dict:
+    repo_dir = (repo_dir or "").strip()
+    service_user = (service_user or "").strip()
+    service_name = (service_name or "device-portal.service").strip() or "device-portal.service"
+    if not repo_dir:
+        raise NetControlError(code="invalid_payload", message="repo_dir is required")
+    if not service_user:
+        raise NetControlError(code="invalid_payload", message="service_user is required")
+
+    rc, out, err = _run_script(
+        "portal_service_install.sh",
+        [repo_dir, service_user, service_name],
+        timeout=60,
+        use_sudo=True,
+    )
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or parsed.get("message") or err or out
+    if rc != 0 or parsed.get("success", "false").lower() != "true":
+        raise NetControlError(
+            code=parsed.get("code", "portal_service_install_failed"),
+            message=parsed.get("message", "Portal service install failed"),
+            detail=detail,
+        )
+
+    return {
+        "success": True,
+        "service_name": parsed.get("service_name", service_name),
+        "repo_dir": parsed.get("repo_dir", repo_dir),
+        "service_user": parsed.get("service_user", service_user),
+        "active_state": parsed.get("active_state", ""),
+        "substate": parsed.get("substate", ""),
+        "fragment_path": parsed.get("fragment_path", ""),
+        "exec_start": parsed.get("exec_start", ""),
+        "working_directory": parsed.get("working_directory", ""),
+        "message": parsed.get("message", "Portal service installed"),
+    }
+
+
 def player_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_BYTES) -> dict:
     updates_dir = _player_update_dir()
     selected_job_id = (job_id or "").strip()

@@ -5667,6 +5667,38 @@
     }
   }
 
+  async function installPortalService() {
+    const btn = q("btn-system-install-portal-service");
+    const logEl = q("system-update-log");
+    if (!btn || !logEl) return;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Installiere...';
+    try {
+      const payload = await fetchJson("/api/system/portal/service/install", {
+        method: "POST",
+        timeoutMs: 60000,
+      });
+      const data = payload.data || {};
+      const lines = [
+        `status: ${data.active_state || "-"}/${data.substate || "-"}`,
+        `message: ${data.message || "-"}`,
+        `repo: ${data.repo_dir || "-"}`,
+        `service: ${data.service_name || "-"}`,
+        `user: ${data.service_user || "-"}`,
+        `working_directory: ${data.working_directory || "-"}`,
+        `exec_start: ${data.exec_start || "-"}`,
+        `fragment_path: ${data.fragment_path || "-"}`,
+      ];
+      logEl.textContent = lines.join("\n");
+      toast(data.message || "Portal-Service installiert/umgeschaltet.", "success");
+      await refreshStatus();
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+
   function renderPortalUpdateStatus(data) {
     const logEl = q("system-update-log");
     const status = String(data.status || "unknown");
@@ -6137,6 +6169,7 @@
       await refreshApClients();
     }));
     q("btn-system-update-portal").addEventListener("click", () => run(updatePortal));
+    q("btn-system-install-portal-service").addEventListener("click", () => run(installPortalService));
     q("btn-status-shutdown").addEventListener("click", () => run(() => requestSystemPower("shutdown")));
     q("btn-status-reboot").addEventListener("click", () => run(() => requestSystemPower("reboot")));
     q("btn-status-restart-portal").addEventListener("click", () => run(restartPortalServiceNow));

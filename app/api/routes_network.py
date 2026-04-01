@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import getpass
 import json
 import shutil
 import threading
@@ -37,6 +38,7 @@ from app.core.netcontrol import (
     get_wifi_status,
     get_network_info,
     portal_update,
+    portal_service_install,
     portal_update_status,
     player_service_action,
     restart_portal_service,
@@ -2815,6 +2817,36 @@ def api_system_portal_update():
         return _ok(result)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "portal_update_failed") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/system/portal/service/install")
+def api_system_portal_service_install():
+    data = request.get_json(force=True, silent=True) or {}
+    service_user = str(data.get("service_user") or "").strip()
+    service_name = str(data.get("service_name") or "device-portal.service").strip() or "device-portal.service"
+    repo_dir = str(data.get("repo_dir") or "").strip()
+    if not repo_dir:
+        repo_dir = str(Path(__file__).resolve().parents[2])
+    if not service_user:
+        service_user = str(ensure_device().get("service_user") or "").strip() or getpass.getuser()
+
+    try:
+        result = portal_service_install(repo_dir=repo_dir, service_user=service_user, service_name=service_name)
+        log_event(
+            "system",
+            "Portal service install requested",
+            data={
+                "repo_dir": result.get("repo_dir", repo_dir),
+                "service_user": result.get("service_user", service_user),
+                "service_name": result.get("service_name", service_name),
+                "active_state": result.get("active_state", ""),
+                "substate": result.get("substate", ""),
+            },
+        )
+        return _ok(result)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "portal_service_install_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
 
 
