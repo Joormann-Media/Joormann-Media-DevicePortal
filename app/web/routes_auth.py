@@ -57,12 +57,13 @@ def _service_user() -> str:
 
 def _local_auth_script_installed() -> bool:
     script = DEFAULT_LOCAL_AUTH_TARGET
-    return script.exists() and script.is_file() and os.access(script, os.X_OK)
+    # Script is executed via sudo as root; direct execute bit for portal user is not required.
+    return script.exists() and script.is_file()
 
 
 def _setup_access_allowed() -> bool:
-    setup_mode = detect_connectivity_setup_mode()
-    return bool(setup_mode.get("active")) or _is_ap_request() or _is_local_display_request()
+    # First-run wizard should always be reachable via /setup.
+    return True
 
 
 def _needs_sudo_password(detail: str) -> bool:
@@ -523,6 +524,11 @@ def setup_install_local_auth():
         node_runtime_type=str(cfg.get("node_runtime_type") or "raspi_node"),
         result=result,
     ), status
+
+
+@bp_auth.get("/setup/local-auth/install")
+def setup_install_local_auth_get():
+    return redirect(url_for("auth.setup_page"))
 
 
 @bp_auth.post("/logout")
