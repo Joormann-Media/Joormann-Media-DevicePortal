@@ -65,12 +65,29 @@ def _setup_access_allowed() -> bool:
     return bool(setup_mode.get("active")) or _is_ap_request() or _is_local_display_request()
 
 
-def _run_privileged(cmd: list[str], *, timeout: int = 120) -> tuple[int, str, str]:
+def _needs_sudo_password(detail: str) -> bool:
+    text = (detail or "").lower()
+    markers = (
+        "a password is required",
+        "passwort ist notwendig",
+        "password is required",
+        "sudo:",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _run_privileged(cmd: list[str], *, timeout: int = 120, sudo_password: str = "") -> tuple[int, str, str]:
     run_cmd = cmd
+    stdin_input = None
     if os.geteuid() != 0:
-        run_cmd = ["sudo", "-n"] + cmd
+        if sudo_password:
+            run_cmd = ["sudo", "-S", "-p", ""] + cmd
+            stdin_input = f"{sudo_password}\n"
+        else:
+            run_cmd = ["sudo", "-n"] + cmd
     proc = subprocess.run(
         run_cmd,
+        input=stdin_input,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -79,7 +96,7 @@ def _run_privileged(cmd: list[str], *, timeout: int = 120) -> tuple[int, str, st
     return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
 
 
-def _install_local_auth_script(service_user: str) -> dict:
+def _install_local_auth_script(service_user: str, sudo_password: str = "") -> dict:
     source = DEFAULT_LOCAL_AUTH_SOURCE
     target = DEFAULT_LOCAL_AUTH_TARGET
     sudoers_file = DEFAULT_SUDOERS_FILE
@@ -93,23 +110,25 @@ def _install_local_auth_script(service_user: str) -> dict:
         }
 
     install_log: list[str] = []
-    rc, out, err = _run_privileged(["install", "-d", "-m", "0755", str(target.parent)])
+    rc, out, err = _run_privileged(["install", "-d", "-m", "0755", str(target.parent)], sudo_password=sudo_password)
     if rc != 0:
         return {
             "ok": False,
             "message": "Konnte Zielverzeichnis nicht anlegen.",
             "detail": err or out or "install -d fehlgeschlagen",
             "installed": _local_auth_script_installed(),
+            "needs_password": _needs_sudo_password(err or out),
         }
     install_log.append("bin_dir_ok")
 
-    rc, out, err = _run_privileged(["install", "-m", "0750", str(source), str(target)])
+    rc, out, err = _run_privileged(["install", "-m", "0750", str(source), str(target)], sudo_password=sudo_password)
     if rc != 0:
         return {
             "ok": False,
             "message": "Konnte local_auth.sh nicht installieren.",
             "detail": err or out or "install local_auth fehlgeschlagen",
             "installed": _local_auth_script_installed(),
+            "needs_password": _needs_sudo_password(err or out),
         }
     install_log.append("script_ok")
 
@@ -123,23 +142,28 @@ def _install_local_auth_script(service_user: str) -> dict:
             tmp.write(sudoers_content)
             tmp_path = Path(tmp.name)
 
-        rc, out, err = _run_privileged(["install", "-m", "0440", str(tmp_path), str(sudoers_file)])
+        rc, out, err = _run_privileged(
+            ["install", "-m", "0440", str(tmp_path), str(sudoers_file)],
+            sudo_password=sudo_password,
+        )
         if rc != 0:
             return {
                 "ok": False,
                 "message": "Konnte sudoers-Datei nicht installieren.",
                 "detail": err or out or "install sudoers fehlgeschlagen",
                 "installed": _local_auth_script_installed(),
+                "needs_password": _needs_sudo_password(err or out),
             }
         install_log.append("sudoers_ok")
 
-        rc, out, err = _run_privileged(["visudo", "-cf", str(sudoers_file)])
+        rc, out, err = _run_privileged(["visudo", "-cf", str(sudoers_file)], sudo_password=sudo_password)
         if rc != 0:
             return {
                 "ok": False,
                 "message": "Sudoers-Validierung fehlgeschlagen.",
                 "detail": err or out or "visudo check fehlgeschlagen",
                 "installed": _local_auth_script_installed(),
+                "needs_password": _needs_sudo_password(err or out),
             }
         install_log.append("visudo_ok")
     finally:
@@ -150,9 +174,13 @@ def _install_local_auth_script(service_user: str) -> dict:
                 pass
 
     if shutil.which("pamtester") is None:
-        rc, out, err = _run_privileged(["apt-get", "update"], timeout=240)
+        rc, out, err = _run_privileged(["apt-get", "update"], timeout=240, sudo_password=sudo_password)
         if rc == 0:
-            rc, out, err = _run_privileged(["apt-get", "install", "-y", "pamtester"], timeout=240)
+            rc, out, err = _run_privileged(
+                ["apt-get", "install", "-y", "pamtester"],
+                timeout=240,
+                sudo_password=sudo_password,
+            )
         if rc != 0:
             return {
                 "ok": False,
@@ -160,6 +188,7 @@ def _install_local_auth_script(service_user: str) -> dict:
                 "detail": err or out or "apt-get install pamtester fehlgeschlagen",
                 "installed": _local_auth_script_installed(),
                 "log": install_log,
+                "needs_password": _needs_sudo_password(err or out),
             }
         install_log.append("pamtester_ok")
 
@@ -172,6 +201,7 @@ def _install_local_auth_script(service_user: str) -> dict:
         "sudoers": str(sudoers_file),
         "service_user": service_user,
         "log": install_log,
+        "needs_password": False,
     }
 
 
@@ -468,7 +498,8 @@ def setup_install_local_auth():
         return jsonify(ok=False, message="Setup ist nur im lokalen Setup/AP-Kontext erlaubt."), 403
 
     service_user = (request.form.get("service_user") or _service_user()).strip() or _service_user()
-    result = _install_local_auth_script(service_user)
+    sudo_password = request.form.get("sudo_password") or ""
+    result = _install_local_auth_script(service_user, sudo_password=sudo_password)
 
     setup_mode = detect_connectivity_setup_mode()
     status = 200 if result.get("ok") else 500
