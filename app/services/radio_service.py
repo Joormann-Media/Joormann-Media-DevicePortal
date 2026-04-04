@@ -302,16 +302,23 @@ class RadioService:
                     playback_url = adapted_url
                     adapter_active = True
 
-            attempts: list[list[str]] = [[
-                mpv,
-                "--no-video",
-                "--no-terminal",
-                "--no-ytdl",
-                "--really-quiet",
-                "--idle=no",
-                "--ao=pulse",
-                playback_url,
-            ]]
+            attempt_urls: list[str] = [playback_url]
+            if is_rtsp and adapter_active and playback_url != url:
+                # If adapted stream cannot be consumed by mpv, try direct RTSP as safety net.
+                attempt_urls.append(url)
+
+            attempts: list[list[str]] = []
+            for attempt_url in attempt_urls:
+                attempts.append([
+                    mpv,
+                    "--no-video",
+                    "--no-terminal",
+                    "--no-ytdl",
+                    "--really-quiet",
+                    "--idle=no",
+                    "--ao=pulse",
+                    attempt_url,
+                ])
 
             last_error = "mpv hat den Stream nicht akzeptiert."
             for cmd in attempts:
