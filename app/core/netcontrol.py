@@ -80,8 +80,8 @@ def _service_user_from_systemd(service_name: str) -> str:
 
 def _candidate_script_paths(script_name: str) -> list[Path]:
     return [
-        REPO_NET_SCRIPTS / script_name,
         DEPLOY_NET_SCRIPTS / script_name,
+        REPO_NET_SCRIPTS / script_name,
     ]
 
 
