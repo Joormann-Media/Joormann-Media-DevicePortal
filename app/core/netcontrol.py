@@ -230,8 +230,8 @@ def _derive_bt_name(hostname: str) -> str:
     return f"{hostname}-bt"[:64]
 
 
-def get_network_info() -> dict:
-    rc, out, err = _run_script("network_info.sh", [], timeout=12, use_sudo=False)
+def get_network_info(timeout: int = 12) -> dict:
+    rc, out, err = _run_script("network_info.sh", [], timeout=timeout, use_sudo=False)
     if rc != 0:
         raise NetControlError(code="network_info_failed", message="Failed to read network status", detail=err or out)
     try:
@@ -245,7 +245,11 @@ def get_network_info() -> dict:
 
 def hostname_rename_preview(new_hostname: str, ap_profile: str = DEFAULT_AP_PROFILE) -> dict:
     next_hostname = _sanitize_hostname(new_hostname)
-    current = get_network_info()
+    # Preview should stay responsive even if full network inventory is slow.
+    try:
+        current = get_network_info(timeout=3)
+    except NetControlError:
+        current = {}
     current_hostname = str(current.get("hostname") or "").strip()
     if not current_hostname:
         current_hostname = os.uname().nodename.strip()

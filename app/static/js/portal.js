@@ -5551,7 +5551,7 @@
           hostname,
           ap_profile: "jm-hotspot",
         },
-        timeoutMs: 10000,
+        timeoutMs: 15000,
       });
       const preview = payload.data || {};
       hostnameRenameState.preview = preview;
@@ -5605,9 +5605,17 @@
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.hide();
 
-    await refreshStatus();
-    await refreshNetwork();
-    await refreshApStatus();
+    try {
+      await refreshStatus();
+    } catch (statusErr) {
+      toast(`Hostname geändert, Status-Refresh fehlgeschlagen: ${statusErr.message || statusErr}`, "warning");
+    }
+    try {
+      await refreshNetwork();
+      await refreshApStatus();
+    } catch (netErr) {
+      toast(`Hostname geändert, Netzwerk-Refresh fehlgeschlagen: ${netErr.message || netErr}`, "warning");
+    }
     try {
       await panelSyncNow();
     } catch (syncErr) {
