@@ -866,297 +866,299 @@
         <div class="row g-3">
           <div class="col-12 col-xl-7">
             <div class="portal-card p-4 h-100">
-          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-            <div>
-              <h2 class="h5 mb-1">Stream</h2>
-              <p class="text-secondary mb-0">Gerätestream vom Adminpanel laden, lokal synchronisieren und Player steuern.</p>
-            </div>
-            <div class="d-flex gap-2">
-              <button id="btn-stream-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
-              <button id="btn-stream-sync" class="btn btn-primary btn-sm">Manifest + Assets sync</button>
-            </div>
-          </div>
-
-          <div class="row g-3">
-            <div class="col-12 col-lg-7">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary mb-2">Verfügbare Streams</div>
-                <div class="d-flex gap-2 mb-2">
-                  <select id="stream-select" class="form-select form-select-sm">
-                    <option value="">Keine Streams geladen</option>
-                  </select>
-                  <button id="btn-stream-select-save" class="btn btn-outline-primary btn-sm">Auswählen</button>
-                </div>
-                <div id="stream-list-meta" class="small text-secondary">-</div>
-                <div id="stream-fetch-error" class="small text-danger mt-2 d-none"></div>
-              </div>
-            </div>
-            <div class="col-12 col-lg-5">
-              <div class="d-flex flex-column gap-3 h-100">
-                <div class="border rounded p-3">
-                  <div class="small text-uppercase text-secondary mb-2">Player</div>
-                  <div id="stream-player-status" class="small mb-2">Status: -</div>
-                  <div class="d-flex flex-wrap gap-2">
-                    <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
-                    <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                    <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
-                    <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
-                    <button id="btn-player-service-install" class="btn btn-outline-primary btn-sm">Service installieren</button>
-                  </div>
-                  <div class="border rounded p-2 mt-3">
-                    <div class="small text-uppercase text-secondary mb-2">Player Service Setup (schnell)</div>
-                    <div class="row g-2">
-                      <div class="col-12">
-                        <label for="stream-player-repo-dir-quick" class="form-label form-label-sm mb-1">Player Repo Link (URL oder lokaler Pfad)</label>
-                        <input id="stream-player-repo-dir-quick" type="text" class="form-control form-control-sm" placeholder="/home/djanebmb/projects/Joormann-Media-DevicePlayer">
-                      </div>
-                      <div class="col-12 col-lg-7">
-                        <label for="stream-player-service-name-quick" class="form-label form-label-sm mb-1">Service</label>
-                        <input id="stream-player-service-name-quick" type="text" class="form-control form-control-sm" value="joormann-media-deviceplayer.service">
-                      </div>
-                      <div class="col-12 col-lg-5">
-                        <label for="stream-player-service-user-quick" class="form-label form-label-sm mb-1">User</label>
-                        <input id="stream-player-service-user-quick" type="text" class="form-control form-control-sm" placeholder="djanebmb">
-                      </div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2 mt-2">
-                      <button id="btn-stream-player-repo-save-quick" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
-                      <button id="btn-stream-player-install-update-quick" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
-                    </div>
-                  </div>
-                </div>
-                <div class="border rounded p-3">
-                  <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                    <div class="small text-uppercase text-secondary">Spotify Connect</div>
-                    <span id="spotify-connect-ready-badge" class="badge text-bg-secondary">unknown</span>
-                  </div>
-                  <div id="spotify-connect-status" class="small mb-2">Status: -</div>
-                  <dl class="portal-kv mb-2">
-                    <dt>Dienst</dt><dd id="spotify-connect-service-name">-</dd>
-                    <dt>Scope</dt><dd id="spotify-connect-service-scope">-</dd>
-                    <dt>Installiert</dt><dd id="spotify-connect-installed">-</dd>
-                    <dt>Aktiviert</dt><dd id="spotify-connect-enabled">-</dd>
-                    <dt>Läuft</dt><dd id="spotify-connect-running">-</dd>
-                    <dt>Gerätename</dt><dd id="spotify-connect-device-name">-</dd>
-                    <dt>Backend</dt><dd id="spotify-connect-backend">-</dd>
-                    <dt>Output</dt><dd id="spotify-connect-output">-</dd>
-                    <dt>Letzter Check</dt><dd id="spotify-connect-checked-at">-</dd>
-                    <dt>Last Error</dt><dd id="spotify-connect-last-error">-</dd>
-                  </dl>
-                  <div class="d-flex flex-wrap gap-2">
-                    <button id="btn-spotify-connect-start" class="btn btn-outline-success btn-sm">Start</button>
-                    <button id="btn-spotify-connect-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                    <button id="btn-spotify-connect-restart" class="btn btn-outline-warning btn-sm">Restart</button>
-                    <button id="btn-spotify-connect-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
-                    <button id="btn-spotify-connect-install" class="btn btn-outline-primary btn-sm">Install</button>
-                    <button id="btn-spotify-connect-enable" class="btn btn-outline-primary btn-sm">Enable</button>
-                    <button id="btn-spotify-connect-disable" class="btn btn-outline-secondary btn-sm">Disable</button>
-                  </div>
-                  <div class="border rounded p-2 mt-3">
-                    <div class="small text-uppercase text-secondary mb-2">Spotify Connect Setup</div>
-                    <div class="row g-2">
-                      <div class="col-12 col-lg-6">
-                        <label for="spotify-connect-config-name" class="form-label form-label-sm mb-1">Service Name</label>
-                        <input id="spotify-connect-config-name" type="text" class="form-control form-control-sm" placeholder="raspotify.service">
-                      </div>
-                      <div class="col-12 col-lg-6">
-                        <label for="spotify-connect-config-device-name" class="form-label form-label-sm mb-1">Gerätename (Spotify)</label>
-                        <input id="spotify-connect-config-device-name" type="text" class="form-control form-control-sm" placeholder="JarvisAudioNode">
-                      </div>
-                      <div class="col-12 col-lg-3">
-                        <label for="spotify-connect-config-scope" class="form-label form-label-sm mb-1">Scope</label>
-                        <select id="spotify-connect-config-scope" class="form-select form-select-sm">
-                          <option value="auto">auto</option>
-                          <option value="system">system</option>
-                          <option value="user">user</option>
-                        </select>
-                      </div>
-                      <div class="col-12 col-lg-3">
-                        <label for="spotify-connect-config-user" class="form-label form-label-sm mb-1">User</label>
-                        <input id="spotify-connect-config-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
-                      </div>
-                      <div class="col-12">
-                        <label for="spotify-connect-config-candidates" class="form-label form-label-sm mb-1">Candidates</label>
-                        <input id="spotify-connect-config-candidates" type="text" class="form-control form-control-sm" placeholder="raspotify.service librespot.service">
-                      </div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2 mt-2">
-                      <button id="btn-spotify-connect-config-save" class="btn btn-outline-primary btn-sm">Konfiguration speichern</button>
-                    </div>
-                  </div>
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Stream</h2>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div class="row g-3 mt-1">
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Ausgewählter Stream</div>
-                <div id="stream-selected-slug" class="fw-semibold">-</div>
+              <ul class="nav nav-pills gap-2 mb-3" id="streamSubTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link active" id="stream-sub-main-tab" data-bs-toggle="tab" data-bs-target="#stream-sub-main" type="button" role="tab">Stream</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link" id="stream-sub-overlay-tab" data-bs-toggle="tab" data-bs-target="#stream-sub-overlay" type="button" role="tab">Overlay</button>
+                </li>
+              </ul>
+
+              <div class="tab-content">
+                <div class="tab-pane fade show active" id="stream-sub-main" role="tabpanel" aria-labelledby="stream-sub-main-tab">
+                  <div class="row g-3">
+                    <div class="col-12 col-lg-7">
+                      <div class="border rounded p-3 h-100">
+                        <div class="small text-secondary mb-2">Gerätestream vom Adminpanel laden, lokal synchronisieren und Player steuern.</div>
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                          <button id="btn-stream-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+                          <button id="btn-stream-sync" class="btn btn-primary btn-sm">Manifest + Assets sync</button>
+                        </div>
+                        <div class="small text-uppercase text-secondary mb-2">Verfügbare Streams</div>
+                        <div class="d-flex gap-2 mb-2">
+                          <select id="stream-select" class="form-select form-select-sm">
+                            <option value="">Keine Streams geladen</option>
+                          </select>
+                          <button id="btn-stream-select-save" class="btn btn-outline-primary btn-sm">Auswählen</button>
+                        </div>
+                        <div id="stream-list-meta" class="small text-secondary">-</div>
+                        <div id="stream-fetch-error" class="small text-danger mt-2 d-none"></div>
+                        <div class="row g-2 mt-2">
+                          <div class="col-12 col-md-6">
+                            <div class="small text-uppercase text-secondary">Ausgewählter Stream</div>
+                            <div id="stream-selected-slug" class="fw-semibold">-</div>
+                          </div>
+                          <div class="col-12 col-md-6">
+                            <div class="small text-uppercase text-secondary">Manifest Version</div>
+                            <div id="stream-manifest-version" class="fw-semibold">-</div>
+                          </div>
+                          <div class="col-12 col-md-6">
+                            <div class="small text-uppercase text-secondary">Assets lokal</div>
+                            <div id="stream-asset-count" class="fw-semibold">0</div>
+                          </div>
+                          <div class="col-12 col-md-6">
+                            <div class="small text-uppercase text-secondary">Letzter Sync</div>
+                            <div id="stream-last-sync" class="fw-semibold">-</div>
+                          </div>
+                        </div>
+                        <div class="small text-uppercase text-secondary mt-3 mb-1">Storage Ziel</div>
+                        <div id="stream-storage-target" class="small text-secondary">-</div>
+                        <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
+                        <div class="small text-secondary mt-2">
+                          Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-12 col-lg-5">
+                      <div class="border rounded p-3 h-100">
+                        <div class="small text-uppercase text-secondary mb-2">Player</div>
+                        <div id="stream-player-status" class="small mb-2">Status: -</div>
+                        <div class="d-flex flex-wrap gap-2">
+                          <button id="btn-player-start" class="btn btn-outline-success btn-sm">Start</button>
+                          <button id="btn-player-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                          <button id="btn-player-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                          <button id="btn-player-status-refresh" class="btn btn-outline-secondary btn-sm">Status</button>
+                          <button id="btn-player-service-install" class="btn btn-outline-primary btn-sm">Service installieren</button>
+                        </div>
+                        <div class="border rounded p-2 mt-3">
+                          <div class="small text-uppercase text-secondary mb-2">Player Service Setup (schnell)</div>
+                          <div class="row g-2">
+                            <div class="col-12">
+                              <label for="stream-player-repo-dir-quick" class="form-label form-label-sm mb-1">Player Repo Link (URL oder lokaler Pfad)</label>
+                              <input id="stream-player-repo-dir-quick" type="text" class="form-control form-control-sm" placeholder="/home/djanebmb/projects/Joormann-Media-DevicePlayer">
+                            </div>
+                            <div class="col-12 col-lg-7">
+                              <label for="stream-player-service-name-quick" class="form-label form-label-sm mb-1">Service</label>
+                              <input id="stream-player-service-name-quick" type="text" class="form-control form-control-sm" value="joormann-media-deviceplayer.service">
+                            </div>
+                            <div class="col-12 col-lg-5">
+                              <label for="stream-player-service-user-quick" class="form-label form-label-sm mb-1">User</label>
+                              <input id="stream-player-service-user-quick" type="text" class="form-control form-control-sm" placeholder="djanebmb">
+                            </div>
+                          </div>
+                          <div class="d-flex flex-wrap gap-2 mt-2">
+                            <button id="btn-stream-player-repo-save-quick" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
+                            <button id="btn-stream-player-install-update-quick" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <div class="tab-pane fade" id="stream-sub-overlay" role="tabpanel" aria-labelledby="stream-sub-overlay-tab">
+                  <div class="row g-3">
+                    <div class="col-12">
+                      <div class="portal-card p-3 h-100">
+                        <h3 class="h6 mb-2">Player Overlay · Flash Message</h3>
+                        <div class="row g-2">
+                          <div class="col-12 col-md-5"><input id="overlay-flash-id" class="form-control form-control-sm" placeholder="id (z. B. flash-1)"></div>
+                          <div class="col-12 col-md-7"><input id="overlay-flash-title" class="form-control form-control-sm" placeholder="Titel"></div>
+                          <div class="col-12"><textarea id="overlay-flash-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
+                          <div class="col-6 col-md-4"><input id="overlay-flash-duration" class="form-control form-control-sm" type="number" value="5000" min="500" max="120000" step="100"></div>
+                          <div class="col-6 col-md-4">
+                            <select id="overlay-flash-position" class="form-select form-select-sm">
+                              <option value="top">top</option>
+                              <option value="center">center</option>
+                              <option value="bottom">bottom</option>
+                            </select>
+                          </div>
+                          <div class="col-6 col-md-4"><input id="overlay-flash-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
+                          <div class="col-4"><input id="overlay-flash-bg" class="form-control form-control-sm" value="#111111"></div>
+                          <div class="col-4"><input id="overlay-flash-fg" class="form-control form-control-sm" value="#ffffff"></div>
+                          <div class="col-4"><input id="overlay-flash-accent" class="form-control form-control-sm" value="#0d6efd"></div>
+                          <div class="col-4"><input id="overlay-flash-font" class="form-control form-control-sm" type="number" value="32" min="12" max="140"></div>
+                          <div class="col-4"><input id="overlay-flash-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+                          <div class="col-4"><input id="overlay-flash-opacity" class="form-control form-control-sm" type="number" value="0.95" min="0.05" max="1" step="0.05"></div>
+                          <div class="col-12">
+                            <div class="form-check form-switch">
+                              <input id="overlay-flash-enabled" class="form-check-input" type="checkbox" checked>
+                              <label class="form-check-label" for="overlay-flash-enabled">enabled</label>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                          <button id="btn-overlay-save-flash" class="btn btn-outline-primary btn-sm">Flash speichern</button>
+                          <button id="btn-overlay-clear-flash" class="btn btn-outline-secondary btn-sm">Flash leeren</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-12 col-xl-6">
+                      <div class="portal-card p-3 h-100">
+                        <h3 class="h6 mb-2">Ticker</h3>
+                        <div class="row g-2">
+                          <div class="col-12 col-md-5"><input id="overlay-ticker-id" class="form-control form-control-sm" placeholder="id (z. B. ticker-1)"></div>
+                          <div class="col-12 col-md-7"><input id="overlay-ticker-text" class="form-control form-control-sm" placeholder="Text"></div>
+                          <div class="col-6 col-md-3">
+                            <select id="overlay-ticker-position" class="form-select form-select-sm">
+                              <option value="bottom">bottom</option>
+                              <option value="top">top</option>
+                            </select>
+                          </div>
+                          <div class="col-6 col-md-3"><input id="overlay-ticker-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
+                          <div class="col-6 col-md-3"><input id="overlay-ticker-speed" class="form-control form-control-sm" type="number" value="120" min="10" max="800"></div>
+                          <div class="col-6 col-md-3"><input id="overlay-ticker-height" class="form-control form-control-sm" type="number" value="72" min="24" max="320"></div>
+                          <div class="col-4"><input id="overlay-ticker-padding-x" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+                          <div class="col-4"><input id="overlay-ticker-bg" class="form-control form-control-sm" value="#000000"></div>
+                          <div class="col-4"><input id="overlay-ticker-fg" class="form-control form-control-sm" value="#ffffff"></div>
+                          <div class="col-6"><input id="overlay-ticker-font" class="form-control form-control-sm" type="number" value="34" min="12" max="160"></div>
+                          <div class="col-6"><input id="overlay-ticker-opacity" class="form-control form-control-sm" type="number" value="0.90" min="0.05" max="1" step="0.05"></div>
+                          <div class="col-12">
+                            <div class="form-check form-switch">
+                              <input id="overlay-ticker-enabled" class="form-check-input" type="checkbox" checked>
+                              <label class="form-check-label" for="overlay-ticker-enabled">enabled</label>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                          <button id="btn-overlay-save-ticker" class="btn btn-outline-primary btn-sm">Ticker speichern</button>
+                          <button id="btn-overlay-clear-tickers" class="btn btn-outline-secondary btn-sm">Ticker leeren</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-12 col-xl-6">
+                      <div class="portal-card p-3 h-100">
+                        <h3 class="h6 mb-2">Popup</h3>
+                        <div class="row g-2">
+                          <div class="col-12 col-md-5"><input id="overlay-popup-id" class="form-control form-control-sm" placeholder="id (z. B. popup-1)"></div>
+                          <div class="col-12 col-md-7"><input id="overlay-popup-title" class="form-control form-control-sm" placeholder="Titel"></div>
+                          <div class="col-12"><textarea id="overlay-popup-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
+                          <div class="col-6 col-md-4"><input id="overlay-popup-duration" class="form-control form-control-sm" type="number" value="8000" min="500" max="120000" step="100"></div>
+                          <div class="col-6 col-md-4">
+                            <select id="overlay-popup-position" class="form-select form-select-sm">
+                              <option value="center">center</option>
+                              <option value="top-left">top-left</option>
+                              <option value="top-right">top-right</option>
+                              <option value="bottom-left">bottom-left</option>
+                              <option value="bottom-right">bottom-right</option>
+                            </select>
+                          </div>
+                          <div class="col-12 col-md-4"><input id="overlay-popup-image-path" class="form-control form-control-sm" placeholder="imagePath (optional)"></div>
+                          <div class="col-4"><input id="overlay-popup-bg" class="form-control form-control-sm" value="#ffffff"></div>
+                          <div class="col-4"><input id="overlay-popup-fg" class="form-control form-control-sm" value="#111111"></div>
+                          <div class="col-4"><input id="overlay-popup-accent" class="form-control form-control-sm" value="#dc3545"></div>
+                          <div class="col-4"><input id="overlay-popup-width" class="form-control form-control-sm" type="number" value="800" min="180" max="3840"></div>
+                          <div class="col-4"><input id="overlay-popup-height" class="form-control form-control-sm" type="number" value="420" min="120" max="2160"></div>
+                          <div class="col-4"><input id="overlay-popup-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
+                          <div class="col-12"><input id="overlay-popup-opacity" class="form-control form-control-sm" type="number" value="1.0" min="0.05" max="1" step="0.05"></div>
+                          <div class="col-12">
+                            <div class="form-check form-switch">
+                              <input id="overlay-popup-enabled" class="form-check-input" type="checkbox" checked>
+                              <label class="form-check-label" for="overlay-popup-enabled">enabled</label>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                          <button id="btn-overlay-save-popup" class="btn btn-outline-primary btn-sm">Popup speichern</button>
+                          <button id="btn-overlay-clear-popups" class="btn btn-outline-secondary btn-sm">Popups leeren</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-12 col-xl-6">
+                      <div class="portal-card p-3 h-100">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                          <h3 class="h6 mb-0">Overlay State</h3>
+                          <span id="overlay-state-path" class="badge text-bg-light border text-dark">-</span>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                          <button id="btn-overlay-refresh" class="btn btn-outline-secondary btn-sm">Overlay-Status laden</button>
+                          <button id="btn-overlay-reset-all" class="btn btn-outline-danger btn-sm">Alles zurücksetzen</button>
+                        </div>
+                        <pre id="overlay-state-json" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height: 320px; overflow:auto;">-</pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Manifest Version</div>
-                <div id="stream-manifest-version" class="fw-semibold">-</div>
-              </div>
-            </div>
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Assets lokal</div>
-                <div id="stream-asset-count" class="fw-semibold">0</div>
-              </div>
-            </div>
-            <div class="col-12 col-md-6 col-xl-3">
-              <div class="border rounded p-3 h-100">
-                <div class="small text-uppercase text-secondary">Letzter Sync</div>
-                <div id="stream-last-sync" class="fw-semibold">-</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="border rounded p-3 mt-3">
-            <div class="small text-uppercase text-secondary mb-1">Storage Ziel</div>
-            <div id="stream-storage-target" class="small text-secondary">-</div>
-            <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
-          </div>
-
-	          <div class="border rounded p-3 mt-3">
-	            <div class="small text-secondary">
-	              Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
-	            </div>
-	          </div>
-
-              <div class="row g-3 mt-1">
-	            <div class="col-12">
-	              <div class="portal-card p-3 h-100">
-	                <h3 class="h6 mb-2">Player Overlay · Flash Message</h3>
-	                <div class="row g-2">
-	                  <div class="col-12 col-md-5"><input id="overlay-flash-id" class="form-control form-control-sm" placeholder="id (z. B. flash-1)"></div>
-	                  <div class="col-12 col-md-7"><input id="overlay-flash-title" class="form-control form-control-sm" placeholder="Titel"></div>
-	                  <div class="col-12"><textarea id="overlay-flash-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
-	                  <div class="col-6 col-md-4"><input id="overlay-flash-duration" class="form-control form-control-sm" type="number" value="5000" min="500" max="120000" step="100"></div>
-	                  <div class="col-6 col-md-4">
-	                    <select id="overlay-flash-position" class="form-select form-select-sm">
-	                      <option value="top">top</option>
-	                      <option value="center">center</option>
-	                      <option value="bottom">bottom</option>
-	                    </select>
-	                  </div>
-	                  <div class="col-6 col-md-4"><input id="overlay-flash-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
-	                  <div class="col-4"><input id="overlay-flash-bg" class="form-control form-control-sm" value="#111111"></div>
-	                  <div class="col-4"><input id="overlay-flash-fg" class="form-control form-control-sm" value="#ffffff"></div>
-	                  <div class="col-4"><input id="overlay-flash-accent" class="form-control form-control-sm" value="#0d6efd"></div>
-	                  <div class="col-4"><input id="overlay-flash-font" class="form-control form-control-sm" type="number" value="32" min="12" max="140"></div>
-	                  <div class="col-4"><input id="overlay-flash-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
-	                  <div class="col-4"><input id="overlay-flash-opacity" class="form-control form-control-sm" type="number" value="0.95" min="0.05" max="1" step="0.05"></div>
-	                  <div class="col-12">
-	                    <div class="form-check form-switch">
-	                      <input id="overlay-flash-enabled" class="form-check-input" type="checkbox" checked>
-	                      <label class="form-check-label" for="overlay-flash-enabled">enabled</label>
-	                    </div>
-	                  </div>
-	                </div>
-	                <div class="d-flex flex-wrap gap-2 mt-2">
-	                  <button id="btn-overlay-save-flash" class="btn btn-outline-primary btn-sm">Flash speichern</button>
-	                  <button id="btn-overlay-clear-flash" class="btn btn-outline-secondary btn-sm">Flash leeren</button>
-	                </div>
-	              </div>
-	            </div>
-
-	            <div class="col-12 col-xl-6">
-	              <div class="portal-card p-3 h-100">
-	                <h3 class="h6 mb-2">Ticker</h3>
-	                <div class="row g-2">
-	                  <div class="col-12 col-md-5"><input id="overlay-ticker-id" class="form-control form-control-sm" placeholder="id (z. B. ticker-1)"></div>
-	                  <div class="col-12 col-md-7"><input id="overlay-ticker-text" class="form-control form-control-sm" placeholder="Text"></div>
-	                  <div class="col-6 col-md-3">
-	                    <select id="overlay-ticker-position" class="form-select form-select-sm">
-	                      <option value="bottom">bottom</option>
-	                      <option value="top">top</option>
-	                    </select>
-	                  </div>
-	                  <div class="col-6 col-md-3"><input id="overlay-ticker-rotation" class="form-control form-control-sm" type="number" value="0" min="-360" max="360"></div>
-	                  <div class="col-6 col-md-3"><input id="overlay-ticker-speed" class="form-control form-control-sm" type="number" value="120" min="10" max="800"></div>
-	                  <div class="col-6 col-md-3"><input id="overlay-ticker-height" class="form-control form-control-sm" type="number" value="72" min="24" max="320"></div>
-	                  <div class="col-4"><input id="overlay-ticker-padding-x" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
-	                  <div class="col-4"><input id="overlay-ticker-bg" class="form-control form-control-sm" value="#000000"></div>
-	                  <div class="col-4"><input id="overlay-ticker-fg" class="form-control form-control-sm" value="#ffffff"></div>
-	                  <div class="col-6"><input id="overlay-ticker-font" class="form-control form-control-sm" type="number" value="34" min="12" max="160"></div>
-	                  <div class="col-6"><input id="overlay-ticker-opacity" class="form-control form-control-sm" type="number" value="0.90" min="0.05" max="1" step="0.05"></div>
-	                  <div class="col-12">
-	                    <div class="form-check form-switch">
-	                      <input id="overlay-ticker-enabled" class="form-check-input" type="checkbox" checked>
-	                      <label class="form-check-label" for="overlay-ticker-enabled">enabled</label>
-	                    </div>
-	                  </div>
-	                </div>
-	                <div class="d-flex flex-wrap gap-2 mt-2">
-	                  <button id="btn-overlay-save-ticker" class="btn btn-outline-primary btn-sm">Ticker speichern</button>
-	                  <button id="btn-overlay-clear-tickers" class="btn btn-outline-secondary btn-sm">Ticker leeren</button>
-	                </div>
-	              </div>
-	            </div>
-
-	            <div class="col-12 col-xl-6">
-	              <div class="portal-card p-3 h-100">
-	                <h3 class="h6 mb-2">Popup</h3>
-	                <div class="row g-2">
-	                  <div class="col-12 col-md-5"><input id="overlay-popup-id" class="form-control form-control-sm" placeholder="id (z. B. popup-1)"></div>
-	                  <div class="col-12 col-md-7"><input id="overlay-popup-title" class="form-control form-control-sm" placeholder="Titel"></div>
-	                  <div class="col-12"><textarea id="overlay-popup-message" class="form-control form-control-sm" rows="2" placeholder="Nachricht"></textarea></div>
-	                  <div class="col-6 col-md-4"><input id="overlay-popup-duration" class="form-control form-control-sm" type="number" value="8000" min="500" max="120000" step="100"></div>
-	                  <div class="col-6 col-md-4">
-	                    <select id="overlay-popup-position" class="form-select form-select-sm">
-	                      <option value="center">center</option>
-	                      <option value="top-left">top-left</option>
-	                      <option value="top-right">top-right</option>
-	                      <option value="bottom-left">bottom-left</option>
-	                      <option value="bottom-right">bottom-right</option>
-	                    </select>
-	                  </div>
-	                  <div class="col-12 col-md-4"><input id="overlay-popup-image-path" class="form-control form-control-sm" placeholder="imagePath (optional)"></div>
-	                  <div class="col-4"><input id="overlay-popup-bg" class="form-control form-control-sm" value="#ffffff"></div>
-	                  <div class="col-4"><input id="overlay-popup-fg" class="form-control form-control-sm" value="#111111"></div>
-	                  <div class="col-4"><input id="overlay-popup-accent" class="form-control form-control-sm" value="#dc3545"></div>
-	                  <div class="col-4"><input id="overlay-popup-width" class="form-control form-control-sm" type="number" value="800" min="180" max="3840"></div>
-	                  <div class="col-4"><input id="overlay-popup-height" class="form-control form-control-sm" type="number" value="420" min="120" max="2160"></div>
-	                  <div class="col-4"><input id="overlay-popup-padding" class="form-control form-control-sm" type="number" value="24" min="0" max="240"></div>
-	                  <div class="col-12"><input id="overlay-popup-opacity" class="form-control form-control-sm" type="number" value="1.0" min="0.05" max="1" step="0.05"></div>
-	                  <div class="col-12">
-	                    <div class="form-check form-switch">
-	                      <input id="overlay-popup-enabled" class="form-check-input" type="checkbox" checked>
-	                      <label class="form-check-label" for="overlay-popup-enabled">enabled</label>
-	                    </div>
-	                  </div>
-	                </div>
-	                <div class="d-flex flex-wrap gap-2 mt-2">
-	                  <button id="btn-overlay-save-popup" class="btn btn-outline-primary btn-sm">Popup speichern</button>
-	                  <button id="btn-overlay-clear-popups" class="btn btn-outline-secondary btn-sm">Popups leeren</button>
-	                </div>
-	              </div>
-	            </div>
-
-	            <div class="col-12 col-xl-6">
-	              <div class="portal-card p-3 h-100">
-	                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-	                  <h3 class="h6 mb-0">Overlay State</h3>
-	                  <span id="overlay-state-path" class="badge text-bg-light border text-dark">-</span>
-	                </div>
-	                <div class="d-flex flex-wrap gap-2 mb-2">
-	                  <button id="btn-overlay-refresh" class="btn btn-outline-secondary btn-sm">Overlay-Status laden</button>
-	                  <button id="btn-overlay-reset-all" class="btn btn-outline-danger btn-sm">Alles zurücksetzen</button>
-	                </div>
-	                <pre id="overlay-state-json" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height: 320px; overflow:auto;">-</pre>
-	              </div>
-	            </div>
-	          </div>
             </div>
           </div>
 
           <div class="col-12 col-xl-5">
             <div class="portal-card p-4 h-100">
+              <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                <h2 class="h5 mb-0">Spotify Connect</h2>
+                <span id="spotify-connect-ready-badge" class="badge text-bg-secondary">unknown</span>
+              </div>
+              <div id="spotify-connect-status" class="small mb-2">Status: -</div>
+              <dl class="portal-kv mb-2">
+                <dt>Dienst</dt><dd id="spotify-connect-service-name">-</dd>
+                <dt>Scope</dt><dd id="spotify-connect-service-scope">-</dd>
+                <dt>Installiert</dt><dd id="spotify-connect-installed">-</dd>
+                <dt>Aktiviert</dt><dd id="spotify-connect-enabled">-</dd>
+                <dt>Läuft</dt><dd id="spotify-connect-running">-</dd>
+                <dt>Gerätename</dt><dd id="spotify-connect-device-name">-</dd>
+                <dt>Backend</dt><dd id="spotify-connect-backend">-</dd>
+                <dt>Output</dt><dd id="spotify-connect-output">-</dd>
+                <dt>Letzter Check</dt><dd id="spotify-connect-checked-at">-</dd>
+                <dt>Last Error</dt><dd id="spotify-connect-last-error">-</dd>
+              </dl>
+              <div class="d-flex flex-wrap gap-2">
+                <button id="btn-spotify-connect-start" class="btn btn-outline-success btn-sm">Start</button>
+                <button id="btn-spotify-connect-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                <button id="btn-spotify-connect-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                <button id="btn-spotify-connect-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                <button id="btn-spotify-connect-install" class="btn btn-outline-primary btn-sm">Install</button>
+                <button id="btn-spotify-connect-enable" class="btn btn-outline-primary btn-sm">Enable</button>
+                <button id="btn-spotify-connect-disable" class="btn btn-outline-secondary btn-sm">Disable</button>
+              </div>
+              <div class="border rounded p-2 mt-3">
+                <div class="small text-uppercase text-secondary mb-2">Spotify Connect Setup</div>
+                <div class="row g-2">
+                  <div class="col-12 col-lg-6">
+                    <label for="spotify-connect-config-name" class="form-label form-label-sm mb-1">Service Name</label>
+                    <input id="spotify-connect-config-name" type="text" class="form-control form-control-sm" placeholder="raspotify.service">
+                  </div>
+                  <div class="col-12 col-lg-6">
+                    <label for="spotify-connect-config-device-name" class="form-label form-label-sm mb-1">Gerätename (Spotify)</label>
+                    <input id="spotify-connect-config-device-name" type="text" class="form-control form-control-sm" placeholder="JarvisAudioNode">
+                  </div>
+                  <div class="col-12 col-lg-3">
+                    <label for="spotify-connect-config-scope" class="form-label form-label-sm mb-1">Scope</label>
+                    <select id="spotify-connect-config-scope" class="form-select form-select-sm">
+                      <option value="auto">auto</option>
+                      <option value="system">system</option>
+                      <option value="user">user</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-lg-3">
+                    <label for="spotify-connect-config-user" class="form-label form-label-sm mb-1">User</label>
+                    <input id="spotify-connect-config-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
+                  </div>
+                  <div class="col-12">
+                    <label for="spotify-connect-config-candidates" class="form-label form-label-sm mb-1">Candidates</label>
+                    <input id="spotify-connect-config-candidates" type="text" class="form-control form-control-sm" placeholder="raspotify.service librespot.service">
+                  </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                  <button id="btn-spotify-connect-config-save" class="btn btn-outline-primary btn-sm">Konfiguration speichern</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="portal-card p-4">
               <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                 <div>
                   <h2 class="h5 mb-1">Audio</h2>
@@ -1165,64 +1167,67 @@
                 <button id="btn-stream-audio-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
               </div>
 
-              <div class="border rounded p-3 mb-3">
-                <div class="small text-uppercase text-secondary mb-2">Status</div>
-                <div id="stream-audio-status" class="small mb-2">Status: -</div>
-                <div class="d-flex flex-wrap gap-2 mb-2">
-                  <button id="btn-stream-audio-play-file" class="btn btn-outline-primary btn-sm">Datei abspielen</button>
-                  <button id="btn-stream-audio-play-stream" class="btn btn-outline-primary btn-sm">Webstream starten</button>
+              <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary mb-2">Status</div>
+                    <div id="stream-audio-status" class="small mb-2">Status: -</div>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                      <button id="btn-stream-audio-play-file" class="btn btn-outline-primary btn-sm">Datei abspielen</button>
+                      <button id="btn-stream-audio-play-stream" class="btn btn-outline-primary btn-sm">Webstream starten</button>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-stream-audio-pause" class="btn btn-outline-warning btn-sm">Pause</button>
+                      <button id="btn-stream-audio-resume" class="btn btn-outline-success btn-sm">Resume</button>
+                      <button id="btn-stream-audio-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                    </div>
+                  </div>
                 </div>
-                <div class="d-flex flex-wrap gap-2">
-                  <button id="btn-stream-audio-pause" class="btn btn-outline-warning btn-sm">Pause</button>
-                  <button id="btn-stream-audio-resume" class="btn btn-outline-success btn-sm">Resume</button>
-                  <button id="btn-stream-audio-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary mb-2">Datei (MP3 / OGG / WAV / ...)</div>
+                    <div class="small text-secondary mb-2">Audio Root: <span id="stream-audio-root">-</span></div>
+                    <select id="stream-audio-file-select" class="form-select form-select-sm mb-2">
+                      <option value="">Keine Audio-Dateien gefunden</option>
+                    </select>
+                    <input id="stream-audio-file-path" type="text" class="form-control form-control-sm" placeholder="/pfad/zur/datei.mp3">
+                    <div class="small text-uppercase text-secondary mt-3 mb-2">Webradio / Webstream</div>
+                    <input id="stream-audio-stream-url" type="url" class="form-control form-control-sm" placeholder="https://example.com/stream.mp3">
+                  </div>
+                </div>
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <div class="small text-uppercase text-secondary mb-0">Raspotify</div>
+                      <span id="audio-raspotify-status-badge" class="badge text-bg-secondary">unknown</span>
+                    </div>
+                    <div id="audio-raspotify-status" class="small mb-2">Status: -</div>
+                    <dl class="portal-kv mb-2">
+                      <dt>Dienst</dt><dd id="audio-raspotify-service">-</dd>
+                      <dt>Device</dt><dd id="audio-raspotify-device-name">-</dd>
+                      <dt>Backend</dt><dd id="audio-raspotify-backend">-</dd>
+                      <dt>Output</dt><dd id="audio-raspotify-output">-</dd>
+                      <dt>Last Error</dt><dd id="audio-raspotify-last-error">-</dd>
+                    </dl>
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-audio-raspotify-start" class="btn btn-outline-success btn-sm">Start</button>
+                      <button id="btn-audio-raspotify-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                      <button id="btn-audio-raspotify-restart" class="btn btn-outline-warning btn-sm">Restart</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary mb-2">Webradio (mpv)</div>
+                    <div id="audio-radio-status" class="small mb-2">Status: -</div>
+                    <input id="audio-radio-url" type="url" class="form-control form-control-sm mb-2" placeholder="https://example.com/stream.mp3">
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-audio-radio-play" class="btn btn-outline-primary btn-sm">Play</button>
+                      <button id="btn-audio-radio-stop" class="btn btn-outline-danger btn-sm">Stop</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              <div class="border rounded p-3 mb-3">
-                <div class="small text-uppercase text-secondary mb-2">Datei (MP3 / OGG / WAV / ...)</div>
-                <div class="small text-secondary mb-2">Audio Root: <span id="stream-audio-root">-</span></div>
-                <select id="stream-audio-file-select" class="form-select form-select-sm mb-2">
-                  <option value="">Keine Audio-Dateien gefunden</option>
-                </select>
-                <input id="stream-audio-file-path" type="text" class="form-control form-control-sm" placeholder="/pfad/zur/datei.mp3">
-              </div>
-
-              <div class="border rounded p-3 mb-3">
-                <div class="small text-uppercase text-secondary mb-2">Webradio / Webstream</div>
-                <input id="stream-audio-stream-url" type="url" class="form-control form-control-sm" placeholder="https://example.com/stream.mp3">
-              </div>
-
-              <div class="border rounded p-3 mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div class="small text-uppercase text-secondary mb-0">Raspotify</div>
-                  <span id="audio-raspotify-status-badge" class="badge text-bg-secondary">unknown</span>
-                </div>
-                <div id="audio-raspotify-status" class="small mb-2">Status: -</div>
-                <dl class="portal-kv mb-2">
-                  <dt>Dienst</dt><dd id="audio-raspotify-service">-</dd>
-                  <dt>Device</dt><dd id="audio-raspotify-device-name">-</dd>
-                  <dt>Backend</dt><dd id="audio-raspotify-backend">-</dd>
-                  <dt>Output</dt><dd id="audio-raspotify-output">-</dd>
-                  <dt>Last Error</dt><dd id="audio-raspotify-last-error">-</dd>
-                </dl>
-                <div class="d-flex flex-wrap gap-2">
-                  <button id="btn-audio-raspotify-start" class="btn btn-outline-success btn-sm">Start</button>
-                  <button id="btn-audio-raspotify-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                  <button id="btn-audio-raspotify-restart" class="btn btn-outline-warning btn-sm">Restart</button>
-                </div>
-              </div>
-
-              <div class="border rounded p-3 mt-3">
-                <div class="small text-uppercase text-secondary mb-2">Webradio (mpv)</div>
-                <div id="audio-radio-status" class="small mb-2">Status: -</div>
-                <input id="audio-radio-url" type="url" class="form-control form-control-sm mb-2" placeholder="https://example.com/stream.mp3">
-                <div class="d-flex flex-wrap gap-2">
-                  <button id="btn-audio-radio-play" class="btn btn-outline-primary btn-sm">Play</button>
-                  <button id="btn-audio-radio-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                </div>
-              </div>
-
             </div>
           </div>
         </div>

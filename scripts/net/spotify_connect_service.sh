@@ -3,6 +3,7 @@ set -euo pipefail
 
 ACTION="${1:-status}"
 REQUESTED_SERVICE="${2:-}"
+DEVICE_NAME_OVERRIDE="${SPOTIFY_CONNECT_DEVICE_NAME:-}"
 
 CANDIDATES_RAW="${SPOTIFY_CONNECT_SERVICE_CANDIDATES:-raspotify.service librespot.service}"
 SERVICE_SCOPE="${SPOTIFY_CONNECT_SERVICE_SCOPE:-auto}"
@@ -21,6 +22,198 @@ emit() {
   local key="$1"
   local val="${2:-}"
   printf '%s=%s\n' "$key" "$val"
+}
+
+_set_device_name_in_file_py() {
+  local file_path="$1"
+  local next_name="$2"
+  python3 - "${file_path}" "${next_name}" <<'PY'
+import pathlib
+import shlex
+import sys
+
+path = pathlib.Path(sys.argv[1]).expanduser()
+device_name = (sys.argv[2] or "").strip()
+if not device_name:
+    raise SystemExit(2)
+
+path.parent.mkdir(parents=True, exist_ok=True)
+content = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
+
+existing: dict[str, str] = {}
+order: list[str] = []
+for line in content.splitlines():
+    if "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    key = key.strip()
+    if not key:
+        continue
+    value = value.strip().strip('"').strip("'")
+    if key not in existing:
+        order.append(key)
+    existing[key] = value
+
+existing["DEVICE_NAME"] = device_name
+opts_raw = existing.get("OPTIONS", "").strip()
+try:
+    tokens = shlex.split(opts_raw)
+except ValueError:
+    tokens = opts_raw.split()
+
+filtered: list[str] = []
+i = 0
+while i < len(tokens):
+    token = tokens[i]
+    if token == "--name":
+        i += 2
+        continue
+    if token.startswith("--name="):
+        i += 1
+        continue
+    filtered.append(token)
+    i += 1
+
+existing["OPTIONS"] = " ".join(shlex.quote(t) for t in (["--name", device_name] + filtered) if t)
+
+for key in ("DEVICE_NAME", "OPTIONS"):
+    if key not in order:
+        order.append(key)
+
+out: list[str] = []
+for key in order:
+    if key in existing:
+        out.append(f'{key}="{existing[key]}"')
+for key, value in existing.items():
+    if key not in order:
+        out.append(f'{key}="{value}"')
+
+path.write_text(("\n".join(out)).rstrip() + "\n", encoding="utf-8")
+PY
+}
+
+set_device_name() {
+  local service_name="$1"
+  local service_scope="$2"
+  local next_name="${DEVICE_NAME_OVERRIDE}"
+
+  if [[ -z "${next_name}" ]]; then
+    emit "success" "false"
+    emit "code" "invalid_payload"
+    emit "message" "Device name is required"
+    exit 2
+  fi
+
+  if [[ "${service_scope}" == "user" ]]; then
+    if [[ -z "${SERVICE_USER}" ]]; then
+      emit "success" "false"
+      emit "code" "service_user_missing"
+      emit "message" "SERVICE_USER is required for user scope"
+      exit 4
+    fi
+    local user_home
+    user_home="$(_user_home "${SERVICE_USER}")"
+    if [[ -z "${user_home}" ]]; then
+      emit "success" "false"
+      emit "code" "service_user_missing"
+      emit "message" "Could not resolve service user home"
+      exit 4
+    fi
+    local user_conf="${user_home}/.config/raspotify/conf"
+    if ! sudo -n -u "${SERVICE_USER}" env SPOTIFY_CONNECT_DEVICE_NAME="${next_name}" python3 - "${user_conf}" <<'PY'
+import os
+import pathlib
+import shlex
+import sys
+
+path = pathlib.Path(sys.argv[1]).expanduser()
+device_name = os.getenv("SPOTIFY_CONNECT_DEVICE_NAME", "").strip()
+if not device_name:
+    raise SystemExit(2)
+
+path.parent.mkdir(parents=True, exist_ok=True)
+content = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
+
+existing: dict[str, str] = {}
+order: list[str] = []
+for line in content.splitlines():
+    if "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    key = key.strip()
+    if not key:
+        continue
+    value = value.strip().strip('"').strip("'")
+    if key not in existing:
+        order.append(key)
+    existing[key] = value
+
+existing["DEVICE_NAME"] = device_name
+opts_raw = existing.get("OPTIONS", "").strip()
+try:
+    tokens = shlex.split(opts_raw)
+except ValueError:
+    tokens = opts_raw.split()
+
+filtered: list[str] = []
+i = 0
+while i < len(tokens):
+    token = tokens[i]
+    if token == "--name":
+        i += 2
+        continue
+    if token.startswith("--name="):
+        i += 1
+        continue
+    filtered.append(token)
+    i += 1
+
+existing["OPTIONS"] = " ".join(shlex.quote(t) for t in (["--name", device_name] + filtered) if t)
+
+for key in ("DEVICE_NAME", "OPTIONS"):
+    if key not in order:
+        order.append(key)
+
+out: list[str] = []
+for key in order:
+    if key in existing:
+        out.append(f'{key}="{existing[key]}"')
+for key, value in existing.items():
+    if key not in order:
+        out.append(f'{key}="{value}"')
+
+path.write_text(("\n".join(out)).rstrip() + "\n", encoding="utf-8")
+PY
+    then
+      emit "success" "false"
+      emit "code" "config_write_failed"
+      emit "message" "Failed to update user raspotify config"
+      emit "service_scope" "${service_scope}"
+      exit 5
+    fi
+  else
+    _set_device_name_in_file_py "/etc/default/raspotify" "${next_name}" || {
+      emit "success" "false"
+      emit "code" "config_write_failed"
+      emit "message" "Failed to update /etc/default/raspotify"
+      emit "service_scope" "system"
+      exit 5
+    }
+  fi
+
+  if [[ -n "${service_name}" ]]; then
+    if [[ "${service_scope}" == "user" ]]; then
+      if _systemctl_user "${SERVICE_USER}" is-active --quiet "${service_name}" >/dev/null 2>&1; then
+        _systemctl_user "${SERVICE_USER}" restart "${service_name}" >/dev/null 2>&1 || true
+      fi
+    else
+      if systemctl is-active --quiet "${service_name}" >/dev/null 2>&1; then
+        systemctl restart "${service_name}" >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
+
+  build_status "${service_name}" "${service_scope}"
 }
 
 normalize_bool() {
@@ -400,6 +593,9 @@ case "${ACTION}" in
   status|refresh)
     build_status "${chosen_service}" "${chosen_scope}"
     ;;
+  set-device-name)
+    set_device_name "${chosen_service}" "${chosen_scope}"
+    ;;
   start|stop|restart|enable|disable)
     if [[ -z "${chosen_service}" ]]; then
       emit "success" "false"
@@ -445,7 +641,7 @@ case "${ACTION}" in
   *)
     emit "success" "false"
     emit "code" "invalid_action"
-    emit "message" "Action must be start|stop|restart|enable|disable|status|refresh"
+    emit "message" "Action must be start|stop|restart|enable|disable|status|refresh|set-device-name"
     exit 2
     ;;
 esac

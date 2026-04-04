@@ -1471,6 +1471,66 @@ def spotify_connect_service_action(
     }
 
 
+def spotify_connect_set_device_name(
+    device_name: str,
+    service_name: str = "",
+    service_user: str = "",
+    service_scope: str = "",
+    service_candidates: str = "",
+) -> dict:
+    next_name = (device_name or "").strip()
+    if not next_name:
+        raise NetControlError(code="invalid_payload", message="Device name is required")
+
+    args = ["set-device-name"]
+    service = (service_name or "").strip()
+    if service:
+        args.append(service)
+
+    env = os.environ.copy()
+    env["SPOTIFY_CONNECT_DEVICE_NAME"] = next_name
+    if service_user:
+        env["SPOTIFY_CONNECT_SERVICE_USER"] = service_user
+    if service_scope:
+        env["SPOTIFY_CONNECT_SERVICE_SCOPE"] = service_scope
+    if service_candidates:
+        env["SPOTIFY_CONNECT_SERVICE_CANDIDATES"] = service_candidates
+
+    rc, out, err = _run_script("spotify_connect_service.sh", args, timeout=30, use_sudo=True, env=env)
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "spotify_connect_failed"),
+            message=parsed.get("message", "Spotify Connect action failed"),
+            detail=detail,
+        )
+
+    service_installed = _parse_bool_flag(parsed.get("service_installed"))
+    service_enabled = _parse_bool_flag(parsed.get("service_enabled"))
+    service_running = _parse_bool_flag(parsed.get("service_running"))
+    connect_ready = _parse_bool_flag(parsed.get("connect_ready"))
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "action": parsed.get("action", "set-device-name"),
+        "serviceName": parsed.get("service_name", service),
+        "serviceScope": parsed.get("service_scope", ""),
+        "serviceInstalled": service_installed is True,
+        "serviceEnabled": service_enabled is True,
+        "serviceRunning": service_running is True,
+        "serviceEnabledState": parsed.get("service_enabled_state", ""),
+        "serviceActiveState": parsed.get("service_active_state", ""),
+        "serviceSubState": parsed.get("service_sub_state", ""),
+        "deviceName": parsed.get("device_name", next_name),
+        "backend": parsed.get("backend", ""),
+        "outputDevice": parsed.get("output_device", ""),
+        "lastError": parsed.get("last_error", ""),
+        "connectReady": connect_ready is True,
+        "checkedAt": parsed.get("checked_at", ""),
+        "message": parsed.get("message", "Spotify Connect status processed"),
+    }
+
+
 def spotify_connect_install(
     service_name: str = "",
     service_user: str = "",

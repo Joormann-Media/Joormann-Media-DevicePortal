@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import shlex
-
 from flask import Blueprint, jsonify, request
 
 from app.core.config import ensure_config
 from app.core.jsonio import write_json
-from app.core.netcontrol import NetControlError, spotify_connect_install, spotify_connect_service_action
+from app.core.netcontrol import (
+    NetControlError,
+    spotify_connect_install,
+    spotify_connect_service_action,
+    spotify_connect_set_device_name,
+)
 from app.core.paths import CONFIG_PATH
-from pathlib import Path
 from app.core.timeutil import utc_now
 
 bp_spotify_connect = Blueprint("spotify_connect", __name__)
@@ -22,53 +24,6 @@ def _service_env_from_cfg() -> dict:
         "service_scope": str(cfg.get("spotify_connect_service_scope") or "").strip(),
         "service_candidates": str(cfg.get("spotify_connect_service_candidates") or "").strip(),
     }
-
-
-def _update_raspotify_conf(device_name: str) -> None:
-    if not device_name:
-        return
-    conf_dir = Path.home() / ".config" / "raspotify"
-    conf_dir.mkdir(parents=True, exist_ok=True)
-    conf_path = conf_dir / "conf"
-    existing: dict[str, str] = {}
-    if conf_path.exists():
-        for line in conf_path.read_text().splitlines():
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            existing[key.strip()] = value.strip().strip('"').strip("'")
-    existing["DEVICE_NAME"] = device_name
-    backend = existing.get("BACKEND", "").strip()
-    device = existing.get("DEVICE", "").strip()
-
-    opts_raw = existing.get("OPTIONS", "").strip()
-    try:
-        tokens = shlex.split(opts_raw)
-    except ValueError:
-        tokens = opts_raw.split()
-
-    filtered: list[str] = []
-    i = 0
-    while i < len(tokens):
-        token = tokens[i]
-        if token in ("--name", "--backend", "--device"):
-            i += 2
-            continue
-        if token.startswith("--name=") or token.startswith("--backend=") or token.startswith("--device="):
-            i += 1
-            continue
-        filtered.append(token)
-        i += 1
-
-    new_tokens: list[str] = ["--name", device_name]
-    if backend:
-        new_tokens += ["--backend", backend]
-    if device:
-        new_tokens += ["--device", device]
-    new_tokens += filtered
-    existing["OPTIONS"] = " ".join(shlex.quote(t) for t in new_tokens if t)
-    lines = [f'{k}="{v}"' for k, v in existing.items()]
-    conf_path.write_text("\n".join(lines) + "\n")
 
 
 def _ok(data: dict, status: int = 200):
@@ -195,10 +150,22 @@ def api_spotify_connect_config_set():
     cfg["spotify_connect_service_candidates"] = str(data.get("service_candidates") or "").strip()
     cfg["spotify_connect_device_name"] = str(data.get("device_name") or "").strip()
     cfg["updated_at"] = utc_now()
-    _update_raspotify_conf(cfg.get("spotify_connect_device_name") or "")
     ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok:
         return _error("config_write_failed", "Could not persist spotify connect config", status=500, detail=write_err)
+    try:
+        device_name = str(cfg.get("spotify_connect_device_name") or "").strip()
+        if device_name:
+            spotify_connect_set_device_name(
+                device_name=device_name,
+                service_name=str(cfg.get("spotify_connect_service_name") or "").strip(),
+                service_user=str(cfg.get("spotify_connect_service_user") or "").strip(),
+                service_scope=str(cfg.get("spotify_connect_service_scope") or "").strip(),
+                service_candidates=str(cfg.get("spotify_connect_service_candidates") or "").strip(),
+            )
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed", "script_missing", "config_write_failed") else 400
+        return _error(exc.code, "Spotify device name konnte nicht angewendet werden", status=status, detail=exc.detail or exc.message)
     return _ok(
         {
             "service_name": str(cfg.get("spotify_connect_service_name") or "").strip(),
