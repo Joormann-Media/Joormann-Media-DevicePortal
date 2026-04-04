@@ -33,6 +33,20 @@ class RadioService:
         self._rtsp_adapter_last_exit_code: int | None = None
         self._mpv_last_stderr: str | None = None
 
+    def _detect_stream_kind(self, url: str) -> str:
+        value = str(url or "").strip().lower()
+        if value.startswith("rtsp://"):
+            return "rtsp"
+        if value.startswith("http://") or value.startswith("https://"):
+            if ".m3u8" in value or ".m3u" in value:
+                return "m3u"
+            if ".pls" in value:
+                return "pls"
+            return "http"
+        if value.startswith("file://"):
+            return "file"
+        return "unknown"
+
     def _mpv_path(self) -> str | None:
         return shutil.which("mpv")
 
@@ -164,60 +178,103 @@ class RadioService:
 
         self._stop_rtsp_adapter_locked()
         target_url = self._build_rtsp_adapter_target(cfg)
-        cmd = [
-            ffmpeg,
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            str(cfg.get("loglevel") or "warning"),
-            "-rtsp_transport",
-            str(cfg.get("transport") or "tcp"),
-            "-i",
-            url,
-            "-map",
-            "0",
-            "-c",
-            "copy",
-            "-f",
-            str(cfg.get("output_format") or "mpegts"),
-            target_url,
+        # Profile 1: copy container streams with low-latency flags.
+        # Profile 2: audio transcode fallback when source codecs/container are not accepted by the local player path.
+        cmd_profiles = [
+            [
+                ffmpeg,
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                str(cfg.get("loglevel") or "warning"),
+                "-rtsp_transport",
+                str(cfg.get("transport") or "tcp"),
+                "-fflags",
+                "+genpts+nobuffer",
+                "-flags",
+                "low_delay",
+                "-rw_timeout",
+                "15000000",
+                "-i",
+                url,
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                "-f",
+                str(cfg.get("output_format") or "mpegts"),
+                target_url,
+            ],
+            [
+                ffmpeg,
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                str(cfg.get("loglevel") or "warning"),
+                "-rtsp_transport",
+                str(cfg.get("transport") or "tcp"),
+                "-rw_timeout",
+                "15000000",
+                "-i",
+                url,
+                "-vn",
+                "-map",
+                "a:0?",
+                "-c:a",
+                "mp2",
+                "-b:a",
+                "192k",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-f",
+                str(cfg.get("output_format") or "mpegts"),
+                target_url,
+            ],
         ]
 
-        logger.info("Starting RTSP adapter: %s", " ".join(shlex.quote(x) for x in cmd))
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=self._pulse_env(),
-            )
-        except Exception as exc:
-            self._rtsp_adapter_last_error = str(exc)
-            logger.error("RTSP adapter start failed: %s", exc)
-            return False, "", f"RTSP-Adapter Start fehlgeschlagen: {exc}"
+        proc: subprocess.Popen[str] | None = None
+        last_boot_error = ""
+        for cmd in cmd_profiles:
+            logger.info("Starting RTSP adapter: %s", " ".join(shlex.quote(x) for x in cmd))
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    env=self._pulse_env(),
+                )
+            except Exception as exc:
+                last_boot_error = str(exc)
+                logger.error("RTSP adapter start failed: %s", exc)
+                continue
 
-        self._rtsp_adapter_process = proc
-        self._rtsp_adapter_source_url = url
-        self._rtsp_adapter_target_url = target_url
-        self._rtsp_adapter_started_at = utc_now()
-        self._rtsp_adapter_last_error = None
-        self._rtsp_adapter_last_stderr = None
-        self._rtsp_adapter_last_exit_code = None
-        self._spawn_stderr_reader(proc, "adapter")
-        self._spawn_adapter_watcher(proc)
+            self._rtsp_adapter_process = proc
+            self._rtsp_adapter_source_url = url
+            self._rtsp_adapter_target_url = target_url
+            self._rtsp_adapter_started_at = utc_now()
+            self._rtsp_adapter_last_error = None
+            self._rtsp_adapter_last_stderr = None
+            self._rtsp_adapter_last_exit_code = None
+            self._spawn_stderr_reader(proc, "adapter")
+            self._spawn_adapter_watcher(proc)
 
-        time.sleep(0.45)
-        if proc.poll() is not None:
+            time.sleep(0.65)
+            if proc.poll() is None:
+                logger.info("RTSP adapter ready: source=%s target=%s", url, target_url)
+                return True, target_url, ""
+
             self._rtsp_adapter_last_exit_code = proc.returncode
             self._rtsp_adapter_process = None
             err = self._rtsp_adapter_last_stderr or f"ffmpeg exit {proc.returncode}"
             self._rtsp_adapter_last_error = err
-            logger.error("RTSP adapter exited early: %s", err)
-            return False, "", f"RTSP-Adapter hat sofort beendet: {err}"
+            last_boot_error = err
+            logger.warning("RTSP adapter profile failed, trying fallback profile: %s", err)
 
-        logger.info("RTSP adapter ready: source=%s target=%s", url, target_url)
-        return True, target_url, ""
+        final_error = last_boot_error or "unbekannter ffmpeg Fehler"
+        return False, "", f"RTSP-Adapter hat sofort beendet: {final_error}"
 
     def play(self, stream_url: str) -> dict[str, Any]:
         url = (stream_url or "").strip().replace("&amp;", "&")
@@ -229,18 +286,21 @@ class RadioService:
 
         with self._lock:
             self.stop()
-            is_rtsp = url.lower().startswith("rtsp://")
+            stream_kind = self._detect_stream_kind(url)
+            is_rtsp = stream_kind == "rtsp"
             playback_url = url
             adapter_active = False
+            adapter_error = ""
             if is_rtsp:
                 ok_adapter, adapted_url, adapter_err = self._start_rtsp_adapter_locked(url)
                 if not ok_adapter:
-                    self._last_error = adapter_err
-                    self._stream_url = url
-                    self._playback_url = None
-                    return {"ok": False, "message": f"Radio-Start fehlgeschlagen: {adapter_err}", "stream_url": url}
-                playback_url = adapted_url
-                adapter_active = True
+                    # Keep RTSP playback possible even when adapter startup fails:
+                    # fallback to direct mpv input instead of hard failing.
+                    adapter_error = adapter_err
+                    logger.warning("RTSP adapter unavailable, fallback to direct RTSP playback: %s", adapter_err)
+                else:
+                    playback_url = adapted_url
+                    adapter_active = True
 
             attempts: list[list[str]] = [[
                 mpv,
@@ -282,7 +342,9 @@ class RadioService:
                         "message": "Radio gestartet",
                         "stream_url": url,
                         "playback_url": playback_url,
+                        "stream_kind": stream_kind,
                         "rtsp_adapter_active": adapter_active,
+                        "rtsp_adapter_error": adapter_error or None,
                     }
 
                 stderr = ""
@@ -349,10 +411,12 @@ class RadioService:
     def status(self) -> dict[str, Any]:
         running = self._process is not None and self._process.poll() is None
         adapter_running = self._rtsp_adapter_process is not None and self._rtsp_adapter_process.poll() is None
+        stream_kind = self._detect_stream_kind(self._stream_url or "")
         return {
             "running": running,
             "stream_url": self._stream_url,
             "playback_url": self._playback_url,
+            "stream_kind": stream_kind,
             "pid": self._process.pid if running and self._process is not None else None,
             "last_error": self._last_error,
             "rtsp_adapter": {

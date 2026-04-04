@@ -93,7 +93,11 @@ def create_app() -> Flask:
         cfg = ensure_config()
 
         # Allow smarthome/audio-node API calls without login (when explicitly enabled).
-        if cfg.get("audio_node_public") and (path.startswith("/api/audio/") or path.startswith("/api/bluetooth/")):
+        if cfg.get("audio_node_public") and (
+            path.startswith("/api/audio/")
+            or path.startswith("/api/radio/")
+            or path.startswith("/api/bluetooth/")
+        ):
             return None
 
         # Allow local service-driven stream sync even when panel-remote auth is active.

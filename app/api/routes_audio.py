@@ -291,6 +291,31 @@ def api_audio_radio_stop():
     return _ok(result)
 
 
+@bp_audio.get("/api/audio/radio/status")
+def api_audio_radio_status():
+    return _ok(radio_service.status())
+
+
+@bp_audio.post("/api/radio/play")
+def api_radio_play_alias():
+    return api_audio_radio_play()
+
+
+@bp_audio.post("/api/radio/start")
+def api_radio_start_alias():
+    return api_audio_radio_start()
+
+
+@bp_audio.post("/api/radio/stop")
+def api_radio_stop_alias():
+    return api_audio_radio_stop()
+
+
+@bp_audio.get("/api/radio/status")
+def api_radio_status_alias():
+    return api_audio_radio_status()
+
+
 @bp_audio.post("/api/audio/stop-all")
 def api_audio_stop_all():
     radio_result = radio_service.stop()
