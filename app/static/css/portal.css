@@ -89,6 +89,15 @@ body.portal-body {
   word-break: break-word;
 }
 
+.system-general-card .portal-kv dt,
+.system-general-card .portal-kv dd {
+  font-size: 0.86rem;
+}
+
+.system-general-card .portal-kv dd {
+  margin-bottom: 0.28rem;
+}
+
 .nav-tabs .nav-link {
   color: #334155;
   border-radius: 0.7rem 0.7rem 0 0;

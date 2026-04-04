@@ -1247,6 +1247,12 @@ def _ack_api_key_bootstrap(cfg: dict, dev: dict, ids: list[int], activated_direc
 
 
 def _pull_and_apply_bootstrap_keys(cfg: dict, dev: dict) -> dict:
+    node_type = _normalize_node_type(cfg.get('node_runtime_type') or 'raspi_node')
+    if node_type in ('server', 'workstation'):
+        # Hardware nodes use hardware-device auth/import flow and do not expose
+        # Raspi bootstrap key pull endpoints.
+        return {'ok': True, 'updated': False, 'skipped': True, 'reason': 'hardware_node'}
+
     base = _safe_base_url(cfg.get('admin_base_url', ''))
     if not base:
         return {'ok': False, 'error': 'admin_base_url missing'}
@@ -1732,7 +1738,7 @@ def api_panel_ping():
     flags = _extract_panel_device_flags(resp if isinstance(resp, dict) else None)
     if isinstance(flags, dict):
         cfg['panel_device_flags'] = flags
-    panel_error = '' if linked else (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
+    panel_error = '' if linked else (_extract_response_message(resp if isinstance(resp, dict) else None) or f'http {code}')
 
     if isinstance(resp, dict):
         slug = (resp.get('deviceSlug') or resp.get('slug') or '').strip()
@@ -1838,7 +1844,7 @@ def api_panel_register():
     flags = _extract_panel_device_flags(resp if isinstance(resp, dict) else None)
     if isinstance(flags, dict):
         cfg['panel_device_flags'] = flags
-    panel_error = '' if linked else (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
+    panel_error = '' if linked else (_extract_response_message(resp if isinstance(resp, dict) else None) or f'http {code}')
 
     if _response_indicates_success(code, resp):
         if isinstance(resp, dict):
@@ -2078,6 +2084,87 @@ def api_panel_sync_status():
     if not base_url:
         return jsonify(ok=False, error='admin_base_url missing'), 400
 
+    node_type = _normalize_node_type(cfg.get('node_runtime_type') or 'raspi_node')
+    if node_type in ('server', 'workstation'):
+        ping_path = str(cfg.get('panel_ping_path') or '/api/hardware-device/ping').strip()
+        if not ping_path:
+            ping_path = '/api/hardware-device/ping'
+        if not ping_path.startswith('/'):
+            ping_path = f'/{ping_path}'
+        sync_url = f"{base_url}{ping_path}"
+
+        client_id = str(cfg.get('client_id') or '').strip()
+        panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+        api_key = str((panel_keys.get('raspi_to_admin') if isinstance(panel_keys, dict) else '') or '').strip()
+        if not client_id or not api_key:
+            return jsonify(
+                ok=False,
+                error='device_auth_invalid',
+                detail='Hardware-Credentials fehlen (client_id/api_key). Bitte erneut registrieren.',
+                hint='relink_required',
+                sync_url=sync_url,
+                node_type=node_type,
+            ), 400
+
+        code, resp, err = _http_get_json_with_headers(sync_url, {'X-Client-Id': client_id, 'X-API-Key': api_key}, timeout=8)
+        if code is None:
+            return jsonify(ok=False, error='sync_status_failed', detail=str(err), sync_url=sync_url, node_type=node_type), 502
+
+        if code < 200 or code >= 300:
+            detail_msg = _extract_response_message(resp) or (resp.get('error') if isinstance(resp, dict) else '') or f'http {code}'
+            st = _update_panel_link_state(
+                cfg,
+                linked=_sticky_linked(cfg, False, code, resp),
+                last_http=code,
+                last_response=resp,
+                last_error=detail_msg,
+            )
+            err_code = str((resp.get('error') if isinstance(resp, dict) else '') or '').strip().lower()
+            if err_code in ('auth_invalid', 'invalid_auth', 'auth_failed'):
+                return jsonify(
+                    ok=False,
+                    error='device_auth_invalid',
+                    detail=detail_msg,
+                    hint='relink_required',
+                    http=code,
+                    sync_url=sync_url,
+                    response=resp,
+                    panel_link_state=st,
+                    node_type=node_type,
+                ), 400
+            return jsonify(
+                ok=False,
+                error='sync_status_failed',
+                detail=detail_msg,
+                http=code,
+                sync_url=sync_url,
+                response=resp,
+                panel_link_state=st,
+                node_type=node_type,
+            ), 400
+
+        st = _update_panel_link_state(
+            cfg,
+            linked=True,
+            last_http=code,
+            last_response=resp,
+            last_error='',
+        )
+        if request_base:
+            cfg['admin_base_url'] = request_base
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+
+        return jsonify(
+            ok=True,
+            http=code,
+            sync_url=sync_url,
+            response=resp,
+            panel_link_state=st,
+            node_type=node_type,
+            api_key_bootstrap={'ok': True, 'updated': False, 'skipped': True, 'reason': 'hardware_node'},
+        ), 200
+
     sync_url = _panel_sync_status_url(base_url)
     payload = {
         'deviceUuid': dev.get('device_uuid') or '',
@@ -2194,6 +2281,40 @@ def api_panel_sync_now():
         cfg['admin_base_url'] = request_base
         cfg['updated_at'] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
+
+    node_type = _normalize_node_type(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'raspi_node')
+    if node_type in ('server', 'workstation'):
+        _persist_node_type_choice(cfg, node_type)
+        base_url = _safe_base_url(cfg.get('admin_base_url', ''))
+        ping_path = str(cfg.get('panel_ping_path') or '/api/hardware-device/ping').strip()
+        if ping_path and not ping_path.startswith('/'):
+            ping_path = f'/{ping_path}'
+        ping_url = f"{base_url}{ping_path}" if base_url and ping_path else ''
+        panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+        client_id = str(cfg.get('client_id') or '').strip()
+        api_key = str((panel_keys.get('raspi_to_admin') if isinstance(panel_keys, dict) else '') or '').strip()
+        if ping_url.startswith('http://') or ping_url.startswith('https://'):
+            if client_id and api_key:
+                ping_code, ping_resp, _ping_err = _http_get_json_with_headers(
+                    ping_url,
+                    {'X-Client-Id': client_id, 'X-API-Key': api_key},
+                    timeout=8,
+                )
+                if ping_code is not None and 200 <= ping_code < 300:
+                    st = _update_panel_link_state(cfg, linked=True, last_http=ping_code, last_response=ping_resp, last_error='')
+                    return jsonify(
+                        ok=True,
+                        synced=True,
+                        mode='hardware_ping',
+                        node_type=node_type,
+                        http=ping_code,
+                        panel_ping_url=ping_url,
+                        response=ping_resp,
+                        panel_link_state=st,
+                        api_key_bootstrap={'ok': True, 'updated': False, 'skipped': True, 'reason': 'hardware_node'},
+                    ), 200
+        # Hardware fallback: full register flow with token.
+        return api_panel_register_hardware()
 
     url = _panel_url(cfg, 'panel_register_path')
     if not url:

@@ -1304,6 +1304,9 @@
     if (!setupWizardState.token) {
       throw new Error("Bitte einen Registrierungstoken eingeben.");
     }
+    const tokenValidateTimeoutMs = setupWizardState.nodeType === "raspi_node"
+      ? REQUEST_TIMEOUTS.panelTokenValidateMs
+      : REQUEST_TIMEOUTS.panelRegisterMs;
     const validatePayload = await fetchJson("/api/panel/validate-token", {
       method: "POST",
       body: {
@@ -1311,7 +1314,7 @@
         registration_token: setupWizardState.token,
         node_type: setupWizardState.nodeType,
       },
-      timeoutMs: REQUEST_TIMEOUTS.panelTokenValidateMs,
+      timeoutMs: tokenValidateTimeoutMs,
     });
     if (!validatePayload.valid) {
       throw new Error("Token ist ungültig.");

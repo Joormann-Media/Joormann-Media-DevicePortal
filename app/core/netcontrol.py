@@ -724,9 +724,40 @@ def wifi_connect(ssid: str, password: str = "", ifname: str = DEFAULT_WIFI_IFACE
 
 
 def wifi_profiles_list() -> dict:
-    rc, out, err = _run_script("wifi_profile.sh", ["profiles"], timeout=12, use_sudo=True)
+    # Read-only query: prefer unprivileged execution to avoid unnecessary
+    # root-DBus sessions and UID-0 connection pressure.
+    try:
+        rc, out, err = _run_script("wifi_profile.sh", ["profiles"], timeout=12, use_sudo=False)
+    except NetControlError as exc:
+        detail = (exc.detail or "").strip().lower()
+        can_retry_privileged = (
+            exc.code == "execution_failed"
+            and (
+                "permission denied" in detail
+                or "errno 13" in detail
+            )
+        )
+        if can_retry_privileged:
+            rc, out, err = _run_script("wifi_profile.sh", ["profiles"], timeout=12, use_sudo=True)
+        else:
+            raise
     if rc != 0:
-        raise NetControlError(code="wifi_profiles_failed", message="Failed to list Wi-Fi profiles", detail=err or out)
+        detail = (err or out or "").strip()
+        lower = detail.lower()
+        permission_markers = (
+            "not authorized",
+            "permission denied",
+            "insufficient permissions",
+            "not permitted",
+            "authorization failed",
+        )
+        needs_privileged_retry = any(marker in lower for marker in permission_markers)
+        if needs_privileged_retry:
+            rc, out, err = _run_script("wifi_profile.sh", ["profiles"], timeout=12, use_sudo=True)
+            if rc != 0:
+                raise NetControlError(code="wifi_profiles_failed", message="Failed to list Wi-Fi profiles", detail=err or out)
+            return {"profiles": _parse_wifi_profiles_output(out), "stdout": out}
+        raise NetControlError(code="wifi_profiles_failed", message="Failed to list Wi-Fi profiles", detail=detail)
     return {"profiles": _parse_wifi_profiles_output(out), "stdout": out}
 
 
@@ -1332,6 +1363,16 @@ def restart_portal_service(service_name: str = "device-portal.service") -> dict:
     parsed = _parse_kv_output(out)
     detail = parsed.get("details") or err or out
     if rc != 0:
+        detail_lower = (detail or "").lower()
+        if "sudo: a password is required" in detail_lower:
+            raise NetControlError(
+                code="sudo_password_required",
+                message="Portal restart requires sudoers NOPASSWD setup",
+                detail=(
+                    f"{detail}\n"
+                    "Run as root: ./install/setup_netcontrol.sh [REPO_DIR] [SERVICE_USER]"
+                ).strip(),
+            )
         raise NetControlError(
             code=parsed.get("code", "portal_restart_failed"),
             message=parsed.get("message", "Portal restart failed"),

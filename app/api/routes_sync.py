@@ -603,13 +603,51 @@ def _pull_config_from_admin(cfg: dict, dev: dict) -> tuple[bool, dict, str]:
     if not base:
         return False, {}, "admin_base_url_missing"
 
+    node_type = str(cfg.get("node_runtime_type") or "").strip().lower()
+    keys = cfg.get("panel_api_keys") if isinstance(cfg.get("panel_api_keys"), dict) else {}
+    raspi_to_admin = str((keys.get("raspi_to_admin") if isinstance(keys, dict) else "") or "").strip()
+
+    if node_type in {"server", "workstation"}:
+        client_id = str(cfg.get("client_id") or "").strip()
+        if not client_id or not raspi_to_admin:
+            return False, {}, "hardware_credentials_missing"
+        payload = {
+            "clientId": client_id,
+            "client_id": client_id,
+            "apiKey": raspi_to_admin,
+            "deviceUuid": dev.get("device_uuid") or "",
+            "device_uuid": dev.get("device_uuid") or "",
+        }
+        headers = {
+            "X-Client-Id": client_id,
+            "X-API-Key": raspi_to_admin,
+        }
+        candidates = [
+            "/api/hardware-device/sync-config",
+            "/api/hardware/device/sync-config",
+            "/api/device/link/sync-config",
+        ]
+        last_error = "sync_config_pull_failed"
+        for path in candidates:
+            code, resp, err = routes_panel._http_post_json_with_headers(f"{base}{path}", payload, headers, timeout=10)
+            if code is None:
+                last_error = str(err or "sync_config_pull_failed")
+                continue
+            if code < 200 or code >= 300 or not isinstance(resp, dict):
+                if isinstance(resp, dict):
+                    last_error = str(resp.get("message") or resp.get("error") or f"http {code}")
+                else:
+                    last_error = f"http {code}"
+                continue
+            data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
+            return True, data, ""
+        return False, {}, last_error
+
     url = f"{base}/api/device/link/sync-config"
     payload = {
         "deviceUuid": dev.get("device_uuid") or "",
         "authKey": dev.get("auth_key") or "",
     }
-    keys = cfg.get("panel_api_keys") if isinstance(cfg.get("panel_api_keys"), dict) else {}
-    raspi_to_admin = str((keys.get("raspi_to_admin") if isinstance(keys, dict) else "") or "").strip()
     if raspi_to_admin:
         payload["apiKey"] = raspi_to_admin
 
@@ -631,14 +669,52 @@ def _push_report_to_admin(cfg: dict, dev: dict, report: dict) -> tuple[bool, dic
     if not base:
         return False, {}, "admin_base_url_missing"
 
+    node_type = str(cfg.get("node_runtime_type") or "").strip().lower()
+    keys = cfg.get("panel_api_keys") if isinstance(cfg.get("panel_api_keys"), dict) else {}
+    raspi_to_admin = str((keys.get("raspi_to_admin") if isinstance(keys, dict) else "") or "").strip()
+
+    if node_type in {"server", "workstation"}:
+        client_id = str(cfg.get("client_id") or "").strip()
+        if not client_id or not raspi_to_admin:
+            return False, {}, "hardware_credentials_missing"
+        payload = {
+            "clientId": client_id,
+            "client_id": client_id,
+            "apiKey": raspi_to_admin,
+            "deviceUuid": dev.get("device_uuid") or "",
+            "device_uuid": dev.get("device_uuid") or "",
+            "sync_report": report,
+        }
+        headers = {
+            "X-Client-Id": client_id,
+            "X-API-Key": raspi_to_admin,
+        }
+        candidates = [
+            "/api/hardware-device/sync-report",
+            "/api/hardware/device/sync-report",
+            "/api/device/link/sync-report",
+        ]
+        last_error = "sync_report_push_failed"
+        for path in candidates:
+            code, resp, err = routes_panel._http_post_json_with_headers(f"{base}{path}", payload, headers, timeout=12)
+            if code is None:
+                last_error = str(err or "sync_report_push_failed")
+                continue
+            if code < 200 or code >= 300 or not isinstance(resp, dict):
+                if isinstance(resp, dict):
+                    last_error = str(resp.get("message") or resp.get("error") or f"http {code}")
+                else:
+                    last_error = f"http {code}"
+                continue
+            return True, resp, ""
+        return False, {}, last_error
+
     url = f"{base}/api/device/link/sync-report"
     payload = {
         "deviceUuid": dev.get("device_uuid") or "",
         "authKey": dev.get("auth_key") or "",
         "sync_report": report,
     }
-    keys = cfg.get("panel_api_keys") if isinstance(cfg.get("panel_api_keys"), dict) else {}
-    raspi_to_admin = str((keys.get("raspi_to_admin") if isinstance(keys, dict) else "") or "").strip()
     if raspi_to_admin:
         payload["apiKey"] = raspi_to_admin
 
@@ -743,7 +819,10 @@ def api_sync_run():
         if not auth_ok:
             return jsonify(ok=False, message="Unauthorized", error=auth_error), 401
 
-    force_pull = _bool(data.get("pullConfig") or data.get("pull_config") or True, default=True)
+    pull_config_raw = data.get("pullConfig")
+    if pull_config_raw is None:
+        pull_config_raw = data.get("pull_config")
+    force_pull = _bool(pull_config_raw, default=True)
     direction = str(data.get("direction") or "bidirectional").strip().lower()
     triggered_by = str(data.get("triggeredBy") or data.get("triggered_by") or "portal").strip() or "portal"
     actions_only = _bool(data.get("actionsOnly") or data.get("actions_only"), default=False)

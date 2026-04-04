@@ -160,6 +160,16 @@ def _error(code: str, message: str, status: int = 400, detail: str = ""):
     return jsonify(ok=False, success=False, message=message, data={}, error_code=code, error=payload), status
 
 
+def _is_nm_uid0_limits_exceeded(detail: str) -> bool:
+    text = (detail or "").strip().lower()
+    if not text:
+        return False
+    return (
+        "org.freedesktop.dbus.error.limitsexceeded" in text
+        or ("maximum number of active connections" in text and "uid 0" in text)
+    )
+
+
 def _update_player_source_display(snapshot: dict) -> tuple[bool, str]:
     payload = read_json(str(PLAYER_SOURCE_PATH), None)
     if not isinstance(payload, dict):
@@ -2174,12 +2184,50 @@ def api_wifi_profiles():
     cfg = ensure_config()
     _purge_ap_ssid_profile_if_needed(cfg)
     profiles_cfg = _norm_profiles(cfg)
+    if not _interface_exists("wlan0"):
+        preferred_ssid = (cfg.get("preferred_wifi") or "")
+        last_wifi_ssid = (cfg.get("last_wifi_ssid") or "")
+        configured = [
+            {
+                "ssid": item["ssid"],
+                "priority": item["priority"],
+                "autoconnect": item["autoconnect"],
+                "exists": False,
+                "nm": None,
+                "source": "config",
+            }
+            for item in profiles_cfg
+        ]
+        profiles = _merged_profiles(profiles_cfg, [], preferred_ssid, last_wifi_ssid)
+        return _ok(
+            {
+                "configured": configured,
+                "unmanaged": [],
+                "profiles": profiles,
+                "preferred_ssid": preferred_ssid,
+                "last_wifi_ssid": last_wifi_ssid,
+                "unavailable": True,
+                "reason": "interface_missing",
+                "warning": "No Wi-Fi adapter detected; returning local profile config only.",
+            }
+        )
     ap_ssid = _current_ap_ssid()
+    nm_warning = ""
     try:
         nm_profiles = wifi_profiles_list().get("profiles", [])
     except NetControlError as exc:
-        status = 500 if exc.code in ("script_missing", "execution_failed") else 400
-        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+        if _is_nm_uid0_limits_exceeded(exc.detail):
+            nm_profiles = []
+            nm_warning = "NetworkManager DBus limit reached (UID 0); showing local profile config fallback."
+            log_event(
+                "wifi",
+                "Wi-Fi profile listing degraded: NM DBus UID-0 limits exceeded",
+                level="warning",
+                data={"detail": exc.detail or exc.message},
+            )
+        else:
+            status = 500 if exc.code in ("script_missing", "execution_failed") else 400
+            return _error(exc.code, exc.message, status=status, detail=exc.detail)
     if ap_ssid:
         nm_profiles = [item for item in nm_profiles if str(item.get("name") or "").strip().casefold() != ap_ssid.casefold()]
         profiles_cfg = [item for item in profiles_cfg if str(item.get("ssid") or "").strip().casefold() != ap_ssid.casefold()]
@@ -2210,6 +2258,7 @@ def api_wifi_profiles():
             "profiles": profiles,
             "preferred_ssid": preferred_ssid,
             "last_wifi_ssid": last_wifi_ssid,
+            "warning": nm_warning,
         }
     )
 

@@ -1315,14 +1315,14 @@
         <div class="tab-content">
           <div class="tab-pane fade show active" id="system-sub-general" role="tabpanel" aria-labelledby="system-sub-general-tab">
             <div class="row g-3">
-              <div class="col-12 col-xl-7">
-                <div class="portal-card p-4">
-                  <h2 class="h5">System Einstellungen</h2>
-                  <p class="text-secondary mb-3">
+              <div class="col-12">
+                <div class="portal-card p-3 system-general-card">
+                  <h2 class="h6 mb-1">System Einstellungen</h2>
+                  <p class="small text-secondary mb-2">
                     Behebt DNS-Probleme durch Tailscale MagicDNS/Resolver-Override
                     (`tailscale --accept-dns=false`) und triggert danach NetworkManager neu.
                   </p>
-                  <div class="d-flex flex-wrap gap-2 mb-3">
+                  <div class="d-flex flex-wrap gap-2 mb-2">
                     <button id="btn-fix-tailscale-dns" class="btn btn-outline-warning btn-sm">
                       Tailscale DNS-Override deaktivieren
                     </button>
@@ -1330,15 +1330,15 @@
                       Netzwerkdaten aktualisieren
                     </button>
                   </div>
-                  <small class="text-secondary">
+                  <div class="small text-secondary">
                     Nutze das, wenn `github.com` o. a. Hosts nicht aufgelöst werden, obwohl `ping 1.1.1.1` funktioniert.
-                  </small>
+                  </div>
                 </div>
               </div>
 
-              <div class="col-12 col-xl-5">
-                <div class="portal-card p-4 h-100">
-                  <h3 class="h6">Letzter DNS-Fix</h3>
+              <div class="col-12">
+                <div class="portal-card p-3 system-general-card">
+                  <h3 class="h6 mb-1">Letzter DNS-Fix</h3>
                   <dl class="portal-kv mb-0">
                     <dt>Connection</dt><dd id="sys-dnsfix-connection">-</dd>
                     <dt>DNS Server</dt><dd id="sys-dnsfix-dns">-</dd>
