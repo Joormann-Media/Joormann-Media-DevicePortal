@@ -1484,11 +1484,10 @@ def spotify_connect_set_device_name(
 
     args = ["set-device-name"]
     service = (service_name or "").strip()
-    if service:
-        args.append(service)
+    args.append(service)
+    args.append(next_name)
 
     env = os.environ.copy()
-    env["SPOTIFY_CONNECT_DEVICE_NAME"] = next_name
     if service_user:
         env["SPOTIFY_CONNECT_SERVICE_USER"] = service_user
     if service_scope:
