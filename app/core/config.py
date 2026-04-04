@@ -73,6 +73,15 @@ DEFAULT_CONFIG: dict = {
         'last_push_at': None,
         'last_error': '',
     },
+    'radio_rtsp_adapter': {
+        'enabled': True,
+        'ffmpeg_bin': 'ffmpeg',
+        'rtsp_transport': 'tcp',
+        'output_host': '127.0.0.1',
+        'output_port': 12340,
+        'output_format': 'mpegts',
+        'loglevel': 'warning',
+    },
     'player_repo_link': '',
     'player_repo_dir': '',
     'player_service_name': 'joormann-media-deviceplayer.service',
@@ -241,6 +250,14 @@ def ensure_config() -> dict:
         for key, value in DEFAULT_CONFIG['panel_sync'].items():
             if key not in cfg['panel_sync']:
                 cfg['panel_sync'][key] = value
+                changed = True
+    if not isinstance(cfg.get('radio_rtsp_adapter'), dict):
+        cfg['radio_rtsp_adapter'] = dict(DEFAULT_CONFIG['radio_rtsp_adapter'])
+        changed = True
+    else:
+        for key, value in DEFAULT_CONFIG['radio_rtsp_adapter'].items():
+            if key not in cfg['radio_rtsp_adapter']:
+                cfg['radio_rtsp_adapter'][key] = value
                 changed = True
     if not isinstance(cfg.get('sentinel_settings'), dict):
         cfg['sentinel_settings'] = dict(DEFAULT_CONFIG['sentinel_settings'])

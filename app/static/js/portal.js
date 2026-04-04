@@ -4056,7 +4056,13 @@
     }
 
     const radio = (data.radio && typeof data.radio === "object") ? data.radio : {};
-    const radioStatus = radio.running ? `laeuft (${radio.stream_url || "-"})` : "inaktiv";
+    const rtspAdapter = (radio.rtsp_adapter && typeof radio.rtsp_adapter === "object") ? radio.rtsp_adapter : {};
+    const adapterMeta = rtspAdapter.active
+      ? ` | RTSP-Adapter aktiv (${rtspAdapter.target_url || "-"})`
+      : "";
+    const radioStatus = radio.running
+      ? `laeuft (${radio.stream_url || "-"})${adapterMeta}`
+      : "inaktiv";
     q("audio-radio-status").textContent = `Status: ${radioStatus}`;
 
     const tts = (data.tts && typeof data.tts === "object") ? data.tts : {};
