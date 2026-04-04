@@ -349,6 +349,8 @@ def login_submit():
                 username=username,
                 password=password,
                 allowed_user_ids=list(mode_info.get("linked_user_ids") or []),
+                linked_users=(cfg.get("panel_linked_users") if isinstance(cfg.get("panel_linked_users"), list) else []),
+                node_runtime_type=str(cfg.get("node_runtime_type") or ""),
             )
             if bool(result.get("requires_2fa")):
                 pending_2fa = result.get("pending_2fa") if isinstance(result.get("pending_2fa"), dict) else {}

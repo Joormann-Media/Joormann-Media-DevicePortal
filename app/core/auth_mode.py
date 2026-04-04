@@ -69,6 +69,11 @@ def _extract_ids_from_payload(payload: dict | None) -> tuple[list[dict], list[di
 def refresh_link_targets_from_panel(cfg: dict, dev: dict) -> bool:
     if not isinstance(cfg, dict) or not isinstance(dev, dict):
         return False
+    node_type = str(cfg.get("node_runtime_type") or "").strip().lower()
+    if node_type in {"server", "workstation"}:
+        # Server/Workstation registration currently uses hardware endpoints.
+        # Raspi auth-context endpoint is not authoritative for these node types.
+        return False
     panel_state = cfg.get("panel_link_state") if isinstance(cfg.get("panel_link_state"), dict) else {}
     if not bool(panel_state.get("linked")):
         return False
@@ -159,12 +164,14 @@ def resolve_auth_mode(cfg: dict, *, force_local: bool = False, force_reason: str
     linked = bool(panel_state.get("linked"))
     base = str(cfg.get("admin_base_url") or "").strip()
     user_ids = linked_user_ids_from_config(cfg)
+    node_type = str(cfg.get("node_runtime_type") or "").strip().lower()
+    is_hardware_node = node_type in {"server", "workstation"}
 
-    if linked and base and user_ids and not force_local:
+    if ((linked and base and user_ids) or (is_hardware_node and base and user_ids)) and not force_local:
         return {
             "mode": "panel_remote",
-            "reason": "panel_linked_with_user_links",
-            "panel_linked": True,
+            "reason": ("server_linked_with_cached_user_links" if is_hardware_node else "panel_linked_with_user_links"),
+            "panel_linked": (linked or is_hardware_node),
             "panel_base_url": base,
             "linked_user_ids": user_ids,
         }

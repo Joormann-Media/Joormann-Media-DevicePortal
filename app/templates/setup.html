@@ -300,42 +300,11 @@
           registration_token: token,
           node_type: nodeType,
         };
-        try {
-          const data = await fetchJson(endpoint, payload);
-          q("fr-step2-result").textContent = `Registriert via ${endpoint} (HTTP ${data.http || "-"})`;
-          const loginLink = q("fr-login-link");
-          if (loginLink) loginLink.classList.remove("d-none");
-          return data;
-        } catch (err) {
-          const message = String((err && err.message) || "");
-          const shouldTryHardwareFallback = (
-            nodeType === "raspi_node" &&
-            (
-              /token/i.test(message) ||
-              /invalid/i.test(message) ||
-              /abgelaufen/i.test(message) ||
-              /register_token_/i.test(message)
-            )
-          );
-          if (!shouldTryHardwareFallback) {
-            throw err;
-          }
-
-          const fallbackPayload = {
-            admin_base_url: domain,
-            registration_token: token,
-            node_type: "server",
-          };
-          const fallbackData = await fetchJson("/api/panel/register-hardware", fallbackPayload);
-          const nodeTypeSelect = q("fr-node-type");
-          if (nodeTypeSelect) {
-            nodeTypeSelect.value = "server";
-          }
-          q("fr-step2-result").textContent = `Registriert via /api/panel/register-hardware (HTTP ${fallbackData.http || "-"})`;
-          const loginLink = q("fr-login-link");
-          if (loginLink) loginLink.classList.remove("d-none");
-          return fallbackData;
-        }
+        const data = await fetchJson(endpoint, payload);
+        q("fr-step2-result").textContent = `Registriert via ${endpoint} (HTTP ${data.http || "-"})`;
+        const loginLink = q("fr-login-link");
+        if (loginLink) loginLink.classList.remove("d-none");
+        return data;
       }
 
       const domainBtn = q("fr-test-domain");

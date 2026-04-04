@@ -398,6 +398,13 @@
     return null;
   }
 
+  function hasUsablePanelFlags(flags) {
+    if (!flags || typeof flags !== "object") return false;
+    const active = normalizeOptionalBoolean(flags.is_active ?? flags.isActive ?? flags.active);
+    const locked = normalizeOptionalBoolean(flags.is_locked ?? flags.isLocked ?? flags.locked);
+    return active !== null || locked !== null;
+  }
+
   function clearNode(el) {
     while (el && el.firstChild) {
       el.removeChild(el.firstChild);
@@ -1309,7 +1316,10 @@
     if (!validatePayload.valid) {
       throw new Error("Token ist ungültig.");
     }
-    const registerPayload = await fetchJson("/api/panel/register", {
+    const registerEndpoint = setupWizardState.nodeType === "raspi_node"
+      ? "/api/panel/register"
+      : "/api/panel/register-hardware";
+    const registerPayload = await fetchJson(registerEndpoint, {
       method: "POST",
       body: {
         admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
@@ -1335,7 +1345,7 @@
     const result = q("setup-step-2-result");
     if (result) {
       const h = registerPayload.http || "-";
-      result.textContent = `Gerät erfolgreich verknüpft (HTTP ${h}).`;
+      result.textContent = `Gerät erfolgreich verknüpft via ${registerEndpoint} (HTTP ${h}).`;
     }
     await refreshStatus();
   }
@@ -1865,7 +1875,7 @@
         body: { admin_base_url: adminBaseUrl },
         timeoutMs: 9000,
       });
-      if (payload.panel_device_flags && statusDashboardState.status && statusDashboardState.status.config) {
+      if (hasUsablePanelFlags(payload.panel_device_flags) && statusDashboardState.status && statusDashboardState.status.config) {
         statusDashboardState.status.config.panel_device_flags = payload.panel_device_flags;
         renderHeroPanelFlags(statusDashboardState.status.config);
       }
@@ -3704,7 +3714,7 @@
       panelSyncState.lastCheckAt = new Date().toLocaleString();
       const adminResponse = payload.response || {};
       const syncData = adminResponse.data || {};
-      if (payload.panel_device_flags && statusDashboardState.status && statusDashboardState.status.config) {
+      if (hasUsablePanelFlags(payload.panel_device_flags) && statusDashboardState.status && statusDashboardState.status.config) {
         statusDashboardState.status.config.panel_device_flags = payload.panel_device_flags;
         renderHeroPanelFlags(statusDashboardState.status.config);
       }

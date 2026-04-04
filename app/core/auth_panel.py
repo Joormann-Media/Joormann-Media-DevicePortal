@@ -106,6 +106,27 @@ def _extract_items(payload: dict | None) -> list[dict]:
     return []
 
 
+def _lookup_local_user_candidate(identifier: str, linked_users: list[dict] | None) -> dict | None:
+    ident = _normalize_identifier(identifier)
+    if not ident or not isinstance(linked_users, list):
+        return None
+    exact: list[dict] = []
+    for row in linked_users:
+        if not isinstance(row, dict):
+            continue
+        username = _normalize_identifier(str(row.get("username") or ""))
+        email = _normalize_identifier(str(row.get("email") or ""))
+        if ident in (username, email):
+            exact.append(row)
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        for row in exact:
+            if _normalize_identifier(str(row.get("username") or "")) == ident:
+                return row
+    return None
+
+
 def _lookup_user_candidate(base_url: str, device_uuid: str, auth_key: str, identifier: str) -> dict | None:
     query = {
         "q": identifier,
@@ -207,15 +228,28 @@ def authenticate_via_panel(
     username: str,
     password: str,
     allowed_user_ids: list[int],
+    linked_users: list[dict] | None = None,
+    node_runtime_type: str = "",
 ) -> dict:
     base = _safe_base_url(base_url)
     user_identifier = (username or "").strip()
+    node_type = (node_runtime_type or "").strip().lower()
+    use_local_link_cache = node_type in {"server", "workstation"}
     if not base:
         raise PanelAuthError("Panel URL fehlt.", code="panel_url_missing")
     if not user_identifier or not password:
         raise PanelAuthError("Benutzername und Passwort erforderlich.", code="invalid_credentials")
 
-    user_candidate = _lookup_user_candidate(base, device_uuid, auth_key, user_identifier)
+    user_candidate = _lookup_local_user_candidate(user_identifier, linked_users) if use_local_link_cache else None
+    if not user_candidate:
+        try:
+            user_candidate = _lookup_user_candidate(base, device_uuid, auth_key, user_identifier)
+        except PanelAuthError as exc:
+            # Hardware node login should still work if linked users were cached during setup.
+            if exc.code == "panel_user_lookup_failed":
+                user_candidate = _lookup_local_user_candidate(user_identifier, linked_users)
+            else:
+                raise
     if not user_candidate:
         raise PanelAuthError("Benutzer ist nicht für dieses Gerät freigegeben.", code="login_not_allowed")
 

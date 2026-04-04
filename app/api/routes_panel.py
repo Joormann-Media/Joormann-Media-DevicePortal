@@ -103,9 +103,31 @@ def _response_indicates_unlinked(code: int | None, resp: object) -> bool:
 def _sticky_linked(cfg: dict, next_linked: bool, code: int | None = None, resp: object = None) -> bool:
     if next_linked:
         return True
+    node_type = str(cfg.get('node_runtime_type') or '').strip().lower()
+    if node_type in ('server', 'workstation'):
+        # Hardware nodes should not be marked unlinked by Raspi-only auth endpoints.
+        # Keep existing linked state (or previously known linked users) unless explicitly unlinked by user action.
+        existing_users = cfg.get('panel_linked_users') if isinstance(cfg.get('panel_linked_users'), list) else []
+        return _current_linked(cfg) or bool(existing_users)
     if _response_indicates_unlinked(code, resp):
         return False
     return _current_linked(cfg)
+
+
+def _persist_node_type_choice(cfg: dict, node_type: str) -> None:
+    normalized = _normalize_node_type(node_type)
+    changed = False
+    if str(cfg.get('node_runtime_type') or '').strip() != normalized:
+        cfg['node_runtime_type'] = normalized
+        changed = True
+    # Keep ping path in sync with selected node class to avoid wrong endpoint checks after restart/update.
+    desired_ping = '/api/device/ping' if normalized == 'raspi_node' else '/api/hardware-device/ping'
+    if str(cfg.get('panel_ping_path') or '').strip() != desired_ping:
+        cfg['panel_ping_path'] = desired_ping
+        changed = True
+    if changed:
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
 
 
 def _panel_ping_payload(dev: dict, fp: dict, host: str, ip: str, cfg: dict | None = None) -> dict:
@@ -437,6 +459,18 @@ def _panel_hardware_register_payload(cfg: dict, dev: dict, fp: dict, host: str, 
 def _http_post_json_with_headers(url: str, payload: dict, headers: dict[str, str], timeout: int = 10) -> tuple[int | None, dict | None, str]:
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        try:
+            data = response.json()
+        except Exception:
+            data = {'raw': (response.text or '')[:2000]}
+        return response.status_code, data, ''
+    except Exception as exc:
+        return None, None, str(exc)
+
+
+def _http_get_json_with_headers(url: str, headers: dict[str, str], timeout: int = 10) -> tuple[int | None, dict | None, str]:
+    try:
+        response = requests.get(url, headers=headers, timeout=timeout)
         try:
             data = response.json()
         except Exception:
@@ -1390,7 +1424,18 @@ def _extract_panel_device_flags(resp: dict | None) -> dict | None:
                 return False
         return None
 
-    for source in (resp, (resp.get('data') if isinstance(resp.get('data'), dict) else None)):
+    sources: list[dict] = [resp]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        sources.append(data)
+        data_device = data.get('device')
+        if isinstance(data_device, dict):
+            sources.append(data_device)
+    root_device = resp.get('device')
+    if isinstance(root_device, dict):
+        sources.append(root_device)
+
+    for source in sources:
         if not isinstance(source, dict):
             continue
         is_active = _coerce_bool(source.get('isActive', source.get('is_active')))
@@ -1657,8 +1702,19 @@ def api_panel_ping():
             panel_ping_path=cfg.get('panel_ping_path'),
         ), 400
 
-    payload = _panel_ping_payload(dev, fp, host, ip, cfg)
-    code, resp, err = http_post_json(url, payload, timeout=8)
+    node_type = str(cfg.get('node_runtime_type') or '').strip().lower()
+    if node_type in ('server', 'workstation'):
+        client_id = str(cfg.get('client_id') or '').strip()
+        panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+        api_key = str((panel_keys.get('raspi_to_admin') if isinstance(panel_keys, dict) else '') or '').strip()
+        if client_id and api_key:
+            headers = {'X-Client-Id': client_id, 'X-API-Key': api_key}
+            code, resp, err = _http_get_json_with_headers(url, headers, timeout=8)
+        else:
+            code, resp, err = None, None, 'hardware_ping_credentials_missing'
+    else:
+        payload = _panel_ping_payload(dev, fp, host, ip, cfg)
+        code, resp, err = http_post_json(url, payload, timeout=8)
 
     if code is None:
         st = _update_panel_link_state(
@@ -1727,6 +1783,7 @@ def api_panel_register():
         write_json(CONFIG_PATH, cfg, mode=0o600)
 
     node_type = _normalize_node_type(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'raspi_node')
+    _persist_node_type_choice(cfg, node_type)
     if node_type in ('server', 'workstation'):
         return api_panel_register_hardware()
 
@@ -1857,6 +1914,7 @@ def api_panel_register_hardware():
     node_type = _normalize_node_type(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'server')
     if node_type == 'raspi_node':
         node_type = 'server'
+    _persist_node_type_choice(cfg, node_type)
 
     token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
     if not token:
@@ -1899,6 +1957,9 @@ def api_panel_register_hardware():
             next_token = token
             cfg['node_runtime_type'] = node_type
             cfg['panel_hardware_register_path'] = path
+            flags = _extract_panel_device_flags(resp if isinstance(resp, dict) else None)
+            if isinstance(flags, dict):
+                cfg['panel_device_flags'] = flags
             exchanged_key = ''
             resolved_client_id = ''
             if isinstance(resp, dict):
@@ -1936,8 +1997,17 @@ def api_panel_register_hardware():
                     if alt_token:
                         next_token = alt_token
             cfg['registration_token'] = next_token or token
+            if resolved_client_id:
+                cfg['client_id'] = resolved_client_id
             if not resolved_client_id:
                 resolved_client_id = str(cfg.get('client_id') or '').strip()
+            if not isinstance(cfg.get('panel_device_flags'), dict):
+                cfg['panel_device_flags'] = {}
+            if cfg['panel_device_flags'].get('is_active') is None:
+                cfg['panel_device_flags']['is_active'] = True
+            if cfg['panel_device_flags'].get('is_locked') is None:
+                cfg['panel_device_flags']['is_locked'] = False
+            cfg['panel_device_flags']['updated_at'] = utc_now()
             import_api_key = exchanged_key
             if not import_api_key:
                 keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
@@ -2382,6 +2452,7 @@ def api_panel_validate_token():
         'workstation': 'workstation',
     }
     node_type = node_type_aliases.get(raw_node_type, 'raspi_node')
+    _persist_node_type_choice(cfg, node_type)
     request_base = _safe_base_url((data.get('admin_base_url') or ''))
     base_url = request_base or _safe_base_url(cfg.get('admin_base_url', ''))
     if not base_url:
