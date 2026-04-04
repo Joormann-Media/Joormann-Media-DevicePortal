@@ -97,6 +97,8 @@ set_device_name() {
   local service_name="$1"
   local service_scope="$2"
   local next_name="${DEVICE_NAME_OVERRIDE}"
+  local escaped_name="${next_name//\\/\\\\}"
+  escaped_name="${escaped_name//\"/\\\"}"
 
   if [[ -z "${next_name}" ]]; then
     emit "success" "false"
@@ -192,6 +194,23 @@ PY
       emit "service_scope" "${service_scope}"
       exit 5
     fi
+    if [[ "${service_name}" == "raspotify.service" ]]; then
+      local user_home user_group user_dropin_dir user_dropin_file tmp_file
+      user_home="$(_user_home "${SERVICE_USER}")"
+      user_group="$(id -gn "${SERVICE_USER}" 2>/dev/null || echo "${SERVICE_USER}")"
+      user_dropin_dir="${user_home}/.config/systemd/user/raspotify.service.d"
+      user_dropin_file="${user_dropin_dir}/90-device-name.conf"
+      tmp_file="$(mktemp)"
+      cat >"${tmp_file}" <<EOF
+[Service]
+Environment="DEVICE_NAME=${escaped_name}"
+Environment="OPTIONS=--name ${escaped_name}"
+EOF
+      install -d -o "${SERVICE_USER}" -g "${user_group}" -m 0755 "${user_dropin_dir}"
+      install -o "${SERVICE_USER}" -g "${user_group}" -m 0644 "${tmp_file}" "${user_dropin_file}"
+      rm -f "${tmp_file}"
+      _systemctl_user "${SERVICE_USER}" daemon-reload >/dev/null 2>&1 || true
+    fi
   else
     _set_device_name_in_file_py "/etc/default/raspotify" "${next_name}" || {
       emit "success" "false"
@@ -200,6 +219,22 @@ PY
       emit "service_scope" "system"
       exit 5
     }
+    # Some raspotify installs source /etc/raspotify/conf instead of /etc/default/raspotify.
+    if [[ -d "/etc/raspotify" || -f "/etc/raspotify/conf" ]]; then
+      _set_device_name_in_file_py "/etc/raspotify/conf" "${next_name}" || true
+    fi
+    if [[ "${service_name}" == "raspotify.service" ]]; then
+      local sys_dropin_dir sys_dropin_file
+      sys_dropin_dir="/etc/systemd/system/raspotify.service.d"
+      sys_dropin_file="${sys_dropin_dir}/90-device-name.conf"
+      install -d -m 0755 "${sys_dropin_dir}"
+      cat >"${sys_dropin_file}" <<EOF
+[Service]
+Environment="DEVICE_NAME=${escaped_name}"
+Environment="OPTIONS=--name ${escaped_name}"
+EOF
+      systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
   fi
 
   if [[ -n "${service_name}" ]]; then
