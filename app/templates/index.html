@@ -112,6 +112,11 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link" id="audio-tab" data-bs-toggle="tab" data-bs-target="#audio-pane" type="button" role="tab">
+          <i class="bi bi-volume-up me-1"></i>Audio
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-pane" type="button" role="tab">
           <i class="bi bi-gear me-1"></i>System
         </button>
@@ -1188,48 +1193,6 @@
                 <input id="stream-audio-stream-url" type="url" class="form-control form-control-sm" placeholder="https://example.com/stream.mp3">
               </div>
 
-              <div class="border rounded p-3">
-                <div class="small text-uppercase text-secondary mb-2">Lautstärke</div>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div class="small text-secondary">Live: <span id="stream-audio-volume-value">65</span>%</div>
-                  <button id="btn-stream-audio-mute" class="btn btn-outline-secondary btn-sm">Stumm</button>
-                </div>
-                <input id="stream-audio-volume" type="range" min="0" max="100" step="1" value="65" class="form-range mb-1">
-                <div class="small text-secondary">Regelt live per AJAX während du schiebst.</div>
-              </div>
-
-              <div class="border rounded p-3 mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div class="small text-uppercase text-secondary mb-0">Audio-Ausgabe / Output Routing</div>
-                  <button id="btn-audio-output-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
-                </div>
-                <dl class="portal-kv mb-2">
-                  <dt>Aktueller Output</dt><dd id="bt-audio-output-current">-</dd>
-                  <dt>Gespeichert</dt><dd id="bt-audio-output-saved">-</dd>
-                </dl>
-                <div class="d-flex gap-2 mb-2">
-                  <select id="bt-audio-output-select" class="form-select form-select-sm">
-                    <option value="">Keine Outputs gefunden</option>
-                  </select>
-                  <button id="btn-audio-output-set" class="btn btn-outline-primary btn-sm">Output setzen</button>
-                </div>
-                <div class="small text-secondary">Umschaltung zwischen local_hdmi, local_speaker und verbundenen Bluetooth-Outputs.</div>
-              </div>
-
-              <div class="border rounded p-3 mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div class="small text-uppercase text-secondary mb-0">Audio Status</div>
-                  <button id="btn-audio-status-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
-                </div>
-                <dl class="portal-kv mb-2">
-                  <dt>Aktive Quelle</dt><dd id="audio-status-source">-</dd>
-                  <dt>Bluetooth</dt><dd id="audio-status-bluetooth">-</dd>
-                  <dt>Output</dt><dd id="audio-status-output">-</dd>
-                  <dt>Letztes Update</dt><dd id="audio-status-updated">-</dd>
-                </dl>
-                <div id="audio-status-errors" class="small text-secondary">-</div>
-              </div>
-
               <div class="border rounded p-3 mt-3">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <div class="small text-uppercase text-secondary mb-0">Raspotify</div>
@@ -1260,12 +1223,80 @@
                 </div>
               </div>
 
-              <div class="border rounded p-3 mt-3">
-                <div class="small text-uppercase text-secondary mb-2">TTS Test</div>
-                <div id="audio-tts-status" class="small mb-2">Status: -</div>
-                <input id="audio-tts-text" type="text" class="form-control form-control-sm mb-2" placeholder="Text fuer den Test">
-                <div class="d-flex flex-wrap gap-2">
-                  <button id="btn-audio-tts-test" class="btn btn-outline-primary btn-sm">Sprechen</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="audio-pane" role="tabpanel" aria-labelledby="audio-tab">
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="portal-card p-4">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Audio</h2>
+                  <p class="text-secondary mb-0">Lautstärke, Output-Routing, Audio-Status und TTS-Tests zentral verwalten.</p>
+                </div>
+              </div>
+
+              <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary mb-2">Lautstärke</div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <div class="small text-secondary">Live: <span id="stream-audio-volume-value">65</span>%</div>
+                      <button id="btn-stream-audio-mute" class="btn btn-outline-secondary btn-sm">Stumm</button>
+                    </div>
+                    <input id="stream-audio-volume" type="range" min="0" max="100" step="1" value="65" class="form-range mb-1">
+                    <div class="small text-secondary">Regelt live per AJAX während du schiebst.</div>
+                  </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <div class="small text-uppercase text-secondary mb-0">Audio-Ausgabe / Output Routing</div>
+                      <button id="btn-audio-output-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+                    </div>
+                    <dl class="portal-kv mb-2">
+                      <dt>Aktueller Output</dt><dd id="bt-audio-output-current">-</dd>
+                      <dt>Gespeichert</dt><dd id="bt-audio-output-saved">-</dd>
+                    </dl>
+                    <div class="d-flex gap-2 mb-2">
+                      <select id="bt-audio-output-select" class="form-select form-select-sm">
+                        <option value="">Keine Outputs gefunden</option>
+                      </select>
+                      <button id="btn-audio-output-set" class="btn btn-outline-primary btn-sm">Output setzen</button>
+                    </div>
+                    <div class="small text-secondary">Umschaltung zwischen local_hdmi, local_speaker und verbundenen Bluetooth-Outputs.</div>
+                  </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <div class="small text-uppercase text-secondary mb-0">Audio Status</div>
+                      <button id="btn-audio-status-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                    </div>
+                    <dl class="portal-kv mb-2">
+                      <dt>Aktive Quelle</dt><dd id="audio-status-source">-</dd>
+                      <dt>Bluetooth</dt><dd id="audio-status-bluetooth">-</dd>
+                      <dt>Output</dt><dd id="audio-status-output">-</dd>
+                      <dt>Letztes Update</dt><dd id="audio-status-updated">-</dd>
+                    </dl>
+                    <div id="audio-status-errors" class="small text-secondary">-</div>
+                  </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                  <div class="border rounded p-3 h-100">
+                    <div class="small text-uppercase text-secondary mb-2">TTS Test</div>
+                    <div id="audio-tts-status" class="small mb-2">Status: -</div>
+                    <input id="audio-tts-text" type="text" class="form-control form-control-sm mb-2" placeholder="Text fuer den Test">
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-audio-tts-test" class="btn btn-outline-primary btn-sm">Sprechen</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
