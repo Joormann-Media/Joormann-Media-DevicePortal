@@ -162,7 +162,7 @@
     } catch (err) {
       if (err && err.name === "AbortError") {
         const seconds = Math.max(1, Math.round(timeoutMs / 1000));
-        throw new Error(`Zeitüberschreitung nach ${seconds}s. Panel-Anfrage hat zu lange gedauert.`);
+        throw new Error(`Zeitüberschreitung nach ${seconds}s. Server-Anfrage hat zu lange gedauert.`);
       }
       throw err;
     } finally {
@@ -1326,7 +1326,7 @@
         registration_token: setupWizardState.token,
         node_type: setupWizardState.nodeType,
       },
-      timeoutMs: REQUEST_TIMEOUTS.panelRegisterMs,
+      timeoutMs: setupWizardState.nodeType === "raspi_node" ? REQUEST_TIMEOUTS.panelTokenValidateMs : REQUEST_TIMEOUTS.panelRegisterMs,
     });
     setupWizardState.registered = !!registerPayload.ok;
     const serverResp = registerPayload && typeof registerPayload.response === "object" ? registerPayload.response : {};
@@ -5598,7 +5598,7 @@
         confirm_phrase: hardcore ? confirmText : "Hostname Ändern",
         ap_profile: "jm-hotspot",
       },
-      timeoutMs: 30000,
+      timeoutMs: 45000,
     });
 
     const modalEl = q("hostnameRenameModal");

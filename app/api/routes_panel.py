@@ -2496,45 +2496,6 @@ def api_panel_validate_token():
         if valid:
             return jsonify(ok=True, valid=True, node_type=node_type, http=code, verify_url=verify_url, response=resp), 200
 
-        # Auto-fallback: if raspi verify says invalid, try hardware verify endpoints as well.
-        verify_candidates: list[str] = [
-            str(cfg.get('panel_hardware_verify_path') or '/api/hardware-device/verify-token').strip(),
-            '/api/hardware-device/verify-token',
-            '/api/hardware/device/verify-token',
-        ]
-        deduped_paths: list[str] = []
-        for candidate in verify_candidates:
-            candidate = str(candidate or '').strip()
-            if not candidate:
-                continue
-            if not candidate.startswith('http://') and not candidate.startswith('https://') and not candidate.startswith('/'):
-                candidate = f'/{candidate}'
-            if candidate not in deduped_paths:
-                deduped_paths.append(candidate)
-
-        for path in deduped_paths:
-            hw_verify_url = path if path.startswith('http://') or path.startswith('https://') else f'{base_url}{path}'
-            hw_code, hw_resp, _hw_err = http_post_json(hw_verify_url, payload, timeout=8)
-            if hw_code is None or hw_code in (404, 405):
-                continue
-            hw_valid = _response_indicates_success(hw_code, hw_resp) or (bool((hw_resp or {}).get('valid')) if isinstance(hw_resp, dict) else False)
-            if hw_valid:
-                if request_base:
-                    cfg['admin_base_url'] = request_base
-                    cfg['panel_hardware_verify_path'] = path
-                    cfg['node_runtime_type'] = 'server'
-                    cfg['updated_at'] = utc_now()
-                    write_json(CONFIG_PATH, cfg, mode=0o600)
-                return jsonify(
-                    ok=True,
-                    valid=True,
-                    node_type='server',
-                    auto_detected='hardware',
-                    http=hw_code,
-                    verify_url=hw_verify_url,
-                    response=hw_resp,
-                ), 200
-
         panel_msg = _extract_response_message(resp) or 'Token ungültig oder abgelaufen.'
         return jsonify(
             ok=False,
