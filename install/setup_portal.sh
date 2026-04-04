@@ -16,6 +16,7 @@ REQUIREMENTS_FILE="$REPO_DIR/requirements.txt"
 SERVICE_FILE_DST="/etc/systemd/system/device-portal.service"
 ENV_FILE="/etc/default/jm-deviceportal"
 INTERNAL_STORAGE_SETUP="$REPO_DIR/install/setup_internal_storage.sh"
+NETCONTROL_SETUP="$REPO_DIR/install/setup_netcontrol.sh"
 OLD_CONFIG_PATH=""
 OLD_STORAGE_CONFIG_PATH=""
 OLD_DEVICE_PATH=""
@@ -170,9 +171,14 @@ if [[ -x "$INTERNAL_STORAGE_SETUP" ]]; then
   fi
 fi
 
+if [[ -x "$NETCONTROL_SETUP" ]]; then
+  if ! "$NETCONTROL_SETUP" "$REPO_DIR" "$SERVICE_USER"; then
+    echo "WARN: netcontrol setup failed; sudoers/net scripts may be incomplete." >&2
+  fi
+fi
+
 systemctl restart device-portal.service
 
 echo "Installed systemd unit: $SERVICE_FILE_DST"
 echo "Installed environment file: $ENV_FILE"
 echo "Portal base setup done."
-echo "Next: sudo ./install/setup_netcontrol.sh"

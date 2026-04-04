@@ -12,7 +12,8 @@ REPO_DIR="${1:-$DEFAULT_REPO_DIR}"
 SERVICE_USER="${2:-www-data}"
 SRC_DIR="$REPO_DIR/scripts/net"
 DST_DIR="/opt/deviceportal/bin"
-SUDOERS_FILE="/etc/sudoers.d/deviceportal-net"
+SUDOERS_FILE="/etc/sudoers.d/deviceportal-netcontrol"
+LEGACY_SUDOERS_FILE="/etc/sudoers.d/deviceportal-net"
 
 if [[ ! -d "$SRC_DIR" ]]; then
   echo "Netcontrol source directory not found: $SRC_DIR" >&2
@@ -77,6 +78,9 @@ SUDO
 
 chmod 0440 "$SUDOERS_FILE"
 visudo -cf "$SUDOERS_FILE"
+if [[ -f "$LEGACY_SUDOERS_FILE" && "$LEGACY_SUDOERS_FILE" != "$SUDOERS_FILE" ]]; then
+  rm -f "$LEGACY_SUDOERS_FILE"
+fi
 
 echo "Netcontrol deployed to $DST_DIR"
 echo "sudoers installed at $SUDOERS_FILE for user ${SERVICE_USER}"
