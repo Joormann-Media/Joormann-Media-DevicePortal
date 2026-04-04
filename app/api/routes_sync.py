@@ -617,6 +617,8 @@ def _pull_config_from_admin(cfg: dict, dev: dict) -> tuple[bool, dict, str]:
             "apiKey": raspi_to_admin,
             "deviceUuid": dev.get("device_uuid") or "",
             "device_uuid": dev.get("device_uuid") or "",
+            "authKey": dev.get("auth_key") or "",
+            "auth_key": dev.get("auth_key") or "",
         }
         headers = {
             "X-Client-Id": client_id,
@@ -625,14 +627,18 @@ def _pull_config_from_admin(cfg: dict, dev: dict) -> tuple[bool, dict, str]:
         candidates = [
             "/api/hardware-device/sync-config",
             "/api/hardware/device/sync-config",
-            "/api/device/link/sync-config",
         ]
         last_error = "sync_config_pull_failed"
+        only_not_implemented = True
         for path in candidates:
             code, resp, err = routes_panel._http_post_json_with_headers(f"{base}{path}", payload, headers, timeout=10)
             if code is None:
                 last_error = str(err or "sync_config_pull_failed")
+                only_not_implemented = False
                 continue
+            if code in (404, 405):
+                continue
+            only_not_implemented = False
             if code < 200 or code >= 300 or not isinstance(resp, dict):
                 if isinstance(resp, dict):
                     last_error = str(resp.get("message") or resp.get("error") or f"http {code}")
@@ -641,6 +647,8 @@ def _pull_config_from_admin(cfg: dict, dev: dict) -> tuple[bool, dict, str]:
                 continue
             data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
             return True, data, ""
+        if only_not_implemented:
+            return True, {"profile": {"isEnabled": False}, "rules": [], "adminValues": {}}, ""
         return False, {}, last_error
 
     url = f"{base}/api/device/link/sync-config"
@@ -683,6 +691,8 @@ def _push_report_to_admin(cfg: dict, dev: dict, report: dict) -> tuple[bool, dic
             "apiKey": raspi_to_admin,
             "deviceUuid": dev.get("device_uuid") or "",
             "device_uuid": dev.get("device_uuid") or "",
+            "authKey": dev.get("auth_key") or "",
+            "auth_key": dev.get("auth_key") or "",
             "sync_report": report,
         }
         headers = {
@@ -692,14 +702,18 @@ def _push_report_to_admin(cfg: dict, dev: dict, report: dict) -> tuple[bool, dic
         candidates = [
             "/api/hardware-device/sync-report",
             "/api/hardware/device/sync-report",
-            "/api/device/link/sync-report",
         ]
         last_error = "sync_report_push_failed"
+        only_not_implemented = True
         for path in candidates:
             code, resp, err = routes_panel._http_post_json_with_headers(f"{base}{path}", payload, headers, timeout=12)
             if code is None:
                 last_error = str(err or "sync_report_push_failed")
+                only_not_implemented = False
                 continue
+            if code in (404, 405):
+                continue
+            only_not_implemented = False
             if code < 200 or code >= 300 or not isinstance(resp, dict):
                 if isinstance(resp, dict):
                     last_error = str(resp.get("message") or resp.get("error") or f"http {code}")
@@ -707,6 +721,8 @@ def _push_report_to_admin(cfg: dict, dev: dict, report: dict) -> tuple[bool, dic
                     last_error = f"http {code}"
                 continue
             return True, resp, ""
+        if only_not_implemented:
+            return True, {"ok": True, "skipped": True, "reason": "hardware_sync_endpoint_missing"}, ""
         return False, {}, last_error
 
     url = f"{base}/api/device/link/sync-report"

@@ -3717,12 +3717,15 @@
       panelSyncState.lastCheckAt = new Date().toLocaleString();
       const adminResponse = payload.response || {};
       const syncData = adminResponse.data || {};
+      const hasOwnOk = Object.prototype.hasOwnProperty.call(syncData, "ok");
+      const syncOk = hasOwnOk ? !!syncData.ok : !!payload.ok;
+      const normalizedSyncData = hasOwnOk ? syncData : { ...syncData, ok: syncOk };
       if (hasUsablePanelFlags(payload.panel_device_flags) && statusDashboardState.status && statusDashboardState.status.config) {
         statusDashboardState.status.config.panel_device_flags = payload.panel_device_flags;
         renderHeroPanelFlags(statusDashboardState.status.config);
       }
-      renderPanelSyncStatus(syncData, false);
-      toast(syncData.ok ? "Admin-Sync vollständig" : "Admin-Sync unvollständig", syncData.ok ? "success" : "warning");
+      renderPanelSyncStatus(normalizedSyncData, false);
+      toast(syncOk ? "Admin-Sync vollständig" : "Admin-Sync unvollständig", syncOk ? "success" : "warning");
     } catch (err) {
       panelSyncState.lastCheckAt = new Date().toLocaleString();
       renderPanelSyncStatus(null, true);
