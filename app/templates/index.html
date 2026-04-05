@@ -2016,6 +2016,41 @@
     </div>
   </div>
 
+  <div class="modal fade" id="managedRepoDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-info-circle"></i>
+            Repo Details
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <dl class="portal-kv mb-3">
+            <dt>Name</dt><dd id="managed-repo-details-name">-</dd>
+            <dt>Repo</dt><dd id="managed-repo-details-repo">-</dd>
+            <dt>Installationspfad</dt><dd id="managed-repo-details-install-dir">-</dd>
+            <dt>Service</dt><dd id="managed-repo-details-service">-</dd>
+            <dt>User</dt><dd id="managed-repo-details-user">-</dd>
+            <dt>API Base</dt><dd id="managed-repo-details-api-base">-</dd>
+            <dt>Health URL</dt><dd id="managed-repo-details-health-url">-</dd>
+            <dt>Port</dt><dd id="managed-repo-details-port">-</dd>
+            <dt>Hostname</dt><dd id="managed-repo-details-hostname">-</dd>
+            <dt>Node</dt><dd id="managed-repo-details-node-name">-</dd>
+            <dt>Quelle</dt><dd id="managed-repo-details-source">-</dd>
+            <dt>First Seen</dt><dd id="managed-repo-details-first-seen">-</dd>
+            <dt>Last Seen</dt><dd id="managed-repo-details-last-seen">-</dd>
+          </dl>
+          <pre id="managed-repo-details-json" class="code-block mb-0" style="max-height: 260px; overflow:auto;">-</pre>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="{{ url_for('static', filename='js/portal.js') }}"></script>
 </body>

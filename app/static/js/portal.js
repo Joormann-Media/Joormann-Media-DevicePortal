@@ -4477,6 +4477,8 @@
           <td>
             <div class="d-flex flex-wrap gap-1">
               <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="load" data-id="${escapeHtml(repoId)}">Laden</button>
+              <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
+              <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="set_as_player" data-id="${escapeHtml(repoId)}">Als Stream-Player setzen</button>
               <button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="install_update" data-id="${escapeHtml(repoId)}">Install/Update</button>
               <button class="btn btn-outline-warning btn-sm js-extra-repo-action" data-action="toggle_autostart" data-enabled="${autostart ? "0" : "1"}" data-id="${escapeHtml(repoId)}">${autostart ? "Autostart aus" : "Autostart an"}</button>
               <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>
@@ -4589,6 +4591,62 @@
     streamPlayerUpdateJobId = String(data.job_id || "").trim();
     await pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId);
     toast(`${String(target.name || "Repo")} Install/Update gestartet`, "success");
+  }
+
+  async function setManagedRepoAsPlayer(repoId) {
+    const target = getManagedRepoById(repoId);
+    if (!target) {
+      throw new Error("Repo nicht gefunden.");
+    }
+    const repoLink = String(target.repo_link || "").trim();
+    if (!repoLink) {
+      throw new Error("Repo-Link fehlt.");
+    }
+    const serviceName = String(target.service_name || "").trim() || "joormann-media-deviceplayer.service";
+    const serviceUser = String(target.service_user || "").trim();
+    await fetchJson("/api/stream/player/repo", {
+      method: "POST",
+      body: {
+        player_repo_link: repoLink,
+        player_service_name: serviceName,
+        player_service_user: serviceUser,
+      },
+      timeoutMs: 12000,
+    });
+    await loadPlayerRepoConfig();
+    toast(`Als Stream-Player gesetzt: ${String(target.name || repoLink)}`, "success");
+  }
+
+  function showManagedRepoDetails(repoId) {
+    const target = getManagedRepoById(repoId);
+    if (!target) {
+      throw new Error("Repo nicht gefunden.");
+    }
+    const put = (id, value) => {
+      const el = q(id);
+      if (el) el.textContent = String(value || "-");
+    };
+    put("managed-repo-details-name", target.name || "-");
+    put("managed-repo-details-repo", target.repo_link || "-");
+    put("managed-repo-details-install-dir", target.install_dir || "-");
+    put("managed-repo-details-service", target.service_name || "-");
+    put("managed-repo-details-user", target.service_user || "-");
+    put("managed-repo-details-api-base", target.api_base_url || "-");
+    put("managed-repo-details-health-url", target.health_url || "-");
+    put("managed-repo-details-port", target.service_port ?? "-");
+    put("managed-repo-details-hostname", target.hostname || "-");
+    put("managed-repo-details-node-name", target.node_name || "-");
+    put("managed-repo-details-source", target.source || "-");
+    put("managed-repo-details-first-seen", target.first_seen_at || "-");
+    put("managed-repo-details-last-seen", target.last_seen_at || "-");
+    const raw = q("managed-repo-details-json");
+    if (raw) {
+      raw.textContent = JSON.stringify(target, null, 2);
+    }
+    const modalEl = q("managedRepoDetailsModal");
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
   }
 
   async function toggleManagedRepoAutostart(repoId, enabled) {
@@ -4762,8 +4820,12 @@
       `message: ${(data || {}).message || "-"}`,
       `job_id: ${(data || {}).job_id || "-"}`,
       `repo: ${(data || {}).repo_dir || "-"}`,
+      `repo_link: ${(data || {}).repo_link || "-"}`,
+      `install_dir: ${(data || {}).install_dir || "-"}`,
       `user: ${(data || {}).service_user || "-"}`,
       `service: ${(data || {}).service_name || "-"}`,
+      `use_service: ${String((data || {}).use_service ?? true)}`,
+      `autostart: ${String((data || {}).autostart ?? true)}`,
       `git_status: ${(data || {}).git_status || "-"}`,
       `commit: ${((data || {}).before_commit || "-")} -> ${((data || {}).after_commit || "-")}`,
       `started_at: ${(data || {}).started_at || "-"}`,
@@ -6026,8 +6088,12 @@
       `message: ${data.message || "-"}`,
       `job_id: ${data.job_id || "-"}`,
       `repo: ${data.repo_dir || "-"}`,
+      `repo_link: ${data.repo_link || "-"}`,
+      `install_dir: ${data.install_dir || "-"}`,
       `user: ${data.service_user || "-"}`,
       `service: ${data.service_name || "-"}`,
+      `use_service: ${String(data.use_service ?? true)}`,
+      `autostart: ${String(data.autostart ?? true)}`,
       `git_status: ${data.git_status || "-"}`,
       `commit: ${(data.before_commit || "-")} -> ${(data.after_commit || "-")}`,
       `player_update_triggered: ${String(!!data.player_update_triggered)}`,
@@ -6333,6 +6399,14 @@
           }
           if (action === "install_update") {
             await startManagedRepoInstallUpdate(repoId);
+            return;
+          }
+          if (action === "details") {
+            showManagedRepoDetails(repoId);
+            return;
+          }
+          if (action === "set_as_player") {
+            await setManagedRepoAsPlayer(repoId);
             return;
           }
           if (action === "toggle_autostart") {

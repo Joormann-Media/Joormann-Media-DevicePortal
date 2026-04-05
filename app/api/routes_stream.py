@@ -826,6 +826,19 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     install_dir = str(source.get('install_dir') or '').strip()
     use_service_raw = source.get('use_service')
     autostart_raw = source.get('autostart')
+    api_base_url = str(source.get('api_base_url') or '').strip()
+    health_url = str(source.get('health_url') or '').strip()
+    hostname = str(source.get('hostname') or '').strip()
+    node_name = str(source.get('node_name') or '').strip()
+    source_name = str(source.get('source') or '').strip()
+    first_seen_at = str(source.get('first_seen_at') or '').strip()
+    last_seen_at = str(source.get('last_seen_at') or '').strip()
+    tags_raw = source.get('tags') if isinstance(source.get('tags'), list) else []
+    caps_raw = source.get('capabilities') if isinstance(source.get('capabilities'), list) else []
+    try:
+        service_port = int(source.get('service_port')) if source.get('service_port') not in (None, '') else None
+    except Exception:
+        service_port = None
     created_at = str(source.get('created_at') or '').strip()
     use_service = True if use_service_raw is None else bool(use_service_raw)
     autostart = True if autostart_raw is None else bool(autostart_raw)
@@ -847,6 +860,16 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
         'install_dir': install_dir,
         'use_service': use_service,
         'autostart': autostart,
+        'api_base_url': api_base_url,
+        'health_url': health_url,
+        'hostname': hostname,
+        'node_name': node_name,
+        'service_port': service_port,
+        'source': source_name,
+        'first_seen_at': first_seen_at,
+        'last_seen_at': last_seen_at,
+        'tags': [str(item).strip() for item in tags_raw if str(item).strip()],
+        'capabilities': [str(item).strip() for item in caps_raw if str(item).strip()],
         'created_at': created_at,
         'updated_at': utc_now(),
     }
@@ -884,6 +907,8 @@ def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
     service_name = str(payload.get('service_name') or '').strip()
     service_user = str(payload.get('service_user') or '').strip()
     install_dir = str(payload.get('install_dir') or '').strip()
+    use_service = bool(payload.get('use_service', True))
+    autostart = bool(payload.get('autostart', True))
     api_base_url = str(payload.get('api_base_url') or '').strip()
     health_url = str(payload.get('health_url') or '').strip()
     hostname = str(payload.get('hostname') or '').strip()
@@ -907,6 +932,8 @@ def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
         'service_name': service_name,
         'service_user': service_user,
         'install_dir': install_dir,
+        'use_service': use_service,
+        'autostart': autostart,
         'api_base_url': api_base_url,
         'health_url': health_url,
         'hostname': hostname,
@@ -1005,6 +1032,46 @@ def api_autodiscover_register():
 
     entries = sorted(entries, key=lambda row: str((row or {}).get('last_seen_at') or ''), reverse=True)[:300]
     cfg['autodiscover_services'] = entries
+
+    repos = _managed_repos_from_config(cfg)
+    managed_item = _sanitize_managed_repo_entry(
+        {
+            'name': str(item.get('repo_name') or '').strip(),
+            'repo_link': str(item.get('repo_link') or '').strip(),
+            'service_name': str(item.get('service_name') or '').strip(),
+            'service_user': str(item.get('service_user') or '').strip(),
+            'install_dir': str(item.get('install_dir') or '').strip(),
+            'use_service': bool(item.get('use_service', True)),
+            'autostart': bool(item.get('autostart', True)),
+            'api_base_url': str(item.get('api_base_url') or '').strip(),
+            'health_url': str(item.get('health_url') or '').strip(),
+            'hostname': str(item.get('hostname') or '').strip(),
+            'node_name': str(item.get('node_name') or '').strip(),
+            'service_port': item.get('service_port'),
+            'source': 'autodiscover',
+            'first_seen_at': str(item.get('first_seen_at') or item.get('updated_at') or ''),
+            'last_seen_at': str(item.get('last_seen_at') or item.get('updated_at') or ''),
+            'tags': item.get('tags') if isinstance(item.get('tags'), list) else [],
+            'capabilities': item.get('capabilities') if isinstance(item.get('capabilities'), list) else [],
+        }
+    )
+    existing_repo_idx = next(
+        (
+            idx for idx, current in enumerate(repos)
+            if str(current.get('repo_link') or '').strip().lower() == str(managed_item.get('repo_link') or '').strip().lower()
+            and str(current.get('install_dir') or '').strip().lower() == str(managed_item.get('install_dir') or '').strip().lower()
+        ),
+        -1,
+    )
+    if existing_repo_idx >= 0:
+        current = repos[existing_repo_idx]
+        managed_item['id'] = str(current.get('id') or managed_item['id'])
+        managed_item['created_at'] = str(current.get('created_at') or managed_item['created_at'])
+        repos[existing_repo_idx] = managed_item
+    else:
+        repos.append(managed_item)
+    cfg['managed_install_repos'] = repos
+
     cfg['updated_at'] = utc_now()
     ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok:
@@ -1044,8 +1111,18 @@ def api_autodiscover_promote(service_id: str):
             'service_name': str(target.get('service_name') or '').strip(),
             'service_user': str(target.get('service_user') or '').strip(),
             'install_dir': str(target.get('install_dir') or '').strip(),
-            'use_service': True,
-            'autostart': True,
+            'use_service': bool(target.get('use_service', True)),
+            'autostart': bool(target.get('autostart', True)),
+            'api_base_url': str(target.get('api_base_url') or '').strip(),
+            'health_url': str(target.get('health_url') or '').strip(),
+            'hostname': str(target.get('hostname') or '').strip(),
+            'node_name': str(target.get('node_name') or '').strip(),
+            'service_port': target.get('service_port'),
+            'source': 'autodiscover',
+            'first_seen_at': str(target.get('first_seen_at') or target.get('updated_at') or ''),
+            'last_seen_at': str(target.get('last_seen_at') or target.get('updated_at') or ''),
+            'tags': target.get('tags') if isinstance(target.get('tags'), list) else [],
+            'capabilities': target.get('capabilities') if isinstance(target.get('capabilities'), list) else [],
         }
     )
 
@@ -1137,6 +1214,16 @@ def api_stream_player_repos_set():
             'install_dir': str(data.get('install_dir') or '').strip(),
             'use_service': data.get('use_service', True),
             'autostart': data.get('autostart', True),
+            'api_base_url': str(data.get('api_base_url') or '').strip(),
+            'health_url': str(data.get('health_url') or '').strip(),
+            'hostname': str(data.get('hostname') or '').strip(),
+            'node_name': str(data.get('node_name') or '').strip(),
+            'service_port': data.get('service_port'),
+            'source': str(data.get('source') or '').strip(),
+            'first_seen_at': str(data.get('first_seen_at') or '').strip(),
+            'last_seen_at': str(data.get('last_seen_at') or '').strip(),
+            'tags': data.get('tags') if isinstance(data.get('tags'), list) else [],
+            'capabilities': data.get('capabilities') if isinstance(data.get('capabilities'), list) else [],
         }
     )
 
