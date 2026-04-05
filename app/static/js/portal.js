@@ -168,7 +168,12 @@
       String(source.install_dir || ""),
     ].join(" ").toLowerCase();
     return {
-      audio: bag.includes("jarvis-audioplayer") || bag.includes("joormann-media-jarvis-audioplayer"),
+      audio: (
+        bag.includes("jarvis-audioplayer")
+        || bag.includes("jarvis audioplayer")
+        || bag.includes("joormann-media-jarvis-audioplayer")
+        || bag.includes("audio player")
+      ),
       display: bag.includes("jarvis-displayplayer") || bag.includes("joormann-media-jarvis-displayplayer"),
       device: bag.includes("deviceplayer") || bag.includes("joormann-media-deviceplayer"),
     };
@@ -201,7 +206,7 @@
   function applyStreamFeatureVisibility() {
     const hasStream = !!(streamFeatureState.hasDisplayPlayer || streamFeatureState.hasDevicePlayer || streamFeatureState.playerInstalled);
     const hasAudio = !!streamFeatureState.hasAudioPlayer;
-    const hasSpotify = !!(hasAudio && streamFeatureState.spotifyInstalled);
+    const hasSpotify = !!streamFeatureState.spotifyInstalled;
     const anyVisible = hasStream || hasAudio || hasSpotify;
 
     toggleVisible(q("stream-feature-stream-col"), hasStream);
@@ -4409,17 +4414,39 @@
     if (userQuick) userQuick.value = serviceUserValue;
   }
 
+  function bindMirroredInput(sourceId, targetId) {
+    const source = q(sourceId);
+    const target = q(targetId);
+    if (!source || !target) return;
+    const mirror = () => {
+      if (target.value !== source.value) {
+        target.value = source.value;
+      }
+    };
+    source.addEventListener("input", mirror);
+    source.addEventListener("change", mirror);
+  }
+
+  function initPlayerRepoFieldSync() {
+    bindMirroredInput("stream-player-repo-dir", "stream-player-repo-dir-quick");
+    bindMirroredInput("stream-player-repo-dir-quick", "stream-player-repo-dir");
+    bindMirroredInput("stream-player-service-name", "stream-player-service-name-quick");
+    bindMirroredInput("stream-player-service-name-quick", "stream-player-service-name");
+    bindMirroredInput("stream-player-service-user", "stream-player-service-user-quick");
+    bindMirroredInput("stream-player-service-user-quick", "stream-player-service-user");
+  }
+
   function getPlayerFormValues() {
-    const repoQuick = String(q("stream-player-repo-dir-quick")?.value || "").trim();
-    const nameQuick = String(q("stream-player-service-name-quick")?.value || "").trim();
-    const userQuick = String(q("stream-player-service-user-quick")?.value || "").trim();
     const repoMain = String(q("stream-player-repo-dir")?.value || "").trim();
     const nameMain = String(q("stream-player-service-name")?.value || "").trim();
     const userMain = String(q("stream-player-service-user")?.value || "").trim();
+    const repoQuick = String(q("stream-player-repo-dir-quick")?.value || "").trim();
+    const nameQuick = String(q("stream-player-service-name-quick")?.value || "").trim();
+    const userQuick = String(q("stream-player-service-user-quick")?.value || "").trim();
     return {
-      player_repo_link: repoQuick || repoMain,
-      player_service_name: (nameQuick || nameMain || "joormann-media-deviceplayer.service").trim(),
-      player_service_user: (userQuick || userMain || "").trim(),
+      player_repo_link: repoMain || repoQuick,
+      player_service_name: (nameMain || nameQuick || "joormann-media-deviceplayer.service").trim(),
+      player_service_user: (userMain || userQuick || "").trim(),
     };
   }
 
@@ -4430,6 +4457,7 @@
       body: { player_repo_link, player_service_name, player_service_user },
       timeoutMs: 12000,
     });
+    await loadPlayerRepoConfig();
     toast("Player-Repo Link gespeichert", "success");
   }
 
@@ -6430,6 +6458,7 @@
   }
 
   function bindButtons() {
+    initPlayerRepoFieldSync();
     q("status-mode-badge").addEventListener("click", () => {
       const status = statusDashboardState.status || {};
       const state = status.state || {};
