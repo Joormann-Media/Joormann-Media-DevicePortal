@@ -4468,8 +4468,12 @@
     toast("Overlay-Status zurückgesetzt", "success");
   }
 
+  function getUpdateLogEl() {
+    return q("system-update-log") || q("stream-player-update-log");
+  }
+
   function renderStreamPlayerUpdateStatus(data) {
-    const logEl = q("stream-player-update-log");
+    const logEl = getUpdateLogEl();
     if (!logEl) return;
     const status = String((data || {}).status || "unknown");
     const lines = [
@@ -5677,7 +5681,7 @@
 
   async function updatePortal() {
     const btn = q("btn-system-update-portal");
-    const logEl = q("system-update-log");
+    const logEl = getUpdateLogEl();
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Update läuft...';
@@ -5699,7 +5703,7 @@
 
   async function installPortalService() {
     const btn = q("btn-system-install-portal-service");
-    const logEl = q("system-update-log");
+    const logEl = getUpdateLogEl();
     if (!btn || !logEl) return;
     const original = btn.innerHTML;
     btn.disabled = true;
@@ -5730,7 +5734,7 @@
   }
 
   function renderPortalUpdateStatus(data) {
-    const logEl = q("system-update-log");
+    const logEl = getUpdateLogEl();
     const status = String(data.status || "unknown");
     const success = !!data.success;
     const lines = [

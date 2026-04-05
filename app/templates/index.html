@@ -1548,7 +1548,7 @@
 
           <div class="tab-pane fade" id="system-sub-update" role="tabpanel" aria-labelledby="system-sub-update-tab">
             <div class="row g-3">
-              <div class="col-12 col-xl-7">
+              <div class="col-12">
                 <div class="portal-card p-4">
                   <h3 class="h6">Portal Update</h3>
                   <p class="text-secondary mb-3">Führt `git pull --ff-only`, `install/setup_netcontrol.sh` und einen Service-Neustart aus.</p>
@@ -1556,16 +1556,7 @@
                     <button id="btn-system-update-portal" class="btn btn-outline-primary btn-sm">Update starten</button>
                     <button id="btn-system-install-portal-service" class="btn btn-outline-secondary btn-sm">Service installieren / umschalten</button>
                   </div>
-                </div>
-              </div>
-              <div class="col-12 col-xl-5">
-                <div class="portal-card p-4 h-100">
-                  <h3 class="h6">Letztes Update</h3>
-                  <pre id="system-update-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
-                </div>
-              </div>
-              <div class="col-12">
-                <div class="portal-card p-4">
+                  <hr class="my-3">
                   <h3 class="h6 mb-2">Player Update</h3>
                   <div class="small text-secondary mb-2">Player Repo konfigurieren und Install/Update direkt ausführen.</div>
                   <div class="row g-2 mb-2">
@@ -1582,12 +1573,17 @@
                       <input id="stream-player-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
                     </div>
                   </div>
-                  <div class="d-flex flex-wrap gap-2 mb-2">
+                  <div class="d-flex flex-wrap gap-2 mb-0">
                     <button id="btn-stream-player-repo-save" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
                     <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
                     <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
                   </div>
-                  <pre id="stream-player-update-log" class="small border rounded p-2 mb-0 bg-body-tertiary" style="max-height:220px; overflow:auto;">Kein Player-Update gestartet.</pre>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="portal-card p-4">
+                  <h3 class="h6 mb-2">Update & Install Log</h3>
+                  <pre id="system-update-log" class="code-block mb-0" style="max-height: 260px; overflow:auto;">-</pre>
                 </div>
               </div>
             </div>
