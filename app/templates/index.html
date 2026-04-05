@@ -1352,34 +1352,35 @@
           <div class="tab-pane fade show active" id="system-sub-general" role="tabpanel" aria-labelledby="system-sub-general-tab">
             <div class="row g-3">
               <div class="col-12">
-                <div class="portal-card p-3 system-general-card">
-                  <h2 class="h6 mb-1">System Einstellungen</h2>
-                  <p class="small text-secondary mb-2">
-                    Behebt DNS-Probleme durch Tailscale MagicDNS/Resolver-Override
-                    (`tailscale --accept-dns=false`) und triggert danach NetworkManager neu.
-                  </p>
-                  <div class="d-flex flex-wrap gap-2 mb-2">
-                    <button id="btn-fix-tailscale-dns" class="btn btn-outline-warning btn-sm">
-                      Tailscale DNS-Override deaktivieren
-                    </button>
-                    <button id="btn-system-refresh-network" class="btn btn-outline-secondary btn-sm">
-                      Netzwerkdaten aktualisieren
-                    </button>
+                <div class="portal-card p-3 system-general-card system-general-card-compact">
+                  <div class="system-general-split">
+                    <div class="system-general-split-left">
+                      <h2 class="h6 mb-1">System Einstellungen</h2>
+                      <p class="small text-secondary mb-1">
+                        Behebt DNS-Probleme durch Tailscale MagicDNS/Resolver-Override
+                        (`tailscale --accept-dns=false`) und triggert danach NetworkManager neu.
+                      </p>
+                      <div class="d-flex flex-wrap gap-1 mb-2">
+                        <button id="btn-fix-tailscale-dns" class="btn btn-outline-warning btn-sm btn-compact">
+                          Tailscale DNS-Override deaktivieren
+                        </button>
+                        <button id="btn-system-refresh-network" class="btn btn-outline-secondary btn-sm btn-compact">
+                          Netzwerkdaten aktualisieren
+                        </button>
+                      </div>
+                      <div class="small text-secondary mb-0">
+                        Nutze das, wenn `github.com` o. a. Hosts nicht aufgelöst werden, obwohl `ping 1.1.1.1` funktioniert.
+                      </div>
+                    </div>
+                    <div class="system-general-split-right">
+                      <h3 class="h6 mb-2">Letzter DNS-Fix</h3>
+                      <dl class="portal-kv mb-0">
+                        <dt>Connection</dt><dd id="sys-dnsfix-connection">-</dd>
+                        <dt>DNS Server</dt><dd id="sys-dnsfix-dns">-</dd>
+                        <dt>Search</dt><dd id="sys-dnsfix-search">-</dd>
+                      </dl>
+                    </div>
                   </div>
-                  <div class="small text-secondary">
-                    Nutze das, wenn `github.com` o. a. Hosts nicht aufgelöst werden, obwohl `ping 1.1.1.1` funktioniert.
-                  </div>
-                </div>
-              </div>
-
-              <div class="col-12">
-                <div class="portal-card p-3 system-general-card">
-                  <h3 class="h6 mb-1">Letzter DNS-Fix</h3>
-                  <dl class="portal-kv mb-0">
-                    <dt>Connection</dt><dd id="sys-dnsfix-connection">-</dd>
-                    <dt>DNS Server</dt><dd id="sys-dnsfix-dns">-</dd>
-                    <dt>Search</dt><dd id="sys-dnsfix-search">-</dd>
-                  </dl>
                 </div>
               </div>
 
@@ -1480,27 +1481,6 @@
                 </div>
               </div>
 
-              <div class="col-12">
-                <div class="portal-card p-3 h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h2 class="h5 mb-0">Sync Kontrolle</h2>
-                    <span id="panel-sync-badge" class="badge text-bg-secondary">unbekannt</span>
-                  </div>
-                  <div class="small text-secondary mb-2">
-                    Prüft gegen das Adminpanel, ob Snapshots (Storage, Laufwerke, Auslastung, Netzwerk, Software) vollständig hinterlegt sind.
-                  </div>
-                  <dl class="portal-kv mb-3">
-                    <dt>Fehlende Bereiche</dt><dd id="panel-sync-missing">-</dd>
-                    <dt>Storage Datensätze</dt><dd id="panel-sync-storage-count">-</dd>
-                    <dt>Software Datensätze</dt><dd id="panel-sync-software-count">-</dd>
-                    <dt>Last Sync Check</dt><dd id="panel-sync-last-check">-</dd>
-                  </dl>
-                  <div class="d-flex flex-wrap gap-2">
-                    <button id="btn-panel-sync-check" class="btn btn-outline-secondary btn-sm">Sync prüfen</button>
-                    <button id="btn-panel-sync-now" class="btn btn-outline-primary btn-sm">Jetzt nachmelden</button>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -1527,6 +1507,27 @@
                     <dt>Letzte Meldung</dt><dd id="sync-status-last-message">-</dd>
                     <dt>Aktive Feldgruppen</dt><dd id="sync-status-groups">-</dd>
                   </dl>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="portal-card p-3 h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h2 class="h5 mb-0">Sync Kontrolle</h2>
+                    <span id="panel-sync-badge" class="badge text-bg-secondary">unbekannt</span>
+                  </div>
+                  <div class="small text-secondary mb-2">
+                    Prüft gegen das Adminpanel, ob Snapshots (Storage, Laufwerke, Auslastung, Netzwerk, Software) vollständig hinterlegt sind.
+                  </div>
+                  <dl class="portal-kv mb-3">
+                    <dt>Fehlende Bereiche</dt><dd id="panel-sync-missing">-</dd>
+                    <dt>Storage Datensätze</dt><dd id="panel-sync-storage-count">-</dd>
+                    <dt>Software Datensätze</dt><dd id="panel-sync-software-count">-</dd>
+                    <dt>Last Sync Check</dt><dd id="panel-sync-last-check">-</dd>
+                  </dl>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button id="btn-panel-sync-check" class="btn btn-outline-secondary btn-sm">Sync prüfen</button>
+                    <button id="btn-panel-sync-now" class="btn btn-outline-primary btn-sm">Jetzt nachmelden</button>
+                  </div>
                 </div>
               </div>
               <div class="col-12 col-xl-7">

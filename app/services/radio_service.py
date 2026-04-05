@@ -236,11 +236,13 @@ class RadioService:
 
         proc: subprocess.Popen[str] | None = None
         last_boot_error = ""
+        has_retried_without_rw_timeout = False
         for cmd in cmd_profiles:
+            current_cmd = list(cmd)
             logger.info("Starting RTSP adapter: %s", " ".join(shlex.quote(x) for x in cmd))
             try:
                 proc = subprocess.Popen(
-                    cmd,
+                    current_cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -271,10 +273,65 @@ class RadioService:
             err = self._rtsp_adapter_last_stderr or f"ffmpeg exit {proc.returncode}"
             self._rtsp_adapter_last_error = err
             last_boot_error = err
+
+            # Older ffmpeg builds do not support -rw_timeout. Retry once without it.
+            if (not has_retried_without_rw_timeout) and "rw_timeout" in err.lower() and "option" in err.lower():
+                retry_cmd = self._strip_ffmpeg_option_with_value(current_cmd, "-rw_timeout")
+                if retry_cmd != current_cmd:
+                    has_retried_without_rw_timeout = True
+                    logger.warning("RTSP adapter retrying without -rw_timeout after ffmpeg option error.")
+                    try:
+                        proc = subprocess.Popen(
+                            retry_cmd,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            env=self._pulse_env(),
+                        )
+                    except Exception as exc:
+                        last_boot_error = str(exc)
+                        logger.error("RTSP adapter retry without -rw_timeout failed: %s", exc)
+                        continue
+
+                    self._rtsp_adapter_process = proc
+                    self._rtsp_adapter_source_url = url
+                    self._rtsp_adapter_target_url = target_url
+                    self._rtsp_adapter_started_at = utc_now()
+                    self._rtsp_adapter_last_error = None
+                    self._rtsp_adapter_last_stderr = None
+                    self._rtsp_adapter_last_exit_code = None
+                    self._spawn_stderr_reader(proc, "adapter")
+                    self._spawn_adapter_watcher(proc)
+
+                    time.sleep(0.65)
+                    if proc.poll() is None:
+                        logger.info("RTSP adapter ready after retry without -rw_timeout: source=%s target=%s", url, target_url)
+                        return True, target_url, ""
+
+                    self._rtsp_adapter_last_exit_code = proc.returncode
+                    self._rtsp_adapter_process = None
+                    err = self._rtsp_adapter_last_stderr or f"ffmpeg exit {proc.returncode}"
+                    self._rtsp_adapter_last_error = err
+                    last_boot_error = err
+
             logger.warning("RTSP adapter profile failed, trying fallback profile: %s", err)
 
         final_error = last_boot_error or "unbekannter ffmpeg Fehler"
         return False, "", f"RTSP-Adapter hat sofort beendet: {final_error}"
+
+    def _strip_ffmpeg_option_with_value(self, cmd: list[str], option: str) -> list[str]:
+        cleaned: list[str] = []
+        skip_next = False
+        for idx, part in enumerate(cmd):
+            if skip_next:
+                skip_next = False
+                continue
+            if part == option:
+                if idx + 1 < len(cmd):
+                    skip_next = True
+                continue
+            cleaned.append(part)
+        return cleaned
 
     def play(self, stream_url: str) -> dict[str, Any]:
         url = (stream_url or "").strip().replace("&amp;", "&")

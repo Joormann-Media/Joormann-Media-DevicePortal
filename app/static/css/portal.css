@@ -98,6 +98,49 @@ body.portal-body {
   margin-bottom: 0.28rem;
 }
 
+.system-general-card-compact {
+  padding: 0.75rem !important;
+}
+
+.system-general-card-compact .h6 {
+  margin-bottom: 0.25rem !important;
+}
+
+.system-general-card-compact .small {
+  font-size: 0.8rem;
+}
+
+.system-general-split {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.system-general-split-right {
+  border-left: 1px solid var(--portal-border);
+  padding-left: 0.75rem;
+}
+
+@media (max-width: 700px) {
+  .system-general-split {
+    grid-template-columns: 1fr;
+  }
+
+  .system-general-split-right {
+    border-left: 0;
+    border-top: 1px solid var(--portal-border);
+    padding-left: 0;
+    padding-top: 0.6rem;
+  }
+}
+
+.btn-compact {
+  --bs-btn-padding-y: 0.16rem;
+  --bs-btn-padding-x: 0.42rem;
+  --bs-btn-font-size: 0.74rem;
+}
+
 .nav-tabs .nav-link {
   color: #334155;
   border-radius: 0.7rem 0.7rem 0 0;
