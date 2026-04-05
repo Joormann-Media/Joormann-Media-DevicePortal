@@ -19,3 +19,5 @@ var/data/config.json
 var/data/device.json
 var/data/link.json
 var/data/runtime/*
+# Local runtime backups
+var/data/*.bak.*

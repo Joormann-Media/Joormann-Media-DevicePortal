@@ -4658,7 +4658,7 @@
       applyStreamFeatureVisibility();
       return;
     }
-    const cards = list.map((item) => {
+    const cards = list.map((item, idx) => {
       const repoId = String(item.id || "");
       const name = escapeHtml(String(item.name || "-"));
       const repoLinkRaw = String(item.repo_link || "");
@@ -4682,10 +4682,10 @@
         ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
         : "-";
       return `
-        <div class="portal-card p-4 mb-3">
+        <section class="mb-3">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
             <div>
-              <h3 class="h6 mb-1">${name}</h3>
+              <h3 class="h6 mb-2">${name}</h3>
             </div>
             <div class="d-flex flex-wrap gap-1">
               <span class="badge text-bg-light border">Service: ${useService ? "ja" : "nein"}</span>
@@ -4724,7 +4724,8 @@
             <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>
             <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="delete" data-id="${escapeHtml(repoId)}">Löschen</button>
           </div>
-        </div>
+          ${idx < list.length - 1 ? '<hr class="my-3">' : ''}
+        </section>
       `;
     }).join("");
     host.innerHTML = cards;

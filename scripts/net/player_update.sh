@@ -460,6 +460,36 @@ EOF
   fi
 
   if str_true "${USE_SERVICE}"; then
+    APP_ENTRY=""
+    for candidate in "run.py" "app.py" "main.py" "server.py"; do
+      if [[ -f "${REPO_DIR}/${candidate}" ]]; then
+        APP_ENTRY="${REPO_DIR}/${candidate}"
+        break
+      fi
+    done
+    if [[ -z "${APP_ENTRY}" ]]; then
+      echo "[service] no supported entrypoint found (run.py/app.py/main.py/server.py)"
+      cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=${GIT_STATUS}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
+use_service=${USE_SERVICE}
+autostart=${AUTOSTART}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
+EOF
+      exit 0
+    fi
+
     SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
     SERVICE_DROPIN_DIR="/etc/systemd/system/${SERVICE_NAME}.d"
     SERVICE_DROPIN_FILE="${SERVICE_DROPIN_DIR}/10-deviceplayer-permissions.conf"
@@ -486,7 +516,7 @@ EOF
 
     cat > "${SERVICE_FILE}" <<EOF
 [Unit]
-Description=Joormann Media DevicePlayer
+Description=Joormann Media Managed Service (${SERVICE_NAME})
 After=network-online.target
 Wants=network-online.target
 
@@ -500,7 +530,7 @@ Environment=SDL_AUDIODRIVER=dummy
 Environment=DEVICEPLAYER_MANIFEST_PATH=
 Environment=DEVICEPLAYER_STORAGE_ROOT=
 Environment=DEVICEPLAYER_PORTAL_PLAYER_SOURCE=${PORTAL_PLAYER_SOURCE_PATH}
-ExecStart=${VENV_DIR}/bin/python ${REPO_DIR}/run.py
+ExecStart=${VENV_DIR}/bin/python ${APP_ENTRY}
 Restart=always
 RestartSec=2
 
