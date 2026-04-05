@@ -50,6 +50,34 @@ repo_name_from_ref() {
   printf '%s' "$b"
 }
 
+github_https_to_ssh() {
+  local v="$1"
+  if [[ "$v" =~ ^https://github.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
+    local owner="${BASH_REMATCH[1]}"
+    local repo="${BASH_REMATCH[2]}"
+    repo="${repo%.git}"
+    printf 'git@github.com:%s/%s.git' "${owner}" "${repo}"
+  fi
+}
+
+git_clone_as_user() {
+  local user="$1"
+  local ref="$2"
+  local target="$3"
+  runuser -u "${user}" -- bash -lc "git clone --depth=1 \"${ref}\" \"${target}\""
+  local rc=$?
+  if [[ ${rc} -ne 0 ]]; then
+    local ssh_ref
+    ssh_ref="$(github_https_to_ssh "${ref}" || true)"
+    if [[ -n "${ssh_ref}" ]]; then
+      echo "[git] https clone failed, retry via ssh: ${ssh_ref}"
+      runuser -u "${user}" -- bash -lc "git clone --depth=1 \"${ssh_ref}\" \"${target}\""
+      rc=$?
+    fi
+  fi
+  return ${rc}
+}
+
 str_true() {
   local v
   v="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
@@ -335,13 +363,25 @@ EOF
       echo "[git] cloning ${REPO_REF} -> ${REPO_DIR}"
       PARENT_DIR="$(dirname "${REPO_DIR}")"
       if runuser -u "${SERVICE_USER}" -- test -w "${PARENT_DIR}"; then
-        runuser -u "${SERVICE_USER}" -- bash -lc "git clone --depth=1 \"${REPO_REF}\" \"${REPO_DIR}\""
+        git_clone_as_user "${SERVICE_USER}" "${REPO_REF}" "${REPO_DIR}"
       else
-        echo "[git] parent not writable for ${SERVICE_USER}, cloning with root and fixing ownership"
-        git clone --depth=1 "${REPO_REF}" "${REPO_DIR}"
-        chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${REPO_DIR}" || true
+        echo "[git] parent not writable for ${SERVICE_USER}, cloning in user tmp and moving with root"
+        TMP_CLONE_DIR="/tmp/deviceportal-clone-${JOB_ID}"
+        rm -rf "${TMP_CLONE_DIR}" || true
+        git_clone_as_user "${SERVICE_USER}" "${REPO_REF}" "${TMP_CLONE_DIR}"
+        TMP_RC=$?
+        if [[ ${TMP_RC} -eq 0 ]]; then
+          mkdir -p "${PARENT_DIR}"
+          rm -rf "${REPO_DIR}" || true
+          mv "${TMP_CLONE_DIR}" "${REPO_DIR}"
+          chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${REPO_DIR}" || true
+        else
+          echo "[git] tmp clone failed rc=${TMP_RC}"
+          rm -rf "${TMP_CLONE_DIR}" || true
+          CLONE_RC=${TMP_RC}
+        fi
       fi
-      CLONE_RC=$?
+      CLONE_RC="${CLONE_RC:-$?}"
       if [[ ${CLONE_RC} -ne 0 ]]; then
         echo "[git] clone failed rc=${CLONE_RC}"
         cat > "${STATE_FILE}" <<EOF
