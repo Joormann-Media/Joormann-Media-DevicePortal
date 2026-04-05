@@ -4468,6 +4468,10 @@
         ? (status.runtime_reachable ? "ja" : "nein")
         : (status.service_running ? "ja" : "nein");
       const serviceAutostart = status.use_service === false ? "-" : (status.service_enabled ? "ja" : "nein");
+      const canControlService = useService;
+      const isRunning = !!status.service_running;
+      const controlLabel = isRunning ? "Stop" : "Start";
+      const controlAction = isRunning ? "stop" : "start";
       const linkHtml = repoLinkRaw
         ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
         : "-";
@@ -4489,6 +4493,8 @@
               <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
               <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="set_as_player" data-id="${escapeHtml(repoId)}">Als Stream-Player setzen</button>
               <button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="install_update" data-id="${escapeHtml(repoId)}">Install/Update</button>
+              <button class="btn btn-outline-success btn-sm js-extra-repo-action" data-action="service_action" data-service-action="${controlAction}" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>${controlLabel}</button>
+              <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="service_action" data-service-action="restart" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>Restart</button>
               <button class="btn btn-outline-warning btn-sm js-extra-repo-action" data-action="toggle_autostart" data-enabled="${autostart ? "0" : "1"}" data-id="${escapeHtml(repoId)}">${autostart ? "Autostart aus" : "Autostart an"}</button>
               <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>
               <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="delete" data-id="${escapeHtml(repoId)}">Löschen</button>
@@ -4697,6 +4703,29 @@
     });
     const action = payload?.data?.action || {};
     toast(`Uninstall abgeschlossen${action.removed_repo ? " (Repo entfernt)" : ""}`, "success");
+  }
+
+  async function controlManagedRepoService(repoId, action) {
+    const serviceAction = String(action || "").trim().toLowerCase();
+    if (!["start", "stop", "restart", "status"].includes(serviceAction)) {
+      throw new Error("Ungültige Service-Aktion.");
+    }
+    const payload = await fetchJson(`/api/stream/player/repos/${encodeURIComponent(String(repoId || "").trim())}/service-action`, {
+      method: "POST",
+      body: { action: serviceAction },
+      timeoutMs: 20000,
+    });
+    const repo = payload?.data?.repo || null;
+    if (repo) {
+      const idx = managedInstallRepos.findIndex((item) => String(item.id || "") === String(repo.id || ""));
+      if (idx >= 0) {
+        managedInstallRepos[idx] = repo;
+      }
+      renderManagedRepos(managedInstallRepos);
+    } else {
+      await refreshManagedRepos();
+    }
+    toast(`Service: ${serviceAction}`, "success");
   }
 
   function overlayNum(id, fallback = 0) {
@@ -6430,6 +6459,11 @@
           if (action === "toggle_autostart") {
             const enabled = String(btn.dataset.enabled || "").trim() === "1";
             await toggleManagedRepoAutostart(repoId, enabled);
+            return;
+          }
+          if (action === "service_action") {
+            const serviceAction = String(btn.dataset.serviceAction || "").trim().toLowerCase();
+            await controlManagedRepoService(repoId, serviceAction);
             return;
           }
           if (action === "uninstall") {

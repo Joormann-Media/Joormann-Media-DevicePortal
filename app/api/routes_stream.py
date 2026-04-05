@@ -1426,6 +1426,46 @@ def api_stream_player_repos_service_autostart(repo_id: str):
     return jsonify(ok=True, data={'repo': repos[idx], 'action': payload})
 
 
+@bp_stream.post('/api/stream/player/repos/<repo_id>/service-action')
+def api_stream_player_repos_service_action(repo_id: str):
+    cfg = ensure_config()
+    target_id = str(repo_id or '').strip()
+    repos = _managed_repos_from_config(cfg)
+    idx = next((i for i, item in enumerate(repos) if str(item.get('id') or '').strip() == target_id), -1)
+    if idx < 0:
+        return jsonify(ok=False, error='repo_not_found', detail='Repo nicht gefunden.'), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    action = str(data.get('action') or '').strip().lower()
+    if action not in {'start', 'stop', 'restart', 'status'}:
+        return jsonify(ok=False, error='invalid_action', detail='Action must be start|stop|restart|status'), 400
+
+    target = repos[idx]
+    use_service = bool(target.get('use_service', True))
+    if not use_service:
+        return jsonify(ok=False, error='service_mode_disabled', detail='Repo läuft ohne Service-Modus.'), 400
+
+    repo_link = str(target.get('repo_link') or '').strip()
+    service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+    try:
+        payload = player_service_action(action, service_name)
+    except NetControlError as exc:
+        status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+    target['updated_at'] = utc_now()
+    repos[idx] = _sanitize_managed_repo_entry(target)
+    cfg['managed_install_repos'] = repos
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    repo_out = dict(repos[idx])
+    repo_out['service_status'] = _managed_repo_service_status(repo_out)
+    return jsonify(ok=True, data={'repo': repo_out, 'action': payload})
+
+
 @bp_stream.post('/api/stream/player/repos/<repo_id>/uninstall')
 def api_stream_player_repos_uninstall(repo_id: str):
     from app.core.netcontrol import player_uninstall
