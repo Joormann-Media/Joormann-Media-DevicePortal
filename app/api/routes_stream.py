@@ -860,6 +860,12 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     service_name = str(source.get('service_name') or '').strip()
     service_user = str(source.get('service_user') or '').strip()
     install_dir = str(source.get('install_dir') or '').strip()
+    if service_name in {'-', '—', 'none', 'null'}:
+        service_name = ''
+    if service_user in {'-', '—', 'none', 'null'}:
+        service_user = ''
+    if install_dir in {'-', '—', 'none', 'null'}:
+        install_dir = ''
     use_service_raw = source.get('use_service')
     autostart_raw = source.get('autostart')
     api_base_url = str(source.get('api_base_url') or '').strip()

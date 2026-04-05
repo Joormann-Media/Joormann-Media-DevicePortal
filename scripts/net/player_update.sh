@@ -66,6 +66,28 @@ service_env_file_from_name() {
   printf '/etc/default/jm-%s' "${slug}"
 }
 
+service_slug_from_name() {
+  local svc="${1:-device-service}"
+  local slug
+  slug="$(printf '%s' "${svc}" | sed 's/\.service$//' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')"
+  if [[ -z "${slug}" ]]; then
+    slug="device-service"
+  fi
+  printf '%s' "${slug}"
+}
+
+service_wrapper_start_path() {
+  local slug
+  slug="$(service_slug_from_name "${1:-device-service}")"
+  printf '/opt/deviceportal/bin/jm-managed-%s-start.sh' "${slug}"
+}
+
+service_wrapper_stop_path() {
+  local slug
+  slug="$(service_slug_from_name "${1:-device-service}")"
+  printf '/opt/deviceportal/bin/jm-managed-%s-stop.sh' "${slug}"
+}
+
 resolve_repo_dir() {
   local ref="$1"
   local user="$2"
@@ -209,10 +231,13 @@ if [[ "${MODE}" == "uninstall" ]]; then
   fi
   REPO_DIR="$(resolve_repo_dir "${PLAYER_REPO_REF}" "${SERVICE_USER}" "${INSTALL_DIR}" "${PORTAL_REPO_DIR}")"
   if [[ -n "${SERVICE_NAME}" ]]; then
+    START_WRAPPER="$(service_wrapper_start_path "${SERVICE_NAME}")"
+    STOP_WRAPPER="$(service_wrapper_stop_path "${SERVICE_NAME}")"
     systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
     systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || true
     rm -f "/etc/systemd/system/${SERVICE_NAME}" || true
     rm -rf "/etc/systemd/system/${SERVICE_NAME}.d" || true
+    rm -f "${START_WRAPPER}" "${STOP_WRAPPER}" || true
     systemctl daemon-reload >/dev/null 2>&1 || true
   fi
   REMOVED_REPO="false"
@@ -423,24 +448,31 @@ EOF
     exit 0
   fi
 
+  START_SCRIPT="${REPO_DIR}/scripts/start-dev.sh"
+  STOP_SCRIPT="${REPO_DIR}/scripts/stop-dev.sh"
+  SCRIPT_MANAGED="false"
+  if [[ -f "${START_SCRIPT}" ]]; then
+    SCRIPT_MANAGED="true"
+  fi
+
   VENV_DIR="${REPO_DIR}/.venv"
   REQ_FILE="${REPO_DIR}/requirements.txt"
+  if [[ "${SCRIPT_MANAGED}" != "true" ]]; then
+    if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+      echo "[venv] create ${VENV_DIR}"
+      runuser -u "${SERVICE_USER}" -- python3 -m venv "${VENV_DIR}"
+    fi
 
-  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
-    echo "[venv] create ${VENV_DIR}"
-    runuser -u "${SERVICE_USER}" -- python3 -m venv "${VENV_DIR}"
-  fi
-
-  echo "[pip] install requirements"
-  if [[ -f "${REQ_FILE}" ]]; then
-    runuser -u "${SERVICE_USER}" -- "${VENV_DIR}/bin/pip" install -r "${REQ_FILE}"
-  else
-    runuser -u "${SERVICE_USER}" -- "${VENV_DIR}/bin/pip" install pygame-ce
-  fi
-  PIP_RC=$?
-  if [[ ${PIP_RC} -ne 0 ]]; then
-    echo "[pip] failed rc=${PIP_RC}"
-    cat > "${STATE_FILE}" <<EOF
+    echo "[pip] install requirements"
+    if [[ -f "${REQ_FILE}" ]]; then
+      runuser -u "${SERVICE_USER}" -- "${VENV_DIR}/bin/pip" install -r "${REQ_FILE}"
+    else
+      runuser -u "${SERVICE_USER}" -- "${VENV_DIR}/bin/pip" install pygame-ce
+    fi
+    PIP_RC=$?
+    if [[ ${PIP_RC} -ne 0 ]]; then
+      echo "[pip] failed rc=${PIP_RC}"
+      cat > "${STATE_FILE}" <<EOF
 status=failed
 success=false
 git_status=${GIT_STATUS}
@@ -456,20 +488,24 @@ finished_at=$(utc_now)
 before_commit=${BEFORE_COMMIT}
 after_commit=${AFTER_COMMIT}
 EOF
-    exit 0
+      exit 0
+    fi
+  else
+    echo "[install] repo provides scripts/start-dev.sh; dependency/install handled by repo scripts"
   fi
 
   if str_true "${USE_SERVICE}"; then
     APP_ENTRY=""
-    for candidate in "run.py" "app.py" "main.py" "server.py"; do
-      if [[ -f "${REPO_DIR}/${candidate}" ]]; then
-        APP_ENTRY="${REPO_DIR}/${candidate}"
-        break
-      fi
-    done
-    if [[ -z "${APP_ENTRY}" ]]; then
-      echo "[service] no supported entrypoint found (run.py/app.py/main.py/server.py)"
-      cat > "${STATE_FILE}" <<EOF
+    if [[ "${SCRIPT_MANAGED}" != "true" ]]; then
+      for candidate in "run.py" "app.py" "main.py" "server.py"; do
+        if [[ -f "${REPO_DIR}/${candidate}" ]]; then
+          APP_ENTRY="${REPO_DIR}/${candidate}"
+          break
+        fi
+      done
+      if [[ -z "${APP_ENTRY}" ]]; then
+        echo "[service] no supported entrypoint found (run.py/app.py/main.py/server.py)"
+        cat > "${STATE_FILE}" <<EOF
 status=failed
 success=false
 git_status=${GIT_STATUS}
@@ -487,9 +523,12 @@ finished_at=$(utc_now)
 before_commit=${BEFORE_COMMIT}
 after_commit=${AFTER_COMMIT}
 EOF
-      exit 0
+        exit 0
+      fi
     fi
 
+    START_WRAPPER="$(service_wrapper_start_path "${SERVICE_NAME}")"
+    STOP_WRAPPER="$(service_wrapper_stop_path "${SERVICE_NAME}")"
     SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
     SERVICE_DROPIN_DIR="/etc/systemd/system/${SERVICE_NAME}.d"
     SERVICE_DROPIN_FILE="${SERVICE_DROPIN_DIR}/10-deviceplayer-permissions.conf"
@@ -514,7 +553,70 @@ EOF
     echo "[env] DEVICEPLAYER_PORTAL_PLAYER_SOURCE=${PORTAL_PLAYER_SOURCE_PATH}"
     echo "[env] DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}"
 
-    cat > "${SERVICE_FILE}" <<EOF
+    if [[ "${SCRIPT_MANAGED}" == "true" ]]; then
+      cat > "${START_WRAPPER}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "${REPO_DIR}"
+exec /usr/bin/env bash "${START_SCRIPT}"
+EOF
+      chmod 0755 "${START_WRAPPER}" || true
+
+      if [[ -f "${STOP_SCRIPT}" ]]; then
+        cat > "${STOP_WRAPPER}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "${REPO_DIR}"
+exec /usr/bin/env bash "${STOP_SCRIPT}"
+EOF
+      else
+        cat > "${STOP_WRAPPER}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+      fi
+      chmod 0755 "${STOP_WRAPPER}" || true
+    else
+      cat > "${START_WRAPPER}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "${REPO_DIR}"
+exec "${VENV_DIR}/bin/python" "${APP_ENTRY}"
+EOF
+      chmod 0755 "${START_WRAPPER}" || true
+      cat > "${STOP_WRAPPER}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+      chmod 0755 "${STOP_WRAPPER}" || true
+    fi
+
+    if [[ "${SCRIPT_MANAGED}" == "true" ]]; then
+      cat > "${SERVICE_FILE}" <<EOF
+[Unit]
+Description=Joormann Media Managed Service (${SERVICE_NAME})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=${SERVICE_USER}
+Group=${SERVICE_GROUP}
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=-${ENV_FILE}
+ExecStart=${START_WRAPPER}
+ExecStop=${STOP_WRAPPER}
+TimeoutStartSec=0
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    else
+      cat > "${SERVICE_FILE}" <<EOF
 [Unit]
 Description=Joormann Media Managed Service (${SERVICE_NAME})
 After=network-online.target
@@ -530,13 +632,14 @@ Environment=SDL_AUDIODRIVER=dummy
 Environment=DEVICEPLAYER_MANIFEST_PATH=
 Environment=DEVICEPLAYER_STORAGE_ROOT=
 Environment=DEVICEPLAYER_PORTAL_PLAYER_SOURCE=${PORTAL_PLAYER_SOURCE_PATH}
-ExecStart=${VENV_DIR}/bin/python ${APP_ENTRY}
+ExecStart=${START_WRAPPER}
 Restart=always
 RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
 EOF
+    fi
     chmod 0644 "${SERVICE_FILE}" || true
 
     SUPP_GROUPS="$(service_supplementary_groups)"
