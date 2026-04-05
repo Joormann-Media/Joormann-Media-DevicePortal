@@ -4462,6 +4462,10 @@
       const user = escapeHtml(String(item.service_user || "-"));
       const useService = item.use_service !== false;
       const autostart = item.autostart !== false;
+      const status = (item.service_status && typeof item.service_status === "object") ? item.service_status : {};
+      const serviceInstalled = status.use_service === false ? "-" : (status.service_installed ? "ja" : "nein");
+      const serviceRunning = status.use_service === false ? "-" : (status.service_running ? "ja" : "nein");
+      const serviceAutostart = status.use_service === false ? "-" : (status.service_enabled ? "ja" : "nein");
       const linkHtml = repoLinkRaw
         ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
         : "-";
@@ -4474,6 +4478,9 @@
           <td>${service}</td>
           <td>${user}</td>
           <td>${autostart ? "aktiv" : "aus"}</td>
+          <td>${serviceAutostart}</td>
+          <td>${serviceInstalled}</td>
+          <td>${serviceRunning}</td>
           <td>
             <div class="d-flex flex-wrap gap-1">
               <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="load" data-id="${escapeHtml(repoId)}">Laden</button>
@@ -4488,7 +4495,7 @@
         </tr>
       `;
     }).join("");
-    host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Installationspfad</th><th>Service-Modus</th><th>Service</th><th>User</th><th>Autostart</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Installationspfad</th><th>Service-Modus</th><th>Service</th><th>User</th><th>Autostart (Config)</th><th>Autostart (System)</th><th>Installiert</th><th>Läuft</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function renderAutodiscoverServices(items = []) {
@@ -4530,6 +4537,7 @@
     });
     const repos = ((((payload || {}).data || {}).repos) || []);
     renderManagedRepos(repos);
+    await refreshManagedRepos();
     toast("Autodiscover-Service übernommen", "success");
   }
 
@@ -4551,6 +4559,7 @@
     });
     const repos = ((((payload || {}).data || {}).repos) || []);
     renderManagedRepos(repos);
+    await refreshManagedRepos();
     setManagedRepoFormValues({});
     toast("Zusätzliches Repo gespeichert", "success");
   }
@@ -4571,6 +4580,7 @@
     });
     const repos = ((((payload || {}).data || {}).repos) || []);
     renderManagedRepos(repos);
+    await refreshManagedRepos();
     const form = getManagedRepoFormValues();
     if (form.id && form.id === String(repoId || "").trim()) {
       setManagedRepoFormValues({});
@@ -4631,6 +4641,10 @@
     put("managed-repo-details-install-dir", target.install_dir || "-");
     put("managed-repo-details-service", target.service_name || "-");
     put("managed-repo-details-user", target.service_user || "-");
+    const svc = (target.service_status && typeof target.service_status === "object") ? target.service_status : {};
+    put("managed-repo-details-service-installed", target.use_service === false ? "-" : (svc.service_installed ? "ja" : "nein"));
+    put("managed-repo-details-service-running", target.use_service === false ? "-" : (svc.service_running ? "ja" : "nein"));
+    put("managed-repo-details-service-autostart", target.use_service === false ? "-" : (svc.service_enabled ? "ja" : "nein"));
     put("managed-repo-details-api-base", target.api_base_url || "-");
     put("managed-repo-details-health-url", target.health_url || "-");
     put("managed-repo-details-port", target.service_port ?? "-");

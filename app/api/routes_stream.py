@@ -997,10 +997,57 @@ def _path_browser_resolve(raw_path: str, roots: list[Path]) -> tuple[Path, Path]
     return current, matched_root
 
 
+def _managed_repo_service_status(repo: dict) -> dict:
+    use_service = bool(repo.get('use_service', True))
+    repo_link = str(repo.get('repo_link') or '').strip()
+    service_name = str(repo.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+    if not use_service:
+        return {
+            'checked': True,
+            'use_service': False,
+            'service_name': service_name,
+            'service_installed': False,
+            'service_enabled': False,
+            'service_enabled_state': 'disabled',
+            'service_running': False,
+            'active_state': 'inactive',
+            'substate': 'not-applicable',
+        }
+    try:
+        payload = player_service_action('status', service_name)
+        return {
+            'checked': True,
+            'use_service': True,
+            'service_name': service_name,
+            'service_installed': bool(payload.get('service_installed')),
+            'service_enabled': bool(payload.get('service_enabled')),
+            'service_enabled_state': str(payload.get('service_enabled_state') or ''),
+            'service_running': bool(payload.get('active')),
+            'active_state': str(payload.get('active_state') or ''),
+            'substate': str(payload.get('substate') or ''),
+        }
+    except NetControlError as exc:
+        return {
+            'checked': False,
+            'use_service': True,
+            'service_name': service_name,
+            'service_installed': False,
+            'service_enabled': False,
+            'service_enabled_state': '',
+            'service_running': False,
+            'active_state': '',
+            'substate': '',
+            'error': exc.code,
+            'message': exc.detail or exc.message,
+        }
+
+
 @bp_stream.get('/api/stream/player/repos')
 def api_stream_player_repos_get():
     cfg = ensure_config()
     repos = sorted(_managed_repos_from_config(cfg), key=lambda item: str(item.get('name') or '').lower())
+    for item in repos:
+        item['service_status'] = _managed_repo_service_status(item)
     return jsonify(ok=True, data={'repos': repos})
 
 

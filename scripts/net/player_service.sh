@@ -18,16 +18,21 @@ if ! command -v systemctl >/dev/null 2>&1; then
 fi
 
 load_state="$(systemctl show "${SERVICE_NAME}" --property=LoadState --value 2>/dev/null || true)"
+installed="true"
 if [[ -z "${load_state}" || "${load_state}" == "not-found" ]]; then
-  emit "success" "false"
-  emit "code" "service_not_found"
-  emit "message" "Service not found"
-  emit "service_name" "${SERVICE_NAME}"
-  exit 4
+  installed="false"
 fi
 
 case "${ACTION}" in
   start|stop|restart)
+    if [[ "${installed}" != "true" ]]; then
+      emit "success" "false"
+      emit "code" "service_not_found"
+      emit "message" "Service not found"
+      emit "service_name" "${SERVICE_NAME}"
+      emit "service_installed" "false"
+      exit 4
+    fi
     if ! systemctl "${ACTION}" "${SERVICE_NAME}" >/dev/null 2>&1; then
       emit "success" "false"
       emit "code" "service_action_failed"
@@ -49,14 +54,30 @@ esac
 
 active_state="$(systemctl show "${SERVICE_NAME}" --property=ActiveState --value 2>/dev/null || true)"
 substate="$(systemctl show "${SERVICE_NAME}" --property=SubState --value 2>/dev/null || true)"
+enabled_state="$(systemctl is-enabled "${SERVICE_NAME}" 2>/dev/null || true)"
 active="false"
 if [[ "${active_state}" == "active" ]]; then
   active="true"
+fi
+enabled="false"
+if [[ "${enabled_state}" == "enabled" || "${enabled_state}" == "static" || "${enabled_state}" == "indirect" ]]; then
+  enabled="true"
+fi
+
+if [[ "${installed}" != "true" ]]; then
+  active_state="not-found"
+  substate="not-found"
+  enabled_state="not-found"
+  active="false"
+  enabled="false"
 fi
 
 emit "success" "true"
 emit "service_name" "${SERVICE_NAME}"
 emit "action" "${ACTION}"
+emit "service_installed" "${installed}"
+emit "service_enabled" "${enabled}"
+emit "service_enabled_state" "${enabled_state}"
 emit "active" "${active}"
 emit "active_state" "${active_state}"
 emit "substate" "${substate}"

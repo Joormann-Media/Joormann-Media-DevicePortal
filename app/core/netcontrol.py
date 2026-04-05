@@ -1650,7 +1650,11 @@ def player_service_action(action: str, service_name: str = "joormann-media-devic
         "success": parsed.get("success", "true").lower() == "true",
         "action": parsed.get("action", requested),
         "service_name": parsed.get("service_name", service),
+        "service_installed": parsed.get("service_installed", "true").lower() == "true",
+        "service_enabled": parsed.get("service_enabled", "false").lower() == "true",
+        "service_enabled_state": parsed.get("service_enabled_state", ""),
         "active": parsed.get("active", "").lower() == "true",
+        "active_state": parsed.get("active_state", ""),
         "substate": parsed.get("substate", ""),
         "message": parsed.get("message", "Player service action processed"),
     }
