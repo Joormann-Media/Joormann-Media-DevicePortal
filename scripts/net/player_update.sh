@@ -333,7 +333,14 @@ EOF
       exit 0
     else
       echo "[git] cloning ${REPO_REF} -> ${REPO_DIR}"
-      runuser -u "${SERVICE_USER}" -- bash -lc "git clone --depth=1 \"${REPO_REF}\" \"${REPO_DIR}\""
+      PARENT_DIR="$(dirname "${REPO_DIR}")"
+      if runuser -u "${SERVICE_USER}" -- test -w "${PARENT_DIR}"; then
+        runuser -u "${SERVICE_USER}" -- bash -lc "git clone --depth=1 \"${REPO_REF}\" \"${REPO_DIR}\""
+      else
+        echo "[git] parent not writable for ${SERVICE_USER}, cloning with root and fixing ownership"
+        git clone --depth=1 "${REPO_REF}" "${REPO_DIR}"
+        chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${REPO_DIR}" || true
+      fi
       CLONE_RC=$?
       if [[ ${CLONE_RC} -ne 0 ]]; then
         echo "[git] clone failed rc=${CLONE_RC}"
