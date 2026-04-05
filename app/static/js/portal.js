@@ -4464,7 +4464,9 @@
       const autostart = item.autostart !== false;
       const status = (item.service_status && typeof item.service_status === "object") ? item.service_status : {};
       const serviceInstalled = status.use_service === false ? "-" : (status.service_installed ? "ja" : "nein");
-      const serviceRunning = status.use_service === false ? "-" : (status.service_running ? "ja" : "nein");
+      const serviceRunning = status.use_service === false
+        ? (status.runtime_reachable ? "ja" : "nein")
+        : (status.service_running ? "ja" : "nein");
       const serviceAutostart = status.use_service === false ? "-" : (status.service_enabled ? "ja" : "nein");
       const linkHtml = repoLinkRaw
         ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
@@ -4643,7 +4645,9 @@
     put("managed-repo-details-user", target.service_user || "-");
     const svc = (target.service_status && typeof target.service_status === "object") ? target.service_status : {};
     put("managed-repo-details-service-installed", target.use_service === false ? "-" : (svc.service_installed ? "ja" : "nein"));
-    put("managed-repo-details-service-running", target.use_service === false ? "-" : (svc.service_running ? "ja" : "nein"));
+    put("managed-repo-details-service-running", target.use_service === false
+      ? (svc.runtime_reachable ? "ja (Health)" : "nein")
+      : (svc.service_running ? "ja" : "nein"));
     put("managed-repo-details-service-autostart", target.use_service === false ? "-" : (svc.service_enabled ? "ja" : "nein"));
     put("managed-repo-details-api-base", target.api_base_url || "-");
     put("managed-repo-details-health-url", target.health_url || "-");

@@ -998,6 +998,28 @@ def _path_browser_resolve(raw_path: str, roots: list[Path]) -> tuple[Path, Path]
 
 
 def _managed_repo_service_status(repo: dict) -> dict:
+    def _probe_runtime_health(target: dict) -> dict:
+        urls: list[str] = []
+        health_url = str(target.get('health_url') or '').strip()
+        api_base_url = str(target.get('api_base_url') or '').strip().rstrip('/')
+        if health_url:
+            urls.append(health_url)
+        if api_base_url:
+            urls.append(f'{api_base_url}/health')
+        checked: list[str] = []
+        for url in urls:
+            if not url:
+                continue
+            checked.append(url)
+            try:
+                resp = requests.get(url, timeout=1.5)
+                if 200 <= int(resp.status_code) < 500:
+                    return {'reachable': True, 'url': url, 'checked_urls': checked}
+            except Exception:
+                continue
+        return {'reachable': False, 'url': checked[0] if checked else '', 'checked_urls': checked}
+
+    runtime = _probe_runtime_health(repo)
     use_service = bool(repo.get('use_service', True))
     repo_link = str(repo.get('repo_link') or '').strip()
     service_name = str(repo.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
@@ -1009,22 +1031,30 @@ def _managed_repo_service_status(repo: dict) -> dict:
             'service_installed': False,
             'service_enabled': False,
             'service_enabled_state': 'disabled',
-            'service_running': False,
+            'service_running': bool(runtime.get('reachable')),
             'active_state': 'inactive',
             'substate': 'not-applicable',
+            'runtime_reachable': bool(runtime.get('reachable')),
+            'runtime_url': str(runtime.get('url') or ''),
         }
     try:
         payload = player_service_action('status', service_name)
+        service_installed = bool(payload.get('service_installed'))
+        service_running = bool(payload.get('active'))
+        if not service_installed and not service_running:
+            service_running = bool(runtime.get('reachable'))
         return {
             'checked': True,
             'use_service': True,
             'service_name': service_name,
-            'service_installed': bool(payload.get('service_installed')),
+            'service_installed': service_installed,
             'service_enabled': bool(payload.get('service_enabled')),
             'service_enabled_state': str(payload.get('service_enabled_state') or ''),
-            'service_running': bool(payload.get('active')),
+            'service_running': service_running,
             'active_state': str(payload.get('active_state') or ''),
             'substate': str(payload.get('substate') or ''),
+            'runtime_reachable': bool(runtime.get('reachable')),
+            'runtime_url': str(runtime.get('url') or ''),
         }
     except NetControlError as exc:
         return {
@@ -1034,11 +1064,13 @@ def _managed_repo_service_status(repo: dict) -> dict:
             'service_installed': False,
             'service_enabled': False,
             'service_enabled_state': '',
-            'service_running': False,
+            'service_running': bool(runtime.get('reachable')),
             'active_state': '',
             'substate': '',
             'error': exc.code,
             'message': exc.detail or exc.message,
+            'runtime_reachable': bool(runtime.get('reachable')),
+            'runtime_url': str(runtime.get('url') or ''),
         }
 
 
