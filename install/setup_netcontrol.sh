@@ -21,8 +21,50 @@ if [[ ! -d "$SRC_DIR" ]]; then
   exit 2
 fi
 
-apt-get update
-apt-get install -y network-manager rfkill bluez iproute2 isc-dhcp-client pamtester ntfs-3g exfatprogs
+export DEBIAN_FRONTEND=noninteractive
+if ! apt-get update; then
+  echo "WARN: apt-get update returned errors (likely 3rd-party repos). Continuing with available package indexes." >&2
+fi
+
+pkg_available() {
+  local pkg="$1"
+  apt-cache show "$pkg" >/dev/null 2>&1
+}
+
+BASE_PKGS=(
+  network-manager
+  rfkill
+  bluez
+  iproute2
+  isc-dhcp-client
+  pamtester
+  ntfs-3g
+  exfatprogs
+  pulseaudio-utils
+  pipewire-bin
+  pipewire-pulse
+  pipewire-alsa
+  wireplumber
+  alsa-utils
+  mpv
+  espeak
+  libttspico-utils
+)
+
+# Distro-dependent audio plugin package names.
+OPTIONAL_PKGS=()
+for candidate in libspa-0.2-modules libspa-0.2-alsa pipewire-audio-client-libraries; do
+  if pkg_available "$candidate"; then
+    OPTIONAL_PKGS+=("$candidate")
+  fi
+done
+
+INSTALL_PKGS=("${BASE_PKGS[@]}" "${OPTIONAL_PKGS[@]}")
+
+if ! apt-get install -y "${INSTALL_PKGS[@]}"; then
+  echo "WARN: apt-get install failed on first try, retrying with --fix-missing." >&2
+  apt-get install -y --fix-missing "${INSTALL_PKGS[@]}"
+fi
 
 install -d -m 0755 "$DST_DIR"
 install -m 0750 "$SRC_DIR/wifi_toggle.sh" "$DST_DIR/wifi_toggle.sh"
@@ -55,6 +97,7 @@ install -m 0750 "$SRC_DIR/portal_restart.sh" "$DST_DIR/portal_restart.sh"
 install -m 0750 "$SRC_DIR/portal_service_install.sh" "$DST_DIR/portal_service_install.sh"
 install -m 0750 "$SRC_DIR/player_update.sh" "$DST_DIR/player_update.sh"
 install -m 0750 "$SRC_DIR/player_service.sh" "$DST_DIR/player_service.sh"
+install -m 0750 "$SRC_DIR/player_service_install.sh" "$DST_DIR/player_service_install.sh"
 install -m 0750 "$SRC_DIR/spotify_connect_service.sh" "$DST_DIR/spotify_connect_service.sh"
 install -m 0750 "$SRC_DIR/spotify_connect_install.sh" "$DST_DIR/spotify_connect_install.sh"
 install -m 0750 "$SRC_DIR/tailscale_dns_fix.sh" "$DST_DIR/tailscale_dns_fix.sh"
@@ -71,9 +114,29 @@ for grp in video render input audio; do
   fi
 done
 
+# Ensure user-level audio stack can run even without an active desktop login.
+if command -v loginctl >/dev/null 2>&1; then
+  loginctl enable-linger "$SERVICE_USER" >/dev/null 2>&1 || true
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+  SERVICE_UID="$(id -u "$SERVICE_USER" 2>/dev/null || echo "")"
+  if [[ -n "${SERVICE_UID}" ]]; then
+    USER_RUNTIME_DIR="/run/user/${SERVICE_UID}"
+    runuser -u "$SERVICE_USER" -- env \
+      XDG_RUNTIME_DIR="${USER_RUNTIME_DIR}" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=${USER_RUNTIME_DIR}/bus" \
+      systemctl --user daemon-reload >/dev/null 2>&1 || true
+    runuser -u "$SERVICE_USER" -- env \
+      XDG_RUNTIME_DIR="${USER_RUNTIME_DIR}" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=${USER_RUNTIME_DIR}/bus" \
+      systemctl --user enable --now wireplumber.service pipewire.service pipewire-pulse.service >/dev/null 2>&1 || true
+  fi
+fi
+
 cat > "$SUDOERS_FILE" <<SUDO
 Defaults:${SERVICE_USER} !requiretty
-${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/bluetooth_ctl.sh *, ${DST_DIR}/bluetooth_pairing_feedback.sh *, ${DST_DIR}/bluetooth_pairing_session.sh *, ${DST_DIR}/bluetooth_pairing_action.sh *, ${DST_DIR}/bluetooth_paired_devices.sh *, ${DST_DIR}/bluetooth_audio.py *, ${DST_DIR}/audio_output_ctl.py *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_format.sh *, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/portal_restart.sh *, ${DST_DIR}/portal_service_install.sh *, ${DST_DIR}/player_update.sh *, ${DST_DIR}/player_service.sh *, ${DST_DIR}/spotify_connect_service.sh *, ${DST_DIR}/spotify_connect_install.sh *, ${DST_DIR}/tailscale_dns_fix.sh *, ${DST_DIR}/hostname_rename.sh *, ${DST_DIR}/local_auth.sh *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/bluetooth_ctl.sh *, ${DST_DIR}/bluetooth_pairing_feedback.sh *, ${DST_DIR}/bluetooth_pairing_session.sh *, ${DST_DIR}/bluetooth_pairing_action.sh *, ${DST_DIR}/bluetooth_paired_devices.sh *, ${DST_DIR}/bluetooth_audio.py *, ${DST_DIR}/audio_output_ctl.py *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_format.sh *, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/portal_restart.sh *, ${DST_DIR}/portal_service_install.sh *, ${DST_DIR}/player_update.sh *, ${DST_DIR}/player_service.sh *, ${DST_DIR}/player_service_install.sh *, ${DST_DIR}/spotify_connect_service.sh *, ${DST_DIR}/spotify_connect_install.sh *, ${DST_DIR}/tailscale_dns_fix.sh *, ${DST_DIR}/hostname_rename.sh *, ${DST_DIR}/local_auth.sh *
 SUDO
 
 chmod 0440 "$SUDOERS_FILE"

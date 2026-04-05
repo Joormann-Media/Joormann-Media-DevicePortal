@@ -32,12 +32,28 @@
     <section class="portal-hero p-4 p-lg-5 mb-4">
       <div class="row align-items-center g-4">
         <div class="col-lg-8">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <img src="{{ url_for('static', filename='Joormann_Media_Logo2024.png') }}" alt="Logo" style="height:28px; width:auto;">
-            <span class="badge rounded-pill text-bg-dark">DevicePortal</span>
+          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <img src="{{ url_for('static', filename='Joormann_Media_Logo2024.png') }}"
+                alt="Logo"
+                style="height:30px; width:auto;">
+
+            <span class="badge rounded-pill px-3 py-2 text-bg-dark shadow-sm">
+              Jarvis Node Control Hub
+            </span>
+
+            <span class="badge rounded-pill px-3 py-2 bg-primary-subtle text-primary-emphasis border border-primary-subtle">
+              Unified Node &amp; AI Control Platform
+            </span>
           </div>
-          <h1 class="h3 mb-2">Device Management Console</h1>
-          <p class="portal-subtitle mb-0">SaaS-artige Steuerzentrale für Status, Panel-Linking und Netzwerkkontrolle auf Raspberry Pi Geräten.</p>
+
+          <h1 class="h3 mb-2 fw-semibold">
+            Kontrolle über Nodes, Services und AI – zentral und in Echtzeit
+          </h1>
+
+          <p class="portal-subtitle mb-0 text-secondary">
+            Verwalte Raspberry Pi, Server und Workstations in einem System. Überwache Runtime-Status,
+            steuere Services und orchestriere AI-Workflows plattformunabhängig mit voller Kontrolle über dein Netzwerk.
+          </p>
         </div>
         <div class="col-lg-4 text-lg-end">
           <div class="d-flex justify-content-lg-end justify-content-start align-items-center gap-2 mb-2">
@@ -80,12 +96,12 @@
     <ul class="nav nav-tabs" id="portalTabs" role="tablist">
       <li class="nav-item" role="presentation">
         <button class="nav-link active" id="status-tab" data-bs-toggle="tab" data-bs-target="#status-pane" type="button" role="tab">
-          <i class="bi bi-activity me-1"></i>Status & Link
+          <i class="bi bi-activity me-1"></i>Status
         </button>
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="software-tab" data-bs-toggle="tab" data-bs-target="#software-pane" type="button" role="tab">
-          <i class="bi bi-box-seam me-1"></i>Software Übersicht
+          <i class="bi bi-box-seam me-1"></i>Software
         </button>
       </li>
       <li class="nav-item" role="presentation">
@@ -95,7 +111,7 @@
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="network-tab" data-bs-toggle="tab" data-bs-target="#network-pane" type="button" role="tab">
-          <i class="bi bi-router me-1"></i>Netzwerk & WLAN
+          <i class="bi bi-router me-1"></i>Lan & WLan
         </button>
       </li>
       <li class="nav-item" role="presentation">
@@ -111,6 +127,11 @@
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="audio-tab" data-bs-toggle="tab" data-bs-target="#audio-pane" type="button" role="tab">
           <i class="bi bi-volume-up me-1"></i>Audio
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="bluetooth-tab" data-bs-toggle="tab" data-bs-target="#bluetooth-pane" type="button" role="tab">
+          <i class="bi bi-bluetooth me-1"></i>Bluetooth
         </button>
       </li>
       <li class="nav-item" role="presentation">
@@ -498,58 +519,6 @@
                 <dt>DNS</dt><dd id="net-dns">-</dd>
                 <dt>Tailscale</dt><dd id="net-tailscale">-</dd>
               </dl>
-            </div>
-          </div>
-
-          <div class="col-12">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h2 class="h5 mb-0">Bluetooth Scan / Pairing</h2>
-                <span id="bt-enabled-badge" class="badge text-bg-secondary">-</span>
-              </div>
-              <dl class="portal-kv mb-3">
-                <dt>Bluetooth</dt><dd id="bt-enabled">-</dd>
-                <dt>Sichtbar</dt><dd id="bt-discoverable">-</dd>
-                <dt>Pairing</dt><dd id="bt-pairable">-</dd>
-                <dt>Sichtbar Timeout</dt><dd id="bt-discoverable-timeout">-</dd>
-                <dt>Pairing Timeout</dt><dd id="bt-pairable-timeout">-</dd>
-                <dt>Tailscale</dt><dd id="radio-tailscale">-</dd>
-              </dl>
-              <div class="row g-2 mb-3 align-items-end">
-                <div class="col-12 col-md-6">
-                  <label class="form-label form-label-sm mb-1" for="bt-pairing-timeout-target">Pairing-Timeout (Sek.)</label>
-                  <input id="bt-pairing-timeout-target" type="number" min="30" max="900" step="1" class="form-control form-control-sm" value="180">
-                </div>
-                <div class="col-12 col-md-3">
-                  <label class="form-label form-label-sm mb-1" for="bt-scan-duration">Scan (Sek.)</label>
-                  <input id="bt-scan-duration" type="number" min="4" max="30" step="1" class="form-control form-control-sm" value="8">
-                </div>
-                <div class="col-12 col-md-3">
-                  <div class="small text-secondary">Beim Start wird Bluetooth automatisch aktiviert, sichtbar und pairable gesetzt.</div>
-                </div>
-              </div>
-              <div class="d-flex flex-wrap gap-2 mb-3">
-                <button id="btn-bt-toggle" class="btn btn-outline-secondary btn-sm">Bluetooth ein/aus</button>
-                <button id="btn-bt-pairing-start" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#btPairingModal">Pairing starten</button>
-                <button id="btn-bt-scan" class="btn btn-outline-primary btn-sm">Scan starten</button>
-                <button id="btn-system-refresh-network-radio" class="btn btn-outline-secondary btn-sm">Netzwerkdaten aktualisieren</button>
-              </div>
-              <div class="small text-uppercase text-secondary mb-1">Gefundene Geräte (Scan)</div>
-              <div id="bt-scan-results" class="list-group list-group-flush small">
-                <div class="text-secondary">Noch kein Scan ausgeführt.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-12">
-            <div class="portal-card p-3 h-100">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h2 class="h5 mb-0">Bekannte / gekoppelte Bluetooth-Geräte</h2>
-                <button id="btn-bt-devices-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
-              </div>
-              <div id="bt-known-devices-list" class="list-group list-group-flush small">
-                <div class="text-secondary">Keine Bluetooth-Geräte gefunden.</div>
-              </div>
             </div>
           </div>
 
@@ -1290,6 +1259,61 @@
         </div>
       </div>
 
+      <div class="tab-pane fade" id="bluetooth-pane" role="tabpanel" aria-labelledby="bluetooth-tab">
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">Bluetooth Scan / Pairing</h2>
+                <span id="bt-enabled-badge" class="badge text-bg-secondary">-</span>
+              </div>
+              <dl class="portal-kv mb-3">
+                <dt>Bluetooth</dt><dd id="bt-enabled">-</dd>
+                <dt>Sichtbar</dt><dd id="bt-discoverable">-</dd>
+                <dt>Pairing</dt><dd id="bt-pairable">-</dd>
+                <dt>Sichtbar Timeout</dt><dd id="bt-discoverable-timeout">-</dd>
+                <dt>Pairing Timeout</dt><dd id="bt-pairable-timeout">-</dd>
+                <dt>Tailscale</dt><dd id="radio-tailscale">-</dd>
+              </dl>
+              <div class="row g-2 mb-3 align-items-end">
+                <div class="col-12 col-md-6">
+                  <label class="form-label form-label-sm mb-1" for="bt-pairing-timeout-target">Pairing-Timeout (Sek.)</label>
+                  <input id="bt-pairing-timeout-target" type="number" min="30" max="900" step="1" class="form-control form-control-sm" value="180">
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label form-label-sm mb-1" for="bt-scan-duration">Scan (Sek.)</label>
+                  <input id="bt-scan-duration" type="number" min="4" max="30" step="1" class="form-control form-control-sm" value="8">
+                </div>
+                <div class="col-12 col-md-3">
+                  <div class="small text-secondary">Beim Start wird Bluetooth automatisch aktiviert, sichtbar und pairable gesetzt.</div>
+                </div>
+              </div>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <button id="btn-bt-toggle" class="btn btn-outline-secondary btn-sm">Bluetooth ein/aus</button>
+                <button id="btn-bt-pairing-start" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#btPairingModal">Pairing starten</button>
+                <button id="btn-bt-scan" class="btn btn-outline-primary btn-sm">Scan starten</button>
+                <button id="btn-system-refresh-network-radio" class="btn btn-outline-secondary btn-sm">Netzwerkdaten aktualisieren</button>
+              </div>
+              <div class="small text-uppercase text-secondary mb-1">Gefundene Geräte (Scan)</div>
+              <div id="bt-scan-results" class="list-group list-group-flush small">
+                <div class="text-secondary">Noch kein Scan ausgeführt.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="portal-card p-3 h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">Bekannte / gekoppelte Bluetooth-Geräte</h2>
+                <button id="btn-bt-devices-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+              </div>
+              <div id="bt-known-devices-list" class="list-group list-group-flush small">
+                <div class="text-secondary">Keine Bluetooth-Geräte gefunden.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="tab-pane fade" id="system-pane" role="tabpanel" aria-labelledby="system-tab">
         <ul class="nav nav-pills nav-justified gap-2 mb-3 system-subtabs" id="systemSubTabs" role="tablist">
           <li class="nav-item" role="presentation">
@@ -1533,13 +1557,34 @@
                 <div class="portal-card p-4">
                   <h3 class="h6">Portal Update</h3>
                   <p class="text-secondary mb-3">Führt `git pull --ff-only`, `install/setup_netcontrol.sh` und einen Service-Neustart aus.</p>
+                  <div id="system-portal-status-badges" class="d-flex flex-wrap gap-1 mb-2"></div>
+                  <div class="row g-2 mb-3">
+                    <div class="col-12">
+                      <label class="form-label form-label-sm mb-1">Repo</label>
+                      <div id="system-portal-repo" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label form-label-sm mb-1">Installationspfad</label>
+                      <div id="system-portal-install-dir" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
+                    </div>
+                    <div class="col-12 col-lg-8">
+                      <label class="form-label form-label-sm mb-1">Service</label>
+                      <div id="system-portal-service-name" class="form-control form-control-sm bg-body-tertiary">device-portal.service</div>
+                    </div>
+                    <div class="col-12 col-lg-4">
+                      <label class="form-label form-label-sm mb-1">User</label>
+                      <div id="system-portal-service-user" class="form-control form-control-sm bg-body-tertiary">-</div>
+                    </div>
+                  </div>
                   <div class="d-flex flex-wrap gap-2">
                     <button id="btn-system-update-portal" class="btn btn-outline-primary btn-sm">Update starten</button>
                     <button id="btn-system-install-portal-service" class="btn btn-outline-secondary btn-sm">Service installieren / umschalten</button>
+                    <button id="btn-system-portal-restart-now" class="btn btn-outline-secondary btn-sm">Portal Restart</button>
                   </div>
                   <hr class="my-3">
                   <h3 class="h6 mb-2">Player Update</h3>
                   <div class="small text-secondary mb-2">Player Repo konfigurieren und Install/Update direkt ausführen.</div>
+                  <div id="system-player-status-badges" class="d-flex flex-wrap gap-1 mb-2"></div>
                   <div class="row g-2 mb-2">
                     <div class="col-12 col-lg-7">
                       <label for="stream-player-repo-dir" class="form-label form-label-sm mb-1">Player Repo Link (URL oder lokaler Pfad)</label>
@@ -1554,14 +1599,36 @@
                       <input id="stream-player-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
                     </div>
                   </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-12 col-lg-7">
+                      <label class="form-label form-label-sm mb-1">Repo</label>
+                      <div id="system-player-repo" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
+                    </div>
+                    <div class="col-12 col-lg-5">
+                      <label class="form-label form-label-sm mb-1">Installationspfad</label>
+                      <div id="system-player-install-dir" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
+                    </div>
+                    <div class="col-12 col-lg-8">
+                      <label class="form-label form-label-sm mb-1">Service</label>
+                      <div id="system-player-service-name-view" class="form-control form-control-sm bg-body-tertiary">-</div>
+                    </div>
+                    <div class="col-12 col-lg-4">
+                      <label class="form-label form-label-sm mb-1">User</label>
+                      <div id="system-player-service-user-view" class="form-control form-control-sm bg-body-tertiary">-</div>
+                    </div>
+                  </div>
                   <div class="d-flex flex-wrap gap-2 mb-0">
                     <button id="btn-stream-player-repo-save" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
                     <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
                     <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
+                    <button id="btn-system-player-start" class="btn btn-outline-success btn-sm">Start</button>
+                    <button id="btn-system-player-stop" class="btn btn-outline-warning btn-sm">Stop</button>
+                    <button id="btn-system-player-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
+                    <button id="btn-system-player-status" class="btn btn-outline-secondary btn-sm">Status</button>
                   </div>
                   <hr class="my-3">
-                  <h3 class="h6 mb-2">Weitere Repos</h3>
-                  <div class="small text-secondary mb-2">Zusätzliche Repos hinterlegen und bei Bedarf direkt installieren/updaten.</div>
+                  <div id="extra-repos-list" class="small text-secondary mb-3">Keine zusätzlichen Repos hinterlegt.</div>
+                  <h4 class="h6 mb-2">Repo hinzufügen / bearbeiten</h4>
                   <input id="extra-repo-id" type="hidden" value="">
                   <div class="row g-2 mb-2">
                     <div class="col-12 col-lg-3">
@@ -1604,7 +1671,6 @@
                     <button id="btn-extra-repo-save" class="btn btn-outline-secondary btn-sm">Repo hinzufügen</button>
                     <button id="btn-extra-repo-refresh" class="btn btn-outline-secondary btn-sm">Liste aktualisieren</button>
                   </div>
-                  <div id="extra-repos-list" class="small text-secondary">Keine zusätzlichen Repos hinterlegt.</div>
                   <hr class="my-3">
                   <div class="d-flex justify-content-between align-items-center mb-2">
                     <h3 class="h6 mb-0">Autodiscover (LAN)</h3>

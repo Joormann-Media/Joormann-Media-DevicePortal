@@ -753,12 +753,45 @@ def api_stream_player_service_install():
 def api_stream_player_repo_get():
     cfg = ensure_config()
     repo_link = str(cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '')
+    service_name = str(cfg.get('player_service_name') or STREAM_SERVICE_NAME)
+    service_user = str(cfg.get('player_service_user') or '')
+    install_dir = str(cfg.get('player_install_dir') or '').strip()
+
+    if not install_dir:
+        raw_repos = cfg.get('managed_install_repos')
+        repos = raw_repos if isinstance(raw_repos, list) else []
+        normalized_repo_link = repo_link.strip().lower()
+        normalized_service = service_name.strip().lower()
+        matched = None
+        for item in repos:
+            if not isinstance(item, dict):
+                continue
+            item_link = str(item.get('repo_link') or item.get('repo_dir') or '').strip().lower()
+            item_service = str(item.get('service_name') or '').strip().lower()
+            if normalized_repo_link and item_link and item_link == normalized_repo_link:
+                matched = item
+                break
+            if normalized_service and item_service and item_service == normalized_service:
+                matched = item
+                break
+        if isinstance(matched, dict):
+            install_dir = str(matched.get('install_dir') or '').strip()
+            if not service_user:
+                service_user = str(matched.get('service_user') or '').strip()
+            if install_dir:
+                cfg['player_install_dir'] = install_dir
+                if service_user:
+                    cfg['player_service_user'] = service_user
+                cfg['updated_at'] = utc_now()
+                write_json(CONFIG_PATH, cfg, mode=0o600)
+
     return jsonify(
         ok=True,
         config={
             'player_repo_link': repo_link,
-            'player_service_name': str(cfg.get('player_service_name') or STREAM_SERVICE_NAME),
-            'player_service_user': str(cfg.get('player_service_user') or ''),
+            'player_service_name': service_name,
+            'player_service_user': service_user,
+            'player_install_dir': install_dir,
         },
     )
 
@@ -770,11 +803,13 @@ def api_stream_player_repo_set():
     repo_link = str(data.get('player_repo_link') or data.get('player_repo_dir') or '').strip()
     service_name = str(data.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
     service_user = str(data.get('player_service_user') or '').strip()
+    install_dir = str(data.get('player_install_dir') or '').strip()
 
     cfg['player_repo_link'] = repo_link
     cfg['player_repo_dir'] = repo_link
     cfg['player_service_name'] = service_name
     cfg['player_service_user'] = service_user
+    cfg['player_install_dir'] = install_dir
     cfg['updated_at'] = utc_now()
     ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok:
@@ -784,6 +819,7 @@ def api_stream_player_repo_set():
         'player_repo_link': repo_link,
         'player_service_name': service_name,
         'player_service_user': service_user,
+        'player_install_dir': install_dir,
     })
 
 
@@ -835,6 +871,8 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     last_seen_at = str(source.get('last_seen_at') or '').strip()
     tags_raw = source.get('tags') if isinstance(source.get('tags'), list) else []
     caps_raw = source.get('capabilities') if isinstance(source.get('capabilities'), list) else []
+    cached_status = source.get('service_status') if isinstance(source.get('service_status'), dict) else {}
+    cached_checked_at = str(source.get('service_status_checked_at') or '').strip()
     try:
         service_port = int(source.get('service_port')) if source.get('service_port') not in (None, '') else None
     except Exception:
@@ -842,6 +880,8 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     created_at = str(source.get('created_at') or '').strip()
     use_service = True if use_service_raw is None else bool(use_service_raw)
     autostart = True if autostart_raw is None else bool(autostart_raw)
+    if use_service and not service_name and repo_link:
+        service_name = _repo_default_service_name(repo_link)
 
     if not repo_id:
         seed = f"{name}|{repo_link}|{service_name}|{service_user}"
@@ -870,6 +910,8 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
         'last_seen_at': last_seen_at,
         'tags': [str(item).strip() for item in tags_raw if str(item).strip()],
         'capabilities': [str(item).strip() for item in caps_raw if str(item).strip()],
+        'service_status': cached_status,
+        'service_status_checked_at': cached_checked_at,
         'created_at': created_at,
         'updated_at': utc_now(),
     }
@@ -886,6 +928,22 @@ def _managed_repos_from_config(cfg: dict) -> list[dict]:
         if sanitized.get('repo_link'):
             repos.append(sanitized)
     return repos
+
+
+def _repo_identity_key(repo_link: str, install_dir: str = '') -> str:
+    link = str(repo_link or '').strip().lower()
+    install = str(install_dir or '').strip().lower()
+    return f'{link}|{install}'
+
+
+def _repo_matches(repo_link_a: str, install_dir_a: str, repo_link_b: str, install_dir_b: str) -> bool:
+    link_a = str(repo_link_a or '').strip().lower()
+    link_b = str(repo_link_b or '').strip().lower()
+    if not link_a or not link_b or link_a != link_b:
+        return False
+    dir_a = str(install_dir_a or '').strip().lower()
+    dir_b = str(install_dir_b or '').strip().lower()
+    return not dir_a or not dir_b or dir_a == dir_b
 
 
 def _is_private_remote(remote: str) -> bool:
@@ -1064,8 +1122,6 @@ def _managed_repo_service_status(repo: dict) -> dict:
         payload = player_service_action('status', service_name)
         service_installed = bool(payload.get('service_installed'))
         service_running = bool(payload.get('active'))
-        if not service_installed and not service_running:
-            service_running = bool(runtime.get('reachable'))
         return {
             'checked': True,
             'use_service': True,
@@ -1097,12 +1153,26 @@ def _managed_repo_service_status(repo: dict) -> dict:
         }
 
 
+def _is_truthy(value: str) -> bool:
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 @bp_stream.get('/api/stream/player/repos')
 def api_stream_player_repos_get():
     cfg = ensure_config()
-    repos = sorted(_managed_repos_from_config(cfg), key=lambda item: str(item.get('name') or '').lower())
+    live = _is_truthy(str(request.args.get('live') or ''))
+    repos = _managed_repos_from_config(cfg)
+    changed = False
     for item in repos:
-        item['service_status'] = _managed_repo_service_status(item)
+        if live:
+            item['service_status'] = _managed_repo_service_status(item)
+            item['service_status_checked_at'] = utc_now()
+            changed = True
+    if changed:
+        cfg['managed_install_repos'] = repos
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+    repos = sorted(repos, key=lambda item: str(item.get('name') or '').lower())
     return jsonify(ok=True, data={'repos': repos})
 
 
@@ -1187,7 +1257,19 @@ def api_autodiscover_services():
     cfg = ensure_config()
     raw = cfg.get('autodiscover_services')
     entries = raw if isinstance(raw, list) else []
-    normalized = [item for item in entries if isinstance(item, dict)]
+    managed_repos = _managed_repos_from_config(cfg)
+    normalized = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        discovered_link = str(item.get('repo_link') or '').strip()
+        discovered_dir = str(item.get('install_dir') or '').strip()
+        if any(
+            _repo_matches(discovered_link, discovered_dir, current.get('repo_link') or '', current.get('install_dir') or '')
+            for current in managed_repos
+        ):
+            continue
+        normalized.append(item)
     normalized = sorted(normalized, key=lambda row: str(row.get('last_seen_at') or row.get('updated_at') or ''), reverse=True)
     return jsonify(ok=True, data={'services': normalized})
 
@@ -1237,6 +1319,10 @@ def api_autodiscover_promote(service_id: str):
         repos.append(promoted)
 
     cfg['managed_install_repos'] = repos
+    cfg['autodiscover_services'] = [
+        item for item in discovered
+        if isinstance(item, dict) and str(item.get('id') or '').strip() != target_id
+    ]
     cfg['updated_at'] = utc_now()
     ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok:
@@ -1411,7 +1497,28 @@ def api_stream_player_repos_install_update(repo_id: str):
         status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
 
-    return jsonify(ok=True, data=payload)
+    effective_service_name = str(payload.get('service_name') or service_name).strip() or service_name
+    target['service_name'] = effective_service_name
+    target['service_user'] = str(payload.get('service_user') or service_user).strip() or service_user
+    target['install_dir'] = str(payload.get('install_dir') or install_dir).strip() or install_dir
+    target['use_service'] = bool(payload.get('use_service') if payload.get('use_service') is not None else use_service)
+    target['autostart'] = bool(payload.get('autostart') if payload.get('autostart') is not None else autostart)
+    target['updated_at'] = utc_now()
+    repos = [(_sanitize_managed_repo_entry(item) if str(item.get('id') or '').strip() == target_id else item) for item in repos]
+    cfg['managed_install_repos'] = repos
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    updated = next((item for item in repos if str(item.get('id') or '').strip() == target_id), _sanitize_managed_repo_entry(target))
+    updated_out = dict(updated)
+    updated_out['service_status'] = _managed_repo_service_status(updated_out)
+    updated_out['service_status_checked_at'] = utc_now()
+    payload_out = dict(payload)
+    payload_out['service_name'] = effective_service_name
+    payload_out['repo'] = updated_out
+    return jsonify(ok=True, data=payload_out)
 
 
 @bp_stream.post('/api/stream/player/repos/<repo_id>/service-autostart')
@@ -1430,6 +1537,7 @@ def api_stream_player_repos_service_autostart(repo_id: str):
     target = repos[idx]
     repo_link = str(target.get('repo_link') or '').strip()
     service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+    target['service_name'] = service_name
 
     try:
         payload = player_service_autostart(service_name=service_name, enabled=enabled)
@@ -1470,6 +1578,7 @@ def api_stream_player_repos_service_action(repo_id: str):
 
     repo_link = str(target.get('repo_link') or '').strip()
     service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+    target['service_name'] = service_name
     try:
         payload = player_service_action(action, service_name)
     except NetControlError as exc:
@@ -1507,6 +1616,7 @@ def api_stream_player_repos_uninstall(repo_id: str):
     install_dir = str(target.get('install_dir') or '').strip()
     service_user = str(target.get('service_user') or '').strip()
     service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+    target['service_name'] = service_name
 
     try:
         payload = player_uninstall(

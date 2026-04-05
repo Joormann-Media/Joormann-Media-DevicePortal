@@ -85,6 +85,12 @@ def _build_runtime_viewmodel() -> dict:
         )
     except NetControlError as exc:
         legacy["spotify_connect"] = {"ok": False, "error": exc.code, "detail": exc.detail or exc.message}
+    try:
+        cfg = ensure_config()
+        cached_summary = cfg.get("system_update_summary")
+        legacy["system_update_summary"] = cached_summary if isinstance(cached_summary, dict) else {}
+    except Exception:
+        legacy["system_update_summary"] = {}
 
     # DevicePortal classic UI expects these keys, even when empty.
     legacy.setdefault("software_requirements", {})

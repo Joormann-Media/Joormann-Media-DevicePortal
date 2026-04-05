@@ -56,7 +56,7 @@ active_state="$(systemctl show "${SERVICE_NAME}" --property=ActiveState --value 
 substate="$(systemctl show "${SERVICE_NAME}" --property=SubState --value 2>/dev/null || true)"
 enabled_state="$(systemctl is-enabled "${SERVICE_NAME}" 2>/dev/null || true)"
 active="false"
-if [[ "${active_state}" == "active" ]]; then
+if [[ "${active_state}" == "active" || "${active_state}" == "activating" || "${active_state}" == "reloading" ]]; then
   active="true"
 fi
 enabled="false"

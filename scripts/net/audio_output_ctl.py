@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import sys
 
 MAC_FROM_BLUEZ_RE = re.compile(r"bluez_output\.([0-9A-Fa-f_]{17})")
 MAC_RE = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
+TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 
 
 def _run(args: list[str], timeout: int = 12) -> tuple[int, str, str]:
@@ -21,8 +23,69 @@ def _has(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+def _user_runtime_env() -> dict[str, str]:
+    env = dict(os.environ)
+    uid = os.getuid()
+    runtime_dir = env.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}"
+    env["XDG_RUNTIME_DIR"] = runtime_dir
+    bus_path = f"{runtime_dir}/bus"
+    if os.path.exists(bus_path):
+        env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={bus_path}")
+    pulse_socket = f"{runtime_dir}/pulse/native"
+    if os.path.exists(pulse_socket):
+        env.setdefault("PULSE_SERVER", f"unix:{pulse_socket}")
+    return env
+
+
+def _run_env(args: list[str], timeout: int = 12, env: dict[str, str] | None = None) -> tuple[int, str, str]:
+    proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env)
+    return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+
+def _ensure_audio_runtime() -> None:
+    env = _user_runtime_env()
+    # Try to bring user audio stack online in headless/service sessions.
+    if _has("systemctl"):
+        _run_env(["systemctl", "--user", "start", "wireplumber.service"], timeout=4, env=env)
+        _run_env(["systemctl", "--user", "start", "pipewire.service"], timeout=4, env=env)
+        _run_env(["systemctl", "--user", "start", "pipewire-pulse.service"], timeout=4, env=env)
+    if _has("pulseaudio"):
+        _run_env(["pulseaudio", "--start"], timeout=4, env=env)
+
+
 def _norm(value: str) -> str:
     return (value or "").strip().lower()
+
+
+def _token_set(value: str) -> set[str]:
+    raw = _norm(value)
+    if not raw:
+        return set()
+    return {part for part in TOKEN_SPLIT_RE.split(raw) if part}
+
+
+def _is_hdmi_like(sink_name: str, sink_desc: str) -> bool:
+    token = f"{sink_name} {sink_desc}".lower()
+    if "hdmi" in token or "displayport" in token:
+        return True
+    tokens = _token_set(token)
+    if {"dp", "monitor"} & tokens:
+        return True
+    # PipeWire/Pulse names often encode HDMI as ...hdmi-stereo...
+    if "hdmistereo" in token.replace("-", "").replace("_", ""):
+        return True
+    return False
+
+
+def _is_speaker_like(sink_name: str, sink_desc: str) -> bool:
+    token = f"{sink_name} {sink_desc}".lower()
+    if "auto_null" in token or "null output" in token or "dummy output" in token:
+        return False
+    if any(marker in token for marker in ("analog", "speaker", "headphone", "headset", "lineout", "mailbox")):
+        return True
+    if any(marker in token for marker in ("built-in", "builtin", "usb audio", "usb-audio", "usb_audio")):
+        return True
+    return False
 
 
 def _extract_mac(value: str) -> str:
@@ -36,13 +99,14 @@ def _extract_mac(value: str) -> str:
 
 
 def _collect_sinks_pactl() -> tuple[str, list[dict]]:
-    code, short_out, _ = _run(["pactl", "list", "short", "sinks"], timeout=8)
+    env = _user_runtime_env()
+    code, short_out, _ = _run_env(["pactl", "list", "short", "sinks"], timeout=8, env=env)
     if code != 0:
         return "", []
     # If no sinks are visible, try to ensure a user session exists via pulseaudio --check.
     if not short_out.strip():
-        _run(["pulseaudio", "--check"], timeout=3)
-        code_retry, short_out, _ = _run(["pactl", "list", "short", "sinks"], timeout=8)
+        _ensure_audio_runtime()
+        code_retry, short_out, _ = _run_env(["pactl", "list", "short", "sinks"], timeout=8, env=env)
         if code_retry != 0:
             return "", []
     sinks: list[dict] = []
@@ -52,7 +116,7 @@ def _collect_sinks_pactl() -> tuple[str, list[dict]]:
             continue
         sinks.append({"index": parts[0].strip(), "name": parts[1].strip()})
 
-    code_info, info_out, _ = _run(["pactl", "info"], timeout=8)
+    code_info, info_out, _ = _run_env(["pactl", "info"], timeout=8, env=env)
     default_sink = ""
     if code_info == 0:
         for line in info_out.splitlines():
@@ -61,7 +125,7 @@ def _collect_sinks_pactl() -> tuple[str, list[dict]]:
                 break
 
     # optional friendly descriptions
-    code_long, long_out, _ = _run(["pactl", "list", "sinks"], timeout=12)
+    code_long, long_out, _ = _run_env(["pactl", "list", "sinks"], timeout=12, env=env)
     if code_long == 0:
         current_name = ""
         for line in long_out.splitlines():
@@ -110,7 +174,7 @@ def _collect_sinks_pactl() -> tuple[str, list[dict]]:
         if not preferred:
             preferred = str(sinks[0].get("name") or "")
         if preferred:
-            _run(["pactl", "set-default-sink", preferred], timeout=8)
+            _run_env(["pactl", "set-default-sink", preferred], timeout=8, env=env)
             default_sink = preferred
     return default_sink, sinks
 
@@ -119,7 +183,8 @@ def _collect_sinks_wpctl() -> tuple[str, list[dict]]:
     if not _has("wpctl"):
         return "", []
 
-    code_def, def_out, _ = _run(["wpctl", "inspect", "@DEFAULT_AUDIO_SINK@"], timeout=8)
+    env = _user_runtime_env()
+    code_def, def_out, _ = _run_env(["wpctl", "inspect", "@DEFAULT_AUDIO_SINK@"], timeout=8, env=env)
     default_sink = ""
     if code_def == 0:
         for line in def_out.splitlines():
@@ -130,9 +195,14 @@ def _collect_sinks_wpctl() -> tuple[str, list[dict]]:
                     default_sink = parts[1].strip().strip('"')
                     break
 
-    code, status_out, _ = _run(["wpctl", "status", "-n"], timeout=8)
+    code, status_out, _ = _run_env(["wpctl", "status", "-n"], timeout=8, env=env)
     if code != 0:
         return default_sink, []
+    if not status_out.strip():
+        _ensure_audio_runtime()
+        code, status_out, _ = _run_env(["wpctl", "status", "-n"], timeout=8, env=env)
+        if code != 0:
+            return default_sink, []
     sinks: list[dict] = []
     in_sinks = False
     for line in status_out.splitlines():
@@ -167,6 +237,9 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
         sink_name = str(sink.get("name") or "")
         sink_desc = str(sink.get("description") or sink_name)
         token = f"{sink_name} {sink_desc}".lower()
+        is_dummy = ("auto_null" in token or "null output" in token or "dummy output" in token)
+        if is_dummy:
+            continue
         if "bluez_output" in token or "bluetooth" in token:
             mac = _extract_mac(sink_name) or _extract_mac(sink_desc) or sink_name
             bluetooth_candidates.append(
@@ -180,9 +253,9 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
                     "volume_percent": sink.get("volume_percent"),
                 }
             )
-        if "hdmi" in token:
+        if _is_hdmi_like(sink_name, sink_desc):
             hdmi_candidates.append({"sink_name": sink_name, "description": sink_desc, "volume_percent": sink.get("volume_percent")})
-        if any(marker in token for marker in ("analog", "speaker", "headphone", "headset", "lineout")):
+        if _is_speaker_like(sink_name, sink_desc):
             speaker_candidates.append({"sink_name": sink_name, "description": sink_desc, "volume_percent": sink.get("volume_percent")})
 
     if not speaker_candidates:
@@ -190,9 +263,11 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
             sink_name = str(sink.get("name") or "")
             sink_desc = str(sink.get("description") or sink_name)
             token = f"{sink_name} {sink_desc}".lower()
+            if "auto_null" in token or "null output" in token or "dummy output" in token:
+                continue
             if "bluez_output" in token or "bluetooth" in token:
                 continue
-            if "hdmi" in token:
+            if _is_hdmi_like(sink_name, sink_desc):
                 continue
             speaker_candidates.append({"sink_name": sink_name, "description": sink_desc, "volume_percent": sink.get("volume_percent")})
             break
@@ -230,7 +305,8 @@ def _classify_outputs(default_sink: str, sinks: list[dict]) -> dict:
 
 
 def _move_streams_to_sink(sink_name: str) -> None:
-    code, out, _ = _run(["pactl", "list", "short", "sink-inputs"], timeout=8)
+    env = _user_runtime_env()
+    code, out, _ = _run_env(["pactl", "list", "short", "sink-inputs"], timeout=8, env=env)
     if code != 0:
         return
     for line in out.splitlines():
@@ -238,7 +314,7 @@ def _move_streams_to_sink(sink_name: str) -> None:
         if not parts or not parts[0].strip().isdigit():
             continue
         sink_input_id = parts[0].strip()
-        _run(["pactl", "move-sink-input", sink_input_id, sink_name], timeout=8)
+        _run_env(["pactl", "move-sink-input", sink_input_id, sink_name], timeout=8, env=env)
 
 
 def _find_bluetooth_sink(mac: str, sinks: list[dict]) -> str:
@@ -277,14 +353,16 @@ def _select_output(target_output: str, available_outputs: list[dict], sinks: lis
         raise ValueError("sink mapping missing")
 
     if _has("pactl"):
-        code, _, err = _run(["pactl", "set-default-sink", sink_name], timeout=8)
+        env = _user_runtime_env()
+        code, _, err = _run_env(["pactl", "set-default-sink", sink_name], timeout=8, env=env)
         if code != 0:
             raise RuntimeError(err or "pactl set-default-sink failed")
         _move_streams_to_sink(sink_name)
         return {"output": wanted, "sink_name": sink_name, "backend": "pactl"}
 
     if _has("wpctl"):
-        code, _, err = _run(["wpctl", "set-default", sink_name], timeout=8)
+        env = _user_runtime_env()
+        code, _, err = _run_env(["wpctl", "set-default", sink_name], timeout=8, env=env)
         if code != 0:
             raise RuntimeError(err or "wpctl set-default failed")
         return {"output": wanted, "sink_name": sink_name, "backend": "wpctl"}
@@ -295,9 +373,18 @@ def _select_output(target_output: str, available_outputs: list[dict], sinks: lis
 def main() -> int:
     mode = (sys.argv[1] if len(sys.argv) > 1 else "status").strip().lower()
     try:
+        has_pactl = _has("pactl")
+        has_wpctl = _has("wpctl")
         if _has("pactl"):
             default_sink, sinks = _collect_sinks_pactl()
             backend = "pactl"
+            # Some hosts expose sinks only via PipeWire/wpctl in the current runtime.
+            # If pactl exists but yields no sinks, fallback to wpctl probing.
+            if not sinks and _has("wpctl"):
+                wp_default, wp_sinks = _collect_sinks_wpctl()
+                if wp_sinks:
+                    default_sink, sinks = wp_default, wp_sinks
+                    backend = "wpctl"
         else:
             default_sink, sinks = _collect_sinks_wpctl()
             backend = "wpctl" if sinks else "none"
@@ -306,6 +393,13 @@ def main() -> int:
 
         if mode == "status":
             payload = {"ok": True, "backend": backend, **base}
+            payload["diagnostics"] = {
+                "has_pactl": has_pactl,
+                "has_wpctl": has_wpctl,
+                "sink_count": len(sinks),
+            }
+            if backend == "none":
+                payload["warning"] = "Kein Audio-Backend gefunden (pactl/wpctl fehlen)."
             print(json.dumps(payload))
             return 0
 

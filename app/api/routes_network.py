@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import getpass
 import json
+import subprocess
 import shutil
 import threading
 import time
@@ -93,6 +94,22 @@ from app.core.sentinel_manager import (
     sentinel_action as sentinel_action_module,
     uninstall_sentinel as uninstall_sentinel_module,
 )
+
+
+def _git_origin_url(repo_dir: Path) -> str:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_dir), "config", "--get", "remote.origin.url"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return ""
+    if int(proc.returncode or 1) != 0:
+        return ""
+    return str(proc.stdout or "").strip()
 
 bp_network = Blueprint("network", __name__)
 storage_fm = StorageFileManagerService()
@@ -2946,3 +2963,57 @@ def api_system_portal_restart():
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "portal_restart_failed") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/system/service/status")
+def api_system_service_status():
+    service_name = str(request.args.get("service_name") or "").strip() or "device-portal.service"
+    try:
+        payload = player_service_action("status", service_name=service_name)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.get("/api/system/portal/summary")
+def api_system_portal_summary():
+    cfg = ensure_config()
+    device = ensure_device()
+    repo_dir = Path(__file__).resolve().parents[2]
+    origin = _git_origin_url(repo_dir)
+    service_user = str(device.get("service_user") or "").strip() or getpass.getuser()
+    payload = {
+        "repo_dir": str(repo_dir),
+        "repo_origin": origin,
+        "service_name": "device-portal.service",
+        "service_user": service_user,
+        "autostart_config": True,
+        "install_dir": str(repo_dir),
+        "portal_update_url": str(cfg.get("portal_update_url") or "").strip(),
+    }
+    return _ok(payload)
+
+
+@bp_network.get("/api/system/update-summary")
+def api_system_update_summary_get():
+    cfg = ensure_config()
+    cached = cfg.get("system_update_summary")
+    if not isinstance(cached, dict):
+        cached = {}
+    return _ok(cached)
+
+
+@bp_network.post("/api/system/update-summary")
+def api_system_update_summary_set():
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    payload = data.get("summary") if isinstance(data, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    cfg["system_update_summary"] = payload
+    cfg["updated_at"] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Config write failed", status=500, detail=write_err)
+    return _ok(payload)
