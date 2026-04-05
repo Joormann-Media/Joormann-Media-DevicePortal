@@ -58,6 +58,7 @@ def _read_probe_devices() -> list[dict[str, Any]]:
             "fs_use_percent": int(item.get("fs_use_percent") or 0),
             "hotplug": bool(item.get("hotplug", False)),
             "removable": bool(item.get("removable", False)),
+            "manual_mount_candidate": bool(item.get("manual_mount_candidate", False)),
         }
         norm["id"] = storage_device_id(norm["uuid"], norm["part_uuid"])
         if not norm["id"]:
@@ -142,12 +143,28 @@ def _cfg_device_summary(cfg_item: dict[str, Any], present: bool, mounted: bool, 
                 free_b = fs_free
                 used_pct = fs_pct if fs_pct > 0 else (int(round((used_b / total_b) * 100)) if total_b > 0 else 0)
     else:
-        total_b, used_b, free_b, used_pct = (int((discovered_item or {}).get("size_bytes") or cfg_item.get("size_bytes") or 0), 0, 0, 0)
+        total_b = int((discovered_item or {}).get("size_bytes") or cfg_item.get("size_bytes") or 0)
+        used_b = int((discovered_item or {}).get("fs_used_bytes") or 0)
+        free_b = int((discovered_item or {}).get("fs_avail_bytes") or 0)
+        if used_b > 0 or free_b > 0:
+            if total_b <= 0:
+                total_b = used_b + free_b
+            used_pct = int((discovered_item or {}).get("fs_use_percent") or 0)
+            if used_pct <= 0 and total_b > 0:
+                used_pct = int(round((used_b / total_b) * 100))
+        else:
+            used_b, free_b, used_pct = 0, 0, 0
     drive_name = cfg_item.get("name") or (discovered_item or {}).get("label") or cfg_item.get("label") or cfg_item.get("uuid") or cfg_item.get("part_uuid") or cfg_item.get("id")
+    mount_strategy = str(cfg_item.get("mount_strategy") or "persistent")
+    if mount_strategy == "existing_mount":
+        drive_type = "existing_mount"
+    else:
+        drive_type = "usb" if ((discovered_item or {}).get("transport") == "usb" or (discovered_item or {}).get("removable")) else "external"
+
     return {
         "id": cfg_item.get("id", ""),
         "drive_name": drive_name,
-        "drive_type": "usb" if ((discovered_item or {}).get("transport") == "usb" or (discovered_item or {}).get("removable")) else "external",
+        "drive_type": drive_type,
         "name": cfg_item.get("name", ""),
         "uuid": cfg_item.get("uuid", ""),
         "part_uuid": cfg_item.get("part_uuid", ""),
@@ -163,7 +180,7 @@ def _cfg_device_summary(cfg_item: dict[str, Any], present: bool, mounted: bool, 
         "serial": (discovered_item or {}).get("serial") or cfg_item.get("serial", ""),
         "transport": (discovered_item or {}).get("transport") or cfg_item.get("transport", ""),
         "mount_path": cfg_item.get("mount_path", ""),
-        "mount_strategy": cfg_item.get("mount_strategy", "persistent"),
+        "mount_strategy": mount_strategy,
         "mount_options": cfg_item.get("mount_options", "defaults,noatime,nofail"),
         "is_enabled": bool(cfg_item.get("is_enabled", True)),
         "auto_mount": bool(cfg_item.get("auto_mount", True)),
@@ -288,6 +305,25 @@ def get_storage_state() -> dict[str, Any]:
         present = disc is not None
         current_mount_path = str((disc or {}).get("mount_path") or "").strip()
         configured_mount_path = str(cfg_item.get("mount_path") or "").strip()
+        mount_strategy = str(cfg_item.get("mount_strategy") or "persistent")
+
+        # If the device is already mounted elsewhere (common on server/workstation),
+        # adopt the active mount path instead of forcing a second mountpoint.
+        if present and current_mount_path and configured_mount_path and current_mount_path != configured_mount_path:
+            if current_mount_path.startswith("/mnt/") or current_mount_path.startswith("/media/"):
+                cfg_item["mount_path"] = current_mount_path
+                cfg_item["mount_strategy"] = "existing_mount"
+                cfg_item["auto_mount"] = False
+                cfg_item["last_error"] = ""
+                configured_mount_path = current_mount_path
+                mount_strategy = "existing_mount"
+                changed = True
+                log_event(
+                    "storage",
+                    "Storage mount path adopted from active system mount",
+                    data={"id": cfg_item.get("id", ""), "mount_path": current_mount_path},
+                )
+
         mounted = bool((disc or {}).get("mounted", False) and current_mount_path and configured_mount_path and current_mount_path == configured_mount_path)
         now_ts = utc_now()
         if present:
@@ -307,7 +343,7 @@ def get_storage_state() -> dict[str, Any]:
                 cfg_item["last_known_present"] = False
                 changed = True
 
-        if present and not mounted and bool(cfg_item.get("is_enabled", True)) and bool(cfg_item.get("auto_mount", True)):
+        if present and not mounted and bool(cfg_item.get("is_enabled", True)) and bool(cfg_item.get("auto_mount", True)) and mount_strategy != "existing_mount":
             selector_type = "uuid" if str(cfg_item.get("uuid") or "").strip() else "partuuid"
             selector_value = str(cfg_item.get("uuid") if selector_type == "uuid" else cfg_item.get("part_uuid") or "").strip()
             mount_path = str(cfg_item.get("mount_path") or "").strip()
@@ -340,7 +376,11 @@ def get_storage_state() -> dict[str, Any]:
             {
                 "id": disc_id,
                 "drive_name": drive_name,
-                "drive_type": "usb" if (disc.get("transport") == "usb" or disc.get("removable")) else "external",
+                "drive_type": (
+                    "usb"
+                    if (disc.get("transport") == "usb" or disc.get("removable"))
+                    else ("existing_mount" if bool(disc.get("manual_mount_candidate")) else "external")
+                ),
                 "uuid": disc.get("uuid", ""),
                 "part_uuid": disc.get("part_uuid", ""),
                 "label": disc.get("label", ""),
@@ -358,6 +398,7 @@ def get_storage_state() -> dict[str, Any]:
                 "mounted": bool(disc.get("mounted", False)),
                 "mount_path": disc.get("mount_path", ""),
                 "state": "new",
+                "mount_strategy_suggested": "existing_mount" if bool(disc.get("manual_mount_candidate")) else "persistent",
             }
         )
 
@@ -455,7 +496,16 @@ def register_storage_device(device_id: str, name: str = "", auto_mount: bool = T
     if any(str(item.get("id") or "") == device_id for item in devices if isinstance(item, dict)):
         return {"device_id": device_id, "already_registered": True}
 
-    mount_path = _next_mount_path(devices, target)
+    suggested_existing_mount = str(target.get("mount_path") or "").strip()
+    existing_paths = {str(item.get("mount_path") or "").strip() for item in devices if isinstance(item, dict)}
+    use_existing_mount = bool(
+        target.get("manual_mount_candidate")
+        and suggested_existing_mount
+        and suggested_existing_mount.startswith("/mnt/")
+        and suggested_existing_mount not in existing_paths
+    )
+    mount_path = suggested_existing_mount if use_existing_mount else _next_mount_path(devices, target)
+    mount_strategy = "existing_mount" if use_existing_mount else "persistent"
     new_item = {
         "id": device_id,
         "name": (name or target.get("label") or "").strip(),
@@ -469,10 +519,10 @@ def register_storage_device(device_id: str, name: str = "", auto_mount: bool = T
         "serial": target.get("serial", ""),
         "transport": target.get("transport", ""),
         "mount_path": mount_path,
-        "mount_strategy": "persistent",
+        "mount_strategy": mount_strategy,
         "mount_options": "defaults,noatime,nofail",
         "is_enabled": True,
-        "auto_mount": bool(auto_mount),
+        "auto_mount": False if use_existing_mount else bool(auto_mount),
         "allow_portal_storage": False,
         "allow_media_storage": True,
         "added_at": utc_now(),
@@ -489,7 +539,7 @@ def register_storage_device(device_id: str, name: str = "", auto_mount: bool = T
     if not ok:
         raise NetControlError(code="storage_config_write_failed", message="Could not persist storage registration", detail=err)
     log_event("storage", "Storage device registered", data={"id": device_id, "mount_path": mount_path})
-    return {"device_id": device_id, "mount_path": mount_path, "registered": True}
+    return {"device_id": device_id, "mount_path": mount_path, "mount_strategy": mount_strategy, "registered": True}
 
 
 def ignore_storage_device(device_id: str) -> dict[str, Any]:
@@ -724,3 +774,26 @@ def format_storage_device(device_id: str, filesystem: str = "vfat", label: str =
         "label": result.get("label", ""),
         "remounted": remounted,
     }
+    mount_strategy = str(target.get("mount_strategy") or "persistent")
+    if mount_strategy == "existing_mount":
+        mounted = bool(_mounted_source(mount_path))
+        if not mounted:
+            raise NetControlError(
+                code="storage_existing_mount_missing",
+                message="Configured existing mount path is currently not mounted",
+                detail=mount_path,
+            )
+        target["last_error"] = ""
+        target["last_known_present"] = True
+        target["last_seen_at"] = utc_now()
+        save_storage_config(cfg)
+        log_event("storage", "Storage existing mount confirmed", data={"id": device_id, "mount_path": mount_path})
+        return {"device_id": device_id, "mount_path": mount_path, "mounted": True}
+
+    mount_strategy = str(target.get("mount_strategy") or "persistent")
+    if mount_strategy == "existing_mount":
+        raise NetControlError(
+            code="storage_unmount_blocked",
+            message="Unmount is blocked for existing_mount devices",
+            detail=mount_path,
+        )

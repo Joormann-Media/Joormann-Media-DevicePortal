@@ -1587,17 +1587,36 @@
                       <label for="extra-repo-name" class="form-label form-label-sm mb-1">Name</label>
                       <input id="extra-repo-name" type="text" class="form-control form-control-sm" placeholder="Jarvis AudioPlayer">
                     </div>
-                    <div class="col-12 col-lg-5">
+                    <div class="col-12 col-lg-4">
                       <label for="extra-repo-link" class="form-label form-label-sm mb-1">Repo Link / Pfad</label>
                       <input id="extra-repo-link" type="text" class="form-control form-control-sm" placeholder="https://github.com/.../repo.git">
                     </div>
                     <div class="col-12 col-lg-2">
-                      <label for="extra-repo-service-name" class="form-label form-label-sm mb-1">Service</label>
-                      <input id="extra-repo-service-name" type="text" class="form-control form-control-sm" placeholder="my-service.service">
+                      <label for="extra-repo-install-dir" class="form-label form-label-sm mb-1">Installationspfad</label>
+                      <div class="input-group input-group-sm">
+                        <input id="extra-repo-install-dir" type="text" class="form-control form-control-sm" placeholder="/home/djanebmb/projects/RepoName">
+                        <button id="btn-extra-repo-install-dir-browse" type="button" class="btn btn-outline-secondary" title="Ordner auswählen">
+                          <i class="bi bi-folder2-open"></i>
+                        </button>
+                      </div>
                     </div>
                     <div class="col-12 col-lg-2">
+                      <label for="extra-repo-service-name" class="form-label form-label-sm mb-1">Service</label>
+                      <input id="extra-repo-service-name" type="text" class="form-control form-control-sm" placeholder="optional (auto: repo-name.service)">
+                    </div>
+                    <div class="col-12 col-lg-1">
                       <label for="extra-repo-service-user" class="form-label form-label-sm mb-1">User</label>
                       <input id="extra-repo-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-3 mb-2">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" role="switch" id="extra-repo-use-service" checked>
+                      <label class="form-check-label small" for="extra-repo-use-service">Als Service installieren</label>
+                    </div>
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" role="switch" id="extra-repo-autostart" checked>
+                      <label class="form-check-label small" for="extra-repo-autostart">Autostart aktivieren</label>
                     </div>
                   </div>
                   <div class="d-flex flex-wrap gap-2 mb-2">
@@ -1605,6 +1624,13 @@
                     <button id="btn-extra-repo-refresh" class="btn btn-outline-secondary btn-sm">Liste aktualisieren</button>
                   </div>
                   <div id="extra-repos-list" class="small text-secondary">Keine zusätzlichen Repos hinterlegt.</div>
+                  <hr class="my-3">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">Autodiscover (LAN)</h3>
+                    <button id="btn-autodiscover-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+                  </div>
+                  <div class="small text-secondary mb-2">Services melden sich beim Start an `/autodiscover` und können hier direkt übernommen werden.</div>
+                  <div id="autodiscover-services-list" class="small text-secondary">Keine Autodiscover-Einträge.</div>
                 </div>
               </div>
               <div class="col-12">
@@ -1955,6 +1981,36 @@
             <div id="runtime-warmup-progress" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
           </div>
           <div id="runtime-warmup-percent" class="small text-secondary">0%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="repoInstallPathModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-folder2-open"></i>
+            Installationspfad wählen
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="small text-secondary mb-2">Aktueller Pfad: <span id="repo-install-path-current">-</span></div>
+          <div id="repo-install-path-roots" class="d-flex flex-wrap gap-2 mb-2"></div>
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <button id="btn-repo-install-path-up" type="button" class="btn btn-outline-secondary btn-sm">Eine Ebene hoch</button>
+            <button id="btn-repo-install-path-home" type="button" class="btn btn-outline-secondary btn-sm">Home</button>
+            <button id="btn-repo-install-path-refresh" type="button" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+          </div>
+          <div id="repo-install-path-list" class="list-group small" style="max-height: 360px; overflow:auto;">
+            <div class="text-secondary">Lade Verzeichnisse…</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button id="btn-repo-install-path-apply" type="button" class="btn btn-primary btn-sm">Diesen Ordner übernehmen</button>
         </div>
       </div>
     </div>

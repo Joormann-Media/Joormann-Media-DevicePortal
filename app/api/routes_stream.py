@@ -6,6 +6,7 @@ import os
 import shutil
 import fcntl
 from datetime import datetime
+from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -796,6 +797,25 @@ def _repo_default_name(repo_link: str) -> str:
     return tail
 
 
+def _repo_default_service_name(repo_link: str) -> str:
+    base = _repo_default_name(repo_link).strip().lower()
+    safe = []
+    last_dash = False
+    for ch in base:
+        if ch.isalnum():
+            safe.append(ch)
+            last_dash = False
+            continue
+        if ch in (' ', '-', '_', '.'):
+            if not last_dash:
+                safe.append('-')
+                last_dash = True
+    slug = ''.join(safe).strip('-')
+    if not slug:
+        slug = 'service'
+    return f'{slug}.service'
+
+
 def _sanitize_managed_repo_entry(item: dict) -> dict:
     source = item if isinstance(item, dict) else {}
     repo_id = str(source.get('id') or '').strip()
@@ -803,7 +823,12 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     repo_link = str(source.get('repo_link') or source.get('repo_dir') or '').strip()
     service_name = str(source.get('service_name') or '').strip()
     service_user = str(source.get('service_user') or '').strip()
+    install_dir = str(source.get('install_dir') or '').strip()
+    use_service_raw = source.get('use_service')
+    autostart_raw = source.get('autostart')
     created_at = str(source.get('created_at') or '').strip()
+    use_service = True if use_service_raw is None else bool(use_service_raw)
+    autostart = True if autostart_raw is None else bool(autostart_raw)
 
     if not repo_id:
         seed = f"{name}|{repo_link}|{service_name}|{service_user}"
@@ -819,6 +844,9 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
         'repo_link': repo_link,
         'service_name': service_name,
         'service_user': service_user,
+        'install_dir': install_dir,
+        'use_service': use_service,
+        'autostart': autostart,
         'created_at': created_at,
         'updated_at': utc_now(),
     }
@@ -837,11 +865,256 @@ def _managed_repos_from_config(cfg: dict) -> list[dict]:
     return repos
 
 
+def _is_private_remote(remote: str) -> bool:
+    value = str(remote or '').strip()
+    if not value:
+        return False
+    try:
+        addr = ip_address(value)
+    except ValueError:
+        return False
+    return bool(addr.is_loopback or addr.is_private)
+
+
+def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
+    payload = data if isinstance(data, dict) else {}
+    repo_link = str(payload.get('repo_link') or payload.get('repo_url') or '').strip()
+    repo_name = str(payload.get('repo_name') or payload.get('name') or _repo_default_name(repo_link)).strip()
+    repo_branch = str(payload.get('repo_branch') or payload.get('branch') or 'main').strip() or 'main'
+    service_name = str(payload.get('service_name') or '').strip()
+    service_user = str(payload.get('service_user') or '').strip()
+    install_dir = str(payload.get('install_dir') or '').strip()
+    api_base_url = str(payload.get('api_base_url') or '').strip()
+    health_url = str(payload.get('health_url') or '').strip()
+    hostname = str(payload.get('hostname') or '').strip()
+    instance_id = str(payload.get('instance_id') or '').strip()
+    node_name = str(payload.get('node_name') or '').strip()
+    tags = payload.get('tags') if isinstance(payload.get('tags'), list) else []
+    capabilities = payload.get('capabilities') if isinstance(payload.get('capabilities'), list) else []
+    try:
+        service_port = int(payload.get('service_port')) if payload.get('service_port') not in (None, '') else None
+    except Exception:
+        service_port = None
+
+    seed = instance_id or f'{remote_addr}|{repo_link}|{service_name}|{install_dir}|{repo_name}'
+    entry_id = hashlib.sha1(seed.encode('utf-8')).hexdigest()[:16]
+    return {
+        'id': entry_id,
+        'instance_id': instance_id,
+        'repo_name': repo_name,
+        'repo_link': repo_link,
+        'repo_branch': repo_branch,
+        'service_name': service_name,
+        'service_user': service_user,
+        'install_dir': install_dir,
+        'api_base_url': api_base_url,
+        'health_url': health_url,
+        'hostname': hostname,
+        'node_name': node_name,
+        'remote_addr': remote_addr,
+        'service_port': service_port,
+        'tags': [str(item).strip() for item in tags if str(item).strip()],
+        'capabilities': [str(item).strip() for item in capabilities if str(item).strip()],
+        'source': 'autodiscover',
+        'updated_at': utc_now(),
+    }
+
+
+def _path_browser_allowed_roots(cfg: dict) -> list[Path]:
+    candidates: list[Path] = []
+    service_user = str(cfg.get('player_service_user') or '').strip()
+    if service_user:
+        candidates.append(Path(f'/home/{service_user}'))
+    env_user = str(os.getenv('USER') or '').strip()
+    if env_user:
+        candidates.append(Path(f'/home/{env_user}'))
+    candidates.extend([Path('/mnt'), Path('/media'), Path('/opt'), Path('/srv')])
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except Exception:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        if not resolved.exists() or not resolved.is_dir():
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return roots
+
+
+def _path_browser_resolve(raw_path: str, roots: list[Path]) -> tuple[Path, Path]:
+    if not roots:
+        raise RuntimeError('Kein gültiger Root-Pfad für Dateibrowser verfügbar.')
+
+    selected = str(raw_path or '').strip()
+    current = roots[0] if not selected else Path(selected).expanduser()
+    current = current.resolve()
+
+    matched_root = None
+    for root in roots:
+        try:
+            if current.is_relative_to(root):
+                matched_root = root
+                break
+        except Exception:
+            continue
+    if matched_root is None:
+        raise RuntimeError('Pfad liegt außerhalb der erlaubten Verzeichnisse.')
+    if not current.exists() or not current.is_dir():
+        raise RuntimeError('Verzeichnis existiert nicht.')
+    return current, matched_root
+
+
 @bp_stream.get('/api/stream/player/repos')
 def api_stream_player_repos_get():
     cfg = ensure_config()
     repos = sorted(_managed_repos_from_config(cfg), key=lambda item: str(item.get('name') or '').lower())
     return jsonify(ok=True, data={'repos': repos})
+
+
+@bp_stream.post('/autodiscover')
+@bp_stream.post('/api/autodiscover/register')
+def api_autodiscover_register():
+    remote = str(request.remote_addr or '').strip()
+    if not _is_private_remote(remote):
+        return jsonify(ok=False, error='forbidden_remote', detail='Autodiscover ist nur aus privatem Netzwerk erlaubt.'), 403
+
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    item = _sanitize_autodiscover_entry(data, remote)
+    if not item.get('repo_link'):
+        return jsonify(ok=False, error='repo_link_missing', detail='repo_link/repo_url fehlt.'), 400
+
+    entries = cfg.get('autodiscover_services')
+    if not isinstance(entries, list):
+        entries = []
+    existing_idx = next((idx for idx, current in enumerate(entries) if str((current or {}).get('id') or '').strip() == item['id']), -1)
+    if existing_idx >= 0:
+        current = entries[existing_idx] if isinstance(entries[existing_idx], dict) else {}
+        item['first_seen_at'] = str(current.get('first_seen_at') or item['updated_at'])
+        entries[existing_idx] = {**current, **item, 'last_seen_at': item['updated_at']}
+    else:
+        item['first_seen_at'] = item['updated_at']
+        item['last_seen_at'] = item['updated_at']
+        entries.append(item)
+
+    entries = sorted(entries, key=lambda row: str((row or {}).get('last_seen_at') or ''), reverse=True)[:300]
+    cfg['autodiscover_services'] = entries
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    return jsonify(ok=True, data={'item': item, 'count': len(entries)})
+
+
+@bp_stream.get('/api/autodiscover/services')
+def api_autodiscover_services():
+    cfg = ensure_config()
+    raw = cfg.get('autodiscover_services')
+    entries = raw if isinstance(raw, list) else []
+    normalized = [item for item in entries if isinstance(item, dict)]
+    normalized = sorted(normalized, key=lambda row: str(row.get('last_seen_at') or row.get('updated_at') or ''), reverse=True)
+    return jsonify(ok=True, data={'services': normalized})
+
+
+@bp_stream.post('/api/autodiscover/services/<service_id>/promote')
+def api_autodiscover_promote(service_id: str):
+    cfg = ensure_config()
+    target_id = str(service_id or '').strip()
+    if not target_id:
+        return jsonify(ok=False, error='service_id_missing', detail='Service-ID fehlt.'), 400
+
+    raw = cfg.get('autodiscover_services')
+    discovered = raw if isinstance(raw, list) else []
+    target = next((item for item in discovered if isinstance(item, dict) and str(item.get('id') or '').strip() == target_id), None)
+    if not target:
+        return jsonify(ok=False, error='service_not_found', detail='Autodiscover-Service nicht gefunden.'), 404
+
+    repos = _managed_repos_from_config(cfg)
+    promoted = _sanitize_managed_repo_entry(
+        {
+            'name': str(target.get('repo_name') or '').strip(),
+            'repo_link': str(target.get('repo_link') or '').strip(),
+            'service_name': str(target.get('service_name') or '').strip(),
+            'service_user': str(target.get('service_user') or '').strip(),
+            'install_dir': str(target.get('install_dir') or '').strip(),
+            'use_service': True,
+            'autostart': True,
+        }
+    )
+
+    idx = next((i for i, row in enumerate(repos) if str(row.get('repo_link') or '').strip().lower() == str(promoted.get('repo_link') or '').strip().lower()), -1)
+    if idx >= 0:
+        promoted['id'] = str(repos[idx].get('id') or promoted['id'])
+        promoted['created_at'] = str(repos[idx].get('created_at') or promoted['created_at'])
+        repos[idx] = promoted
+    else:
+        repos.append(promoted)
+
+    cfg['managed_install_repos'] = repos
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+    return jsonify(ok=True, data={'item': promoted, 'repos': sorted(repos, key=lambda row: str(row.get('name') or '').lower())})
+
+
+@bp_stream.get('/api/stream/player/path-browser')
+def api_stream_player_path_browser():
+    cfg = ensure_config()
+    roots = _path_browser_allowed_roots(cfg)
+    if not roots:
+        return jsonify(ok=False, error='path_browser_unavailable', detail='Keine erlaubten Root-Verzeichnisse gefunden.'), 500
+
+    try:
+        current, root = _path_browser_resolve(str(request.args.get('path') or ''), roots)
+    except RuntimeError as exc:
+        return jsonify(ok=False, error='invalid_path', detail=str(exc)), 400
+
+    directories: list[dict] = []
+    try:
+        for child in sorted(current.iterdir(), key=lambda item: item.name.lower()):
+            try:
+                if not child.is_dir():
+                    continue
+            except Exception:
+                continue
+            directories.append(
+                {
+                    'name': child.name,
+                    'path': str(child.resolve()),
+                }
+            )
+    except Exception as exc:
+        return jsonify(ok=False, error='path_browser_failed', detail=str(exc)), 500
+
+    parent_path = ''
+    if current != root:
+        parent_candidate = current.parent.resolve()
+        try:
+            if parent_candidate.is_relative_to(root):
+                parent_path = str(parent_candidate)
+            else:
+                parent_path = str(root)
+        except Exception:
+            parent_path = str(root)
+
+    return jsonify(
+        ok=True,
+        data={
+            'current_path': str(current),
+            'root_path': str(root),
+            'parent_path': parent_path,
+            'roots': [str(item) for item in roots],
+            'directories': directories,
+        },
+    )
 
 
 @bp_stream.post('/api/stream/player/repos')
@@ -861,6 +1134,9 @@ def api_stream_player_repos_set():
             'repo_link': repo_link,
             'service_name': str(data.get('service_name') or '').strip(),
             'service_user': str(data.get('service_user') or '').strip(),
+            'install_dir': str(data.get('install_dir') or '').strip(),
+            'use_service': data.get('use_service', True),
+            'autostart': data.get('autostart', True),
         }
     )
 
@@ -928,15 +1204,94 @@ def api_stream_player_repos_install_update(repo_id: str):
     if not repo_link:
         return jsonify(ok=False, error='repo_link_missing', detail='Repo Link/Pfad fehlt.'), 400
 
-    service_name = str(target.get('service_name') or '').strip() or STREAM_SERVICE_NAME
+    service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
     service_user = str(target.get('service_user') or '').strip()
+    install_dir = str(target.get('install_dir') or '').strip()
+    use_service = bool(target.get('use_service', True))
+    autostart = bool(target.get('autostart', True))
     try:
-        payload = player_update(repo_link, service_user=service_user, service_name=service_name)
+        payload = player_update(
+            repo_link,
+            service_user=service_user,
+            service_name=service_name,
+            install_dir=install_dir,
+            use_service=use_service,
+            autostart=autostart,
+        )
     except NetControlError as exc:
         status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
 
     return jsonify(ok=True, data=payload)
+
+
+@bp_stream.post('/api/stream/player/repos/<repo_id>/service-autostart')
+def api_stream_player_repos_service_autostart(repo_id: str):
+    from app.core.netcontrol import player_service_autostart
+
+    cfg = ensure_config()
+    target_id = str(repo_id or '').strip()
+    repos = _managed_repos_from_config(cfg)
+    idx = next((i for i, item in enumerate(repos) if str(item.get('id') or '').strip() == target_id), -1)
+    if idx < 0:
+        return jsonify(ok=False, error='repo_not_found', detail='Repo nicht gefunden.'), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    enabled = bool(data.get('enabled', True))
+    target = repos[idx]
+    repo_link = str(target.get('repo_link') or '').strip()
+    service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+
+    try:
+        payload = player_service_autostart(service_name=service_name, enabled=enabled)
+    except NetControlError as exc:
+        status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+    target['autostart'] = enabled
+    target['updated_at'] = utc_now()
+    repos[idx] = _sanitize_managed_repo_entry(target)
+    cfg['managed_install_repos'] = repos
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    return jsonify(ok=True, data={'repo': repos[idx], 'action': payload})
+
+
+@bp_stream.post('/api/stream/player/repos/<repo_id>/uninstall')
+def api_stream_player_repos_uninstall(repo_id: str):
+    from app.core.netcontrol import player_uninstall
+
+    cfg = ensure_config()
+    target_id = str(repo_id or '').strip()
+    repos = _managed_repos_from_config(cfg)
+    idx = next((i for i, item in enumerate(repos) if str(item.get('id') or '').strip() == target_id), -1)
+    if idx < 0:
+        return jsonify(ok=False, error='repo_not_found', detail='Repo nicht gefunden.'), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    remove_repo = bool(data.get('remove_repo', False))
+    target = repos[idx]
+    repo_link = str(target.get('repo_link') or '').strip()
+    install_dir = str(target.get('install_dir') or '').strip()
+    service_user = str(target.get('service_user') or '').strip()
+    service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+
+    try:
+        payload = player_uninstall(
+            repo_link=repo_link,
+            service_user=service_user,
+            service_name=service_name,
+            install_dir=install_dir,
+            remove_repo=remove_repo,
+        )
+    except NetControlError as exc:
+        status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+    return jsonify(ok=True, data={'repo': target, 'action': payload})
 
 
 @bp_stream.post('/api/stream/player/install-update')
@@ -946,12 +1301,22 @@ def api_stream_player_install_update():
     repo_link = str(data.get('player_repo_link') or data.get('player_repo_dir') or cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '').strip()
     service_name = str(data.get('player_service_name') or cfg.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
     service_user = str(data.get('player_service_user') or cfg.get('player_service_user') or '').strip()
+    install_dir = str(data.get('player_install_dir') or cfg.get('player_install_dir') or '').strip()
+    use_service = bool(data.get('use_service', True))
+    autostart = bool(data.get('autostart', True))
 
     if not repo_link:
         return jsonify(ok=False, error='player_repo_missing', detail='Bitte Player-Repo-Link oder lokalen Pfad setzen.'), 400
 
     try:
-        payload = player_update(repo_link, service_user=service_user, service_name=service_name)
+        payload = player_update(
+            repo_link,
+            service_user=service_user,
+            service_name=service_name,
+            install_dir=install_dir,
+            use_service=use_service,
+            autostart=autostart,
+        )
     except NetControlError as exc:
         status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status

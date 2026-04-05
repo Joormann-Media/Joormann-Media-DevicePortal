@@ -22,7 +22,7 @@ if [[ ! -d "$SRC_DIR" ]]; then
 fi
 
 apt-get update
-apt-get install -y network-manager rfkill bluez iproute2 isc-dhcp-client pamtester
+apt-get install -y network-manager rfkill bluez iproute2 isc-dhcp-client pamtester ntfs-3g exfatprogs
 
 install -d -m 0755 "$DST_DIR"
 install -m 0750 "$SRC_DIR/wifi_toggle.sh" "$DST_DIR/wifi_toggle.sh"

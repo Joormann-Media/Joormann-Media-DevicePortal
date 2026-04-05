@@ -16,6 +16,14 @@
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
   let managedInstallRepos = [];
+  let autodiscoverServices = [];
+  const repoInstallPathState = {
+    currentPath: "",
+    parentPath: "",
+    rootPath: "",
+    roots: [],
+    modal: null,
+  };
   let audioHubPollHandle = null;
   let btDeviceState = {
     devices: [],
@@ -4350,8 +4358,11 @@
       id: String(q("extra-repo-id")?.value || "").trim(),
       name: String(q("extra-repo-name")?.value || "").trim(),
       repo_link: String(q("extra-repo-link")?.value || "").trim(),
+      install_dir: String(q("extra-repo-install-dir")?.value || "").trim(),
       service_name: String(q("extra-repo-service-name")?.value || "").trim(),
       service_user: String(q("extra-repo-service-user")?.value || "").trim(),
+      use_service: !!q("extra-repo-use-service")?.checked,
+      autostart: !!q("extra-repo-autostart")?.checked,
     };
   }
 
@@ -4360,13 +4371,71 @@
     const idEl = q("extra-repo-id");
     const nameEl = q("extra-repo-name");
     const linkEl = q("extra-repo-link");
+    const installEl = q("extra-repo-install-dir");
     const serviceEl = q("extra-repo-service-name");
     const userEl = q("extra-repo-service-user");
+    const useServiceEl = q("extra-repo-use-service");
+    const autostartEl = q("extra-repo-autostart");
     if (idEl) idEl.value = String(payload.id || "");
     if (nameEl) nameEl.value = String(payload.name || "");
     if (linkEl) linkEl.value = String(payload.repo_link || payload.repo_dir || "");
+    if (installEl) installEl.value = String(payload.install_dir || "");
     if (serviceEl) serviceEl.value = String(payload.service_name || "");
     if (userEl) userEl.value = String(payload.service_user || "");
+    if (useServiceEl) useServiceEl.checked = payload.use_service !== false;
+    if (autostartEl) autostartEl.checked = payload.autostart !== false;
+  }
+
+  function renderRepoInstallPathBrowser(data = {}) {
+    repoInstallPathState.currentPath = String(data.current_path || "");
+    repoInstallPathState.parentPath = String(data.parent_path || "");
+    repoInstallPathState.rootPath = String(data.root_path || "");
+    repoInstallPathState.roots = Array.isArray(data.roots) ? data.roots : [];
+
+    const currentEl = q("repo-install-path-current");
+    if (currentEl) currentEl.textContent = repoInstallPathState.currentPath || "-";
+    const rootsHost = q("repo-install-path-roots");
+    if (rootsHost) {
+      const roots = Array.isArray(repoInstallPathState.roots) ? repoInstallPathState.roots : [];
+      const btns = roots.map((rootPath) => {
+        const rp = String(rootPath || "").trim();
+        if (!rp) return "";
+        const label = rp === repoInstallPathState.rootPath ? `${rp} (Root)` : rp;
+        return `<button type="button" class="btn btn-outline-secondary btn-sm js-repo-path-root" data-path="${escapeHtml(rp)}">${escapeHtml(label)}</button>`;
+      }).filter(Boolean);
+      rootsHost.innerHTML = btns.length ? btns.join("") : "";
+    }
+
+    const host = q("repo-install-path-list");
+    if (!host) return;
+    const rows = [];
+    if (repoInstallPathState.rootPath && repoInstallPathState.currentPath !== repoInstallPathState.rootPath) {
+      rows.push(`<button type="button" class="list-group-item list-group-item-action js-repo-path-entry" data-path="${escapeHtml(repoInstallPathState.parentPath)}"><i class="bi bi-arrow-up-circle me-1"></i>..</button>`);
+    }
+    const dirs = Array.isArray(data.directories) ? data.directories : [];
+    for (const dir of dirs) {
+      const name = escapeHtml(String(dir.name || ""));
+      const path = escapeHtml(String(dir.path || ""));
+      rows.push(`<button type="button" class="list-group-item list-group-item-action js-repo-path-entry" data-path="${path}"><i class="bi bi-folder2 me-1"></i>${name}</button>`);
+    }
+    host.innerHTML = rows.length ? rows.join("") : '<div class="text-secondary p-2">Keine Unterordner.</div>';
+  }
+
+  async function refreshRepoInstallPathBrowser(path = "") {
+    const query = new URLSearchParams();
+    const targetPath = String(path || repoInstallPathState.currentPath || "").trim();
+    if (targetPath) query.set("path", targetPath);
+    const payload = await fetchJson(`/api/stream/player/path-browser?${query.toString()}`, { timeoutMs: 10000 });
+    renderRepoInstallPathBrowser((payload || {}).data || {});
+  }
+
+  async function openRepoInstallPathModal() {
+    const inputPath = String(q("extra-repo-install-dir")?.value || "").trim();
+    await refreshRepoInstallPathBrowser(inputPath);
+    const modalEl = q("repoInstallPathModal");
+    if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
+    repoInstallPathState.modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+    repoInstallPathState.modal.show();
   }
 
   function renderManagedRepos(items = []) {
@@ -4383,8 +4452,11 @@
       const name = escapeHtml(String(item.name || "-"));
       const repoLinkRaw = String(item.repo_link || "");
       const repoLink = escapeHtml(repoLinkRaw || "-");
+      const installDir = escapeHtml(String(item.install_dir || "-"));
       const service = escapeHtml(String(item.service_name || "-"));
       const user = escapeHtml(String(item.service_user || "-"));
+      const useService = item.use_service !== false;
+      const autostart = item.autostart !== false;
       const linkHtml = repoLinkRaw
         ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
         : "-";
@@ -4392,19 +4464,66 @@
         <tr>
           <td class="fw-semibold">${name}</td>
           <td class="text-break">${linkHtml}</td>
+          <td class="text-break">${installDir}</td>
+          <td>${useService ? "ja" : "nein"}</td>
           <td>${service}</td>
           <td>${user}</td>
+          <td>${autostart ? "aktiv" : "aus"}</td>
           <td>
             <div class="d-flex flex-wrap gap-1">
               <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="load" data-id="${escapeHtml(repoId)}">Laden</button>
               <button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="install_update" data-id="${escapeHtml(repoId)}">Install/Update</button>
+              <button class="btn btn-outline-warning btn-sm js-extra-repo-action" data-action="toggle_autostart" data-enabled="${autostart ? "0" : "1"}" data-id="${escapeHtml(repoId)}">${autostart ? "Autostart aus" : "Autostart an"}</button>
+              <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>
               <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="delete" data-id="${escapeHtml(repoId)}">Löschen</button>
             </div>
           </td>
         </tr>
       `;
     }).join("");
-    host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Service</th><th>User</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Installationspfad</th><th>Service-Modus</th><th>Service</th><th>User</th><th>Autostart</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function renderAutodiscoverServices(items = []) {
+    const host = q("autodiscover-services-list");
+    if (!host) return;
+    const list = Array.isArray(items) ? items : [];
+    autodiscoverServices = list;
+    if (!list.length) {
+      host.innerHTML = '<div class="text-secondary">Keine Autodiscover-Einträge.</div>';
+      return;
+    }
+    const rows = list.map((item) => {
+      const id = escapeHtml(String(item.id || ""));
+      const name = escapeHtml(String(item.repo_name || "-"));
+      const link = escapeHtml(String(item.repo_link || "-"));
+      const hostName = escapeHtml(String(item.hostname || item.remote_addr || "-"));
+      const seen = escapeHtml(String(item.last_seen_at || item.updated_at || "-"));
+      return `<tr>
+        <td class="fw-semibold">${name}</td>
+        <td class="text-break">${link}</td>
+        <td>${hostName}</td>
+        <td>${seen}</td>
+        <td><button class="btn btn-outline-primary btn-sm js-autodiscover-action" data-action="promote" data-id="${id}">Übernehmen</button></td>
+      </tr>`;
+    }).join("");
+    host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Host</th><th>Last Seen</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  async function refreshAutodiscoverServices() {
+    const payload = await fetchJson("/api/autodiscover/services", { timeoutMs: 10000, cache: "no-store" });
+    const services = (((payload || {}).data || {}).services) || [];
+    renderAutodiscoverServices(services);
+  }
+
+  async function promoteAutodiscoveredService(serviceId) {
+    const payload = await fetchJson(`/api/autodiscover/services/${encodeURIComponent(String(serviceId || "").trim())}/promote`, {
+      method: "POST",
+      timeoutMs: 12000,
+    });
+    const repos = ((((payload || {}).data || {}).repos) || []);
+    renderManagedRepos(repos);
+    toast("Autodiscover-Service übernommen", "success");
   }
 
   async function refreshManagedRepos() {
@@ -4465,6 +4584,38 @@
     streamPlayerUpdateJobId = String(data.job_id || "").trim();
     await pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId);
     toast(`${String(target.name || "Repo")} Install/Update gestartet`, "success");
+  }
+
+  async function toggleManagedRepoAutostart(repoId, enabled) {
+    const payload = await fetchJson(`/api/stream/player/repos/${encodeURIComponent(String(repoId || "").trim())}/service-autostart`, {
+      method: "POST",
+      body: { enabled: !!enabled },
+      timeoutMs: 20000,
+    });
+    const repo = payload?.data?.repo || null;
+    if (repo) {
+      const idx = managedInstallRepos.findIndex((item) => String(item.id || "") === String(repo.id || ""));
+      if (idx >= 0) {
+        managedInstallRepos[idx] = repo;
+      }
+      renderManagedRepos(managedInstallRepos);
+    } else {
+      await refreshManagedRepos();
+    }
+    toast(`Autostart ${enabled ? "aktiviert" : "deaktiviert"}`, "success");
+  }
+
+  async function uninstallManagedRepo(repoId) {
+    const target = getManagedRepoById(repoId);
+    const label = target ? String(target.name || target.repo_link || "Repo") : "Repo";
+    const removeRepo = !!window.confirm(`${label}: Repo-Verzeichnis auch löschen?\nOK = mit Repo-Ordner löschen\nAbbrechen = nur Service entfernen`);
+    const payload = await fetchJson(`/api/stream/player/repos/${encodeURIComponent(String(repoId || "").trim())}/uninstall`, {
+      method: "POST",
+      body: { remove_repo: removeRepo },
+      timeoutMs: 30000,
+    });
+    const action = payload?.data?.action || {};
+    toast(`Uninstall abgeschlossen${action.removed_repo ? " (Repo entfernt)" : ""}`, "success");
   }
 
   function overlayNum(id, fallback = 0) {
@@ -6144,6 +6295,10 @@
     if (extraRepoRefreshBtn) {
       extraRepoRefreshBtn.addEventListener("click", () => run(refreshManagedRepos));
     }
+    const extraRepoBrowseBtn = q("btn-extra-repo-install-dir-browse");
+    if (extraRepoBrowseBtn) {
+      extraRepoBrowseBtn.addEventListener("click", () => run(openRepoInstallPathModal));
+    }
     const extraRepoList = q("extra-repos-list");
     if (extraRepoList) {
       extraRepoList.addEventListener("click", (event) => {
@@ -6167,8 +6322,90 @@
           }
           if (action === "install_update") {
             await startManagedRepoInstallUpdate(repoId);
+            return;
+          }
+          if (action === "toggle_autostart") {
+            const enabled = String(btn.dataset.enabled || "").trim() === "1";
+            await toggleManagedRepoAutostart(repoId, enabled);
+            return;
+          }
+          if (action === "uninstall") {
+            await uninstallManagedRepo(repoId);
           }
         });
+      });
+    }
+    const autodiscoverRefreshBtn = q("btn-autodiscover-refresh");
+    if (autodiscoverRefreshBtn) {
+      autodiscoverRefreshBtn.addEventListener("click", () => run(refreshAutodiscoverServices));
+    }
+    const autodiscoverList = q("autodiscover-services-list");
+    if (autodiscoverList) {
+      autodiscoverList.addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("button.js-autodiscover-action") : null;
+        if (!btn) return;
+        const action = String(btn.dataset.action || "").trim();
+        const serviceId = String(btn.dataset.id || "").trim();
+        if (!action || !serviceId) return;
+        run(async () => {
+          if (action === "promote") {
+            await promoteAutodiscoveredService(serviceId);
+            await refreshAutodiscoverServices();
+          }
+        });
+      });
+    }
+    const repoInstallPathList = q("repo-install-path-list");
+    if (repoInstallPathList) {
+      repoInstallPathList.addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("button.js-repo-path-entry") : null;
+        if (!btn) return;
+        const path = String(btn.dataset.path || "").trim();
+        if (!path) return;
+        run(() => refreshRepoInstallPathBrowser(path));
+      });
+    }
+    const repoInstallPathRoots = q("repo-install-path-roots");
+    if (repoInstallPathRoots) {
+      repoInstallPathRoots.addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("button.js-repo-path-root") : null;
+        if (!btn) return;
+        const path = String(btn.dataset.path || "").trim();
+        if (!path) return;
+        run(() => refreshRepoInstallPathBrowser(path));
+      });
+    }
+    const repoInstallPathUpBtn = q("btn-repo-install-path-up");
+    if (repoInstallPathUpBtn) {
+      repoInstallPathUpBtn.addEventListener("click", () => run(async () => {
+        const path = String(repoInstallPathState.parentPath || "").trim();
+        if (!path) return;
+        await refreshRepoInstallPathBrowser(path);
+      }));
+    }
+    const repoInstallPathHomeBtn = q("btn-repo-install-path-home");
+    if (repoInstallPathHomeBtn) {
+      repoInstallPathHomeBtn.addEventListener("click", () => run(async () => {
+        const roots = Array.isArray(repoInstallPathState.roots) ? repoInstallPathState.roots : [];
+        const target = String(roots[0] || "").trim();
+        await refreshRepoInstallPathBrowser(target);
+      }));
+    }
+    const repoInstallPathRefreshBtn = q("btn-repo-install-path-refresh");
+    if (repoInstallPathRefreshBtn) {
+      repoInstallPathRefreshBtn.addEventListener("click", () => run(async () => {
+        await refreshRepoInstallPathBrowser(repoInstallPathState.currentPath || "");
+      }));
+    }
+    const repoInstallPathApplyBtn = q("btn-repo-install-path-apply");
+    if (repoInstallPathApplyBtn) {
+      repoInstallPathApplyBtn.addEventListener("click", () => {
+        const input = q("extra-repo-install-dir");
+        if (input) input.value = String(repoInstallPathState.currentPath || "").trim();
+        const modalEl = q("repoInstallPathModal");
+        if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+          window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        }
       });
     }
     const repoSaveQuick = q("btn-stream-player-repo-save-quick");
@@ -6549,6 +6786,7 @@
     await runQuiet(refreshAudioHubStatus, ["audio_control_unreachable", "connection refused"]);
     await run(loadPlayerRepoConfig);
     await run(refreshManagedRepos);
+    await run(refreshAutodiscoverServices);
     await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
     await run(refreshApClients);

@@ -1309,6 +1309,8 @@ def portal_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_B
         "repo_dir": parsed.get("repo_dir", ""),
         "service_user": parsed.get("service_user", ""),
         "service_name": parsed.get("service_name", ""),
+        "use_service": parsed.get("use_service", "true").lower() == "true",
+        "autostart": parsed.get("autostart", "true").lower() == "true",
         "git_status": parsed.get("git_status", "unknown"),
         "before_commit": parsed.get("before_commit", ""),
         "after_commit": parsed.get("after_commit", ""),
@@ -1329,7 +1331,14 @@ def portal_update_status(job_id: str = "", max_log_bytes: int = MAX_UPDATE_LOG_B
     }
 
 
-def player_update(player_repo_link: str, service_user: str = "", service_name: str = "joormann-media-deviceplayer.service") -> dict:
+def player_update(
+    player_repo_link: str,
+    service_user: str = "",
+    service_name: str = "joormann-media-deviceplayer.service",
+    install_dir: str = "",
+    use_service: bool = True,
+    autostart: bool = True,
+) -> dict:
     repo_link = (player_repo_link or "").strip()
     if not repo_link:
         raise NetControlError(code="player_repo_missing", message="Player repo link/path is required")
@@ -1337,10 +1346,13 @@ def player_update(player_repo_link: str, service_user: str = "", service_name: s
     service = (service_name or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
     user = (service_user or "").strip() or _service_user_from_systemd("device-portal.service") or getpass.getuser()
     update_dir = str(_player_update_dir())
+    install_target = (install_dir or "").strip()
+    use_service_value = "true" if bool(use_service) else "false"
+    autostart_value = "true" if bool(autostart) else "false"
 
     rc, out, err = _run_script(
         "player_update.sh",
-        ["start", repo_link, user, service, update_dir, str(REPO_ROOT.resolve())],
+        ["start", repo_link, user, service, install_target, update_dir, str(REPO_ROOT.resolve()), use_service_value, autostart_value],
         timeout=25,
         use_sudo=True,
     )
@@ -1357,11 +1369,78 @@ def player_update(player_repo_link: str, service_user: str = "", service_name: s
         "success": parsed.get("success", "true").lower() == "true",
         "repo_dir": parsed.get("repo_dir", ""),
         "repo_link": parsed.get("repo_link", repo_link),
+        "install_dir": parsed.get("install_dir", install_target),
+        "use_service": parsed.get("use_service", use_service_value).lower() == "true",
+        "autostart": parsed.get("autostart", autostart_value).lower() == "true",
         "service_user": parsed.get("service_user", user),
         "service_name": parsed.get("service_name", service),
         "job_id": parsed.get("job_id", ""),
         "status": "running",
         "message": parsed.get("message", "Player install/update started."),
+        "details": detail,
+    }
+
+
+def player_service_autostart(service_name: str, enabled: bool) -> dict:
+    service = (service_name or "").strip()
+    if not service:
+        raise NetControlError(code="service_name_missing", message="Service name is required")
+    enabled_value = "true" if bool(enabled) else "false"
+    rc, out, err = _run_script(
+        "player_update.sh",
+        ["service-autostart", service, enabled_value],
+        timeout=25,
+        use_sudo=True,
+    )
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "player_update_failed"),
+            message=parsed.get("message", "Service autostart action failed"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "service_name": parsed.get("service_name", service),
+        "autostart": parsed.get("autostart", enabled_value).lower() == "true",
+        "details": detail,
+    }
+
+
+def player_uninstall(
+    repo_link: str,
+    service_user: str = "",
+    service_name: str = "",
+    install_dir: str = "",
+    remove_repo: bool = False,
+) -> dict:
+    repo = (repo_link or "").strip()
+    if not repo:
+        raise NetControlError(code="player_repo_missing", message="Player repo link/path is required")
+    user = (service_user or "").strip() or _service_user_from_systemd("device-portal.service") or getpass.getuser()
+    service = (service_name or "").strip()
+    install_target = (install_dir or "").strip()
+    remove_repo_value = "true" if bool(remove_repo) else "false"
+    rc, out, err = _run_script(
+        "player_update.sh",
+        ["uninstall", repo, user, service, install_target, str(REPO_ROOT.resolve()), remove_repo_value],
+        timeout=30,
+        use_sudo=True,
+    )
+    parsed = _parse_kv_output(out)
+    detail = parsed.get("details") or err or out
+    if rc != 0:
+        raise NetControlError(
+            code=parsed.get("code", "player_update_failed"),
+            message=parsed.get("message", "Uninstall failed"),
+            detail=detail,
+        )
+    return {
+        "success": parsed.get("success", "true").lower() == "true",
+        "repo_dir": parsed.get("repo_dir", ""),
+        "service_name": parsed.get("service_name", service),
+        "removed_repo": parsed.get("removed_repo", "false").lower() == "true",
         "details": detail,
     }
 

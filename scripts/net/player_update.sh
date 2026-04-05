@@ -2,17 +2,27 @@
 set -euo pipefail
 
 MODE="${1:-start}"
-if [[ "${MODE}" != "start" ]]; then
-  echo "usage: $0 start <player_repo_link_or_path> <service_user> [service_name] [update_dir] [portal_repo_dir]" >&2
-  exit 2
-fi
-
 shift || true
 PLAYER_REPO_REF="${1:-}"
 SERVICE_USER="${2:-}"
 SERVICE_NAME="${3:-joormann-media-deviceplayer.service}"
-UPDATE_DIR="${4:-/tmp/deviceplayer-updates}"
-PORTAL_REPO_DIR="${5:-}"
+INSTALL_DIR="${4:-}"
+UPDATE_DIR="${5:-/tmp/deviceplayer-updates}"
+PORTAL_REPO_DIR="${6:-}"
+USE_SERVICE="${7:-true}"
+AUTOSTART="${8:-true}"
+
+# Backward compatibility:
+# old signature: start <repo> <user> [service] [update_dir] [portal_repo_dir]
+if [[ -z "${6:-}" && -n "${4:-}" ]]; then
+  case "${4}" in
+    /tmp/*updates*|/var/*updates*|*updates-player*|*updates*)
+      INSTALL_DIR=""
+      UPDATE_DIR="${4}"
+      PORTAL_REPO_DIR="${5:-}"
+      ;;
+  esac
+fi
 
 emit() {
   local key="$1"
@@ -38,6 +48,48 @@ repo_name_from_ref() {
     b="Joormann-Media-DevicePlayer"
   fi
   printf '%s' "$b"
+}
+
+str_true() {
+  local v
+  v="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${v}" == "1" || "${v}" == "true" || "${v}" == "yes" || "${v}" == "on" ]]
+}
+
+service_env_file_from_name() {
+  local svc="${1:-device-service}"
+  local slug
+  slug="$(printf '%s' "${svc}" | sed 's/\.service$//' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')"
+  if [[ -z "${slug}" ]]; then
+    slug="device-service"
+  fi
+  printf '/etc/default/jm-%s' "${slug}"
+}
+
+resolve_repo_dir() {
+  local ref="$1"
+  local user="$2"
+  local install_dir="$3"
+  local portal_repo_dir="$4"
+
+  if [[ -n "${install_dir}" ]]; then
+    printf '%s' "${install_dir}"
+    return
+  fi
+
+  if is_repo_url "${ref}"; then
+    local parent name
+    if [[ -n "${portal_repo_dir}" ]]; then
+      parent="$(dirname "${portal_repo_dir}")"
+    else
+      parent="$(eval echo "~${user}")/projects"
+    fi
+    name="$(repo_name_from_ref "${ref}")"
+    printf '%s/%s' "${parent}" "${name}"
+    return
+  fi
+
+  printf '%s' "${ref}"
 }
 
 resolve_portal_storage_config_path() {
@@ -121,8 +173,71 @@ service_supplementary_groups() {
   printf '%s' "${existing[*]}"
 }
 
+if [[ "${MODE}" == "service-autostart" ]]; then
+  if [[ -z "${PLAYER_REPO_REF}" ]]; then
+    emit "success" "false"
+    emit "code" "service_name_missing"
+    emit "message" "Service name is required."
+    exit 2
+  fi
+  if str_true "${SERVICE_USER}"; then
+    systemctl enable "${PLAYER_REPO_REF}" >/dev/null 2>&1 || true
+    emit "success" "true"
+    emit "code" "ok"
+    emit "message" "Autostart enabled"
+    emit "service_name" "${PLAYER_REPO_REF}"
+    emit "autostart" "true"
+    exit 0
+  fi
+  systemctl disable "${PLAYER_REPO_REF}" >/dev/null 2>&1 || true
+  emit "success" "true"
+  emit "code" "ok"
+  emit "message" "Autostart disabled"
+  emit "service_name" "${PLAYER_REPO_REF}"
+  emit "autostart" "false"
+  exit 0
+fi
+
+if [[ "${MODE}" == "uninstall" ]]; then
+  # uninstall <repo_ref> <service_user> [service_name] [install_dir] [portal_repo_dir] [remove_repo]
+  REMOVE_REPO="${7:-false}"
+  if [[ -z "${PLAYER_REPO_REF}" || -z "${SERVICE_USER}" ]]; then
+    emit "success" "false"
+    emit "code" "invalid_args"
+    emit "message" "usage: $0 uninstall <repo_ref> <service_user> [service_name] [install_dir] [portal_repo_dir] [remove_repo]"
+    exit 2
+  fi
+  REPO_DIR="$(resolve_repo_dir "${PLAYER_REPO_REF}" "${SERVICE_USER}" "${INSTALL_DIR}" "${PORTAL_REPO_DIR}")"
+  if [[ -n "${SERVICE_NAME}" ]]; then
+    systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
+    systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/${SERVICE_NAME}" || true
+    rm -rf "/etc/systemd/system/${SERVICE_NAME}.d" || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  REMOVED_REPO="false"
+  if str_true "${REMOVE_REPO}" && [[ -d "${REPO_DIR}" ]]; then
+    rm -rf "${REPO_DIR}" || true
+    if [[ ! -d "${REPO_DIR}" ]]; then
+      REMOVED_REPO="true"
+    fi
+  fi
+  emit "success" "true"
+  emit "code" "ok"
+  emit "message" "Uninstall finished"
+  emit "repo_dir" "${REPO_DIR}"
+  emit "service_name" "${SERVICE_NAME}"
+  emit "removed_repo" "${REMOVED_REPO}"
+  exit 0
+fi
+
+if [[ "${MODE}" != "start" ]]; then
+  echo "usage: $0 start|uninstall|service-autostart ..." >&2
+  exit 2
+fi
+
 if [[ -z "${PLAYER_REPO_REF}" || -z "${SERVICE_USER}" ]]; then
-  echo "usage: $0 start <player_repo_link_or_path> <service_user> [service_name] [update_dir] [portal_repo_dir]" >&2
+  echo "usage: $0 start <player_repo_link_or_path> <service_user> [service_name] [install_dir] [update_dir] [portal_repo_dir] [use_service] [autostart]" >&2
   exit 2
 fi
 
@@ -147,6 +262,9 @@ status=running
 success=false
 git_status=unknown
 repo_ref=${PLAYER_REPO_REF}
+install_dir=${INSTALL_DIR}
+use_service=${USE_SERVICE}
+autostart=${AUTOSTART}
 repo_dir=
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
@@ -163,15 +281,9 @@ EOF
   echo "[player-update] start job=${JOB_ID} ref=${PLAYER_REPO_REF} user=${SERVICE_USER}"
 
   REPO_REF="${PLAYER_REPO_REF}"
+  REPO_DIR="$(resolve_repo_dir "${REPO_REF}" "${SERVICE_USER}" "${INSTALL_DIR}" "${PORTAL_REPO_DIR}")"
   if is_repo_url "${REPO_REF}"; then
-    if [[ -n "${PORTAL_REPO_DIR}" ]]; then
-      PORTAL_PARENT="$(dirname "${PORTAL_REPO_DIR}")"
-    else
-      PORTAL_PARENT="$(eval echo "~${SERVICE_USER}")/projects"
-    fi
-    mkdir -p "${PORTAL_PARENT}"
-    REPO_NAME="$(repo_name_from_ref "${REPO_REF}")"
-    REPO_DIR="${PORTAL_PARENT}/${REPO_NAME}"
+    mkdir -p "$(dirname "${REPO_DIR}")"
 
     if [[ -d "${REPO_DIR}/.git" ]]; then
       echo "[git] existing clone found at ${REPO_DIR}"
@@ -185,6 +297,7 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -207,6 +320,7 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -229,6 +343,7 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -272,6 +387,7 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -296,6 +412,7 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -331,6 +448,7 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -341,17 +459,18 @@ EOF
     exit 0
   fi
 
-  SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
-  SERVICE_DROPIN_DIR="/etc/systemd/system/${SERVICE_NAME}.d"
-  SERVICE_DROPIN_FILE="${SERVICE_DROPIN_DIR}/10-deviceplayer-permissions.conf"
-  ENV_FILE="/etc/default/jm-deviceplayer"
-  PORTAL_STORAGE_CONFIG_PATH="$(resolve_portal_storage_config_path "${PORTAL_REPO_DIR}")"
-  if [[ -z "${PORTAL_STORAGE_CONFIG_PATH}" ]]; then
-    PORTAL_STORAGE_CONFIG_PATH="${PORTAL_REPO_DIR}/var/data/config-storage.json"
-  fi
-  PORTAL_PLAYER_SOURCE_PATH="${PORTAL_REPO_DIR}/var/data/player-source.json"
+  if str_true "${USE_SERVICE}"; then
+    SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
+    SERVICE_DROPIN_DIR="/etc/systemd/system/${SERVICE_NAME}.d"
+    SERVICE_DROPIN_FILE="${SERVICE_DROPIN_DIR}/10-deviceplayer-permissions.conf"
+    ENV_FILE="$(service_env_file_from_name "${SERVICE_NAME}")"
+    PORTAL_STORAGE_CONFIG_PATH="$(resolve_portal_storage_config_path "${PORTAL_REPO_DIR}")"
+    if [[ -z "${PORTAL_STORAGE_CONFIG_PATH}" ]]; then
+      PORTAL_STORAGE_CONFIG_PATH="${PORTAL_REPO_DIR}/var/data/config-storage.json"
+    fi
+    PORTAL_PLAYER_SOURCE_PATH="${PORTAL_REPO_DIR}/var/data/player-source.json"
 
-  cat > "${ENV_FILE}" <<EOF
+    cat > "${ENV_FILE}" <<EOF
 PYTHONUNBUFFERED=1
 DEVICEPLAYER_MANIFEST_PATH=
 DEVICEPLAYER_STORAGE_ROOT=
@@ -359,13 +478,13 @@ DEVICEPLAYER_PORTAL_PLAYER_SOURCE=${PORTAL_PLAYER_SOURCE_PATH}
 DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}
 DEVICEPLAYER_VIDEO_DRIVERS=kmsdrm,fbcon,wayland,x11
 EOF
-  chmod 0644 "${ENV_FILE}" || true
-  echo "[env] DEVICEPLAYER_MANIFEST_PATH="
-  echo "[env] DEVICEPLAYER_STORAGE_ROOT="
-  echo "[env] DEVICEPLAYER_PORTAL_PLAYER_SOURCE=${PORTAL_PLAYER_SOURCE_PATH}"
-  echo "[env] DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}"
+    chmod 0644 "${ENV_FILE}" || true
+    echo "[env] DEVICEPLAYER_MANIFEST_PATH="
+    echo "[env] DEVICEPLAYER_STORAGE_ROOT="
+    echo "[env] DEVICEPLAYER_PORTAL_PLAYER_SOURCE=${PORTAL_PLAYER_SOURCE_PATH}"
+    echo "[env] DEVICEPLAYER_PORTAL_STORAGE_CONFIG=${PORTAL_STORAGE_CONFIG_PATH}"
 
-  cat > "${SERVICE_FILE}" <<EOF
+    cat > "${SERVICE_FILE}" <<EOF
 [Unit]
 Description=Joormann Media DevicePlayer
 After=network-online.target
@@ -388,29 +507,33 @@ RestartSec=2
 [Install]
 WantedBy=multi-user.target
 EOF
-  chmod 0644 "${SERVICE_FILE}" || true
+    chmod 0644 "${SERVICE_FILE}" || true
 
-  SUPP_GROUPS="$(service_supplementary_groups)"
-  mkdir -p "${SERVICE_DROPIN_DIR}"
-  if [[ -n "${SUPP_GROUPS}" ]]; then
-    cat > "${SERVICE_DROPIN_FILE}" <<EOF
+    SUPP_GROUPS="$(service_supplementary_groups)"
+    mkdir -p "${SERVICE_DROPIN_DIR}"
+    if [[ -n "${SUPP_GROUPS}" ]]; then
+      cat > "${SERVICE_DROPIN_FILE}" <<EOF
 [Service]
 SupplementaryGroups=${SUPP_GROUPS}
 EOF
-    chmod 0644 "${SERVICE_DROPIN_FILE}" || true
-    echo "[service] supplementary groups set: ${SUPP_GROUPS}"
-  else
-    rm -f "${SERVICE_DROPIN_FILE}" || true
-  fi
-  echo "[preflight] /dev/dri:"
-  ls -lah /dev/dri 2>/dev/null || echo "[preflight] /dev/dri not present"
-  echo "[preflight] service user groups: $(id -nG "${SERVICE_USER}" 2>/dev/null || true)"
+      chmod 0644 "${SERVICE_DROPIN_FILE}" || true
+      echo "[service] supplementary groups set: ${SUPP_GROUPS}"
+    else
+      rm -f "${SERVICE_DROPIN_FILE}" || true
+    fi
+    echo "[preflight] /dev/dri:"
+    ls -lah /dev/dri 2>/dev/null || echo "[preflight] /dev/dri not present"
+    echo "[preflight] service user groups: $(id -nG "${SERVICE_USER}" 2>/dev/null || true)"
 
-  echo "[service] daemon-reload + enable + restart ${SERVICE_NAME}"
-  systemctl daemon-reload
-  systemctl enable "${SERVICE_NAME}"
+    echo "[service] daemon-reload + restart ${SERVICE_NAME}"
+    systemctl daemon-reload
+    if str_true "${AUTOSTART}"; then
+      systemctl enable "${SERVICE_NAME}"
+    else
+      systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+    fi
 
-  cat > "${STATE_FILE}" <<EOF
+    cat > "${STATE_FILE}" <<EOF
 status=restarting
 success=false
 git_status=${GIT_STATUS}
@@ -418,6 +541,9 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
+use_service=${USE_SERVICE}
+autostart=${AUTOSTART}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -426,9 +552,51 @@ before_commit=${BEFORE_COMMIT}
 after_commit=${AFTER_COMMIT}
 EOF
 
-  systemctl restart "${SERVICE_NAME}"
-  SRV_RC=$?
-  if [[ ${SRV_RC} -eq 0 ]]; then
+    systemctl restart "${SERVICE_NAME}"
+    SRV_RC=$?
+    if [[ ${SRV_RC} -eq 0 ]]; then
+      cat > "${STATE_FILE}" <<EOF
+status=done
+success=true
+git_status=${GIT_STATUS}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
+use_service=${USE_SERVICE}
+autostart=${AUTOSTART}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
+EOF
+      echo "[service] restart ok"
+    else
+      cat > "${STATE_FILE}" <<EOF
+status=failed
+success=false
+git_status=${GIT_STATUS}
+repo_ref=${REPO_REF}
+repo_dir=${REPO_DIR}
+service_user=${SERVICE_USER}
+service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
+use_service=${USE_SERVICE}
+autostart=${AUTOSTART}
+job_id=${JOB_ID}
+started_at=${STARTED_AT}
+updated_at=$(utc_now)
+finished_at=$(utc_now)
+before_commit=${BEFORE_COMMIT}
+after_commit=${AFTER_COMMIT}
+EOF
+      echo "[service] restart failed rc=${SRV_RC}"
+    fi
+  else
+    echo "[service] skipped (use_service=false)"
     cat > "${STATE_FILE}" <<EOF
 status=done
 success=true
@@ -437,6 +605,9 @@ repo_ref=${REPO_REF}
 repo_dir=${REPO_DIR}
 service_user=${SERVICE_USER}
 service_name=${SERVICE_NAME}
+install_dir=${INSTALL_DIR}
+use_service=${USE_SERVICE}
+autostart=${AUTOSTART}
 job_id=${JOB_ID}
 started_at=${STARTED_AT}
 updated_at=$(utc_now)
@@ -444,24 +615,6 @@ finished_at=$(utc_now)
 before_commit=${BEFORE_COMMIT}
 after_commit=${AFTER_COMMIT}
 EOF
-    echo "[service] restart ok"
-  else
-    cat > "${STATE_FILE}" <<EOF
-status=failed
-success=false
-git_status=${GIT_STATUS}
-repo_ref=${REPO_REF}
-repo_dir=${REPO_DIR}
-service_user=${SERVICE_USER}
-service_name=${SERVICE_NAME}
-job_id=${JOB_ID}
-started_at=${STARTED_AT}
-updated_at=$(utc_now)
-finished_at=$(utc_now)
-before_commit=${BEFORE_COMMIT}
-after_commit=${AFTER_COMMIT}
-EOF
-    echo "[service] restart failed rc=${SRV_RC}"
   fi
 
   exit 0
@@ -472,6 +625,9 @@ emit "code" "ok"
 emit "message" "Player update started"
 emit "job_id" "${JOB_ID}"
 emit "repo_link" "${PLAYER_REPO_REF}"
+emit "install_dir" "${INSTALL_DIR}"
+emit "use_service" "${USE_SERVICE}"
+emit "autostart" "${AUTOSTART}"
 emit "repo_dir" ""
 emit "service_user" "${SERVICE_USER}"
 emit "service_name" "${SERVICE_NAME}"

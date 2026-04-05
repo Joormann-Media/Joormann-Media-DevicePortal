@@ -34,6 +34,8 @@ blocked_mounts = {
     "/var",
 }
 
+manual_mount_prefixes = ("/mnt/", "/media/")
+
 
 def as_int(value, default=0):
     try:
@@ -88,9 +90,11 @@ for item in nodes:
     hotplug = as_int(item.get("hotplug", parent.get("hotplug", 0)))
     removable = as_int(item.get("rm", parent.get("rm", 0)))
 
-    # Prefer USB/removable/hotplug media; avoid fixed internal system disks.
+    # Prefer USB/removable/hotplug media.
     is_external = tran == "usb" or hotplug == 1 or removable == 1
-    if not is_external:
+    # Additionally allow manually mounted internal/server disks under /mnt or /media.
+    is_manual_mount = bool(mountpoint) and any(mountpoint.startswith(prefix) for prefix in manual_mount_prefixes)
+    if not is_external and not is_manual_mount:
         continue
 
     # Require at least one stable identity signal.
@@ -125,6 +129,7 @@ for item in nodes:
             "fs_use_percent": as_int(str(item.get("fsuse%", "0")).replace("%", ""), 0),
             "hotplug": hotplug == 1,
             "removable": removable == 1,
+            "manual_mount_candidate": is_manual_mount and not is_external,
         }
     )
 
