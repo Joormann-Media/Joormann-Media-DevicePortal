@@ -24,6 +24,12 @@
     roots: [],
     modal: null,
   };
+  const streamAudioBrowserState = {
+    currentPath: "",
+    parentPath: "",
+    rootPath: "/mnt",
+    modal: null,
+  };
   let audioHubPollHandle = null;
   let btDeviceState = {
     devices: [],
@@ -4009,7 +4015,6 @@
     const activeSource = String(data.active_source || "idle");
     const bluetooth = (data.bluetooth && typeof data.bluetooth === "object") ? data.bluetooth : {};
     const outputs = (data.outputs && typeof data.outputs === "object") ? data.outputs : {};
-    const raspotify = (data.raspotify && typeof data.raspotify === "object") ? data.raspotify : {};
     const errors = Array.isArray(data.errors) ? data.errors : [];
 
     q("audio-status-source").textContent = activeSource || "-";
@@ -4034,41 +4039,6 @@
       }
     }
 
-    const serviceName = String(raspotify.service_name || "-");
-    const deviceName = String(raspotify.device_name || "-");
-    const backend = String(raspotify.backend || "-");
-    const output = String(raspotify.output_device || "-");
-    const lastError = String(raspotify.last_error || "").trim();
-    const running = !!raspotify.service_running;
-    const installed = !!raspotify.service_installed;
-    const activeState = String(raspotify.service_active_state || "-");
-    const subState = String(raspotify.service_sub_state || "-");
-
-    const raspotifyStatusEl = q("audio-raspotify-status");
-    if (raspotifyStatusEl) {
-      raspotifyStatusEl.textContent = `Status: ${running ? "laeuft" : "inaktiv"} (${activeState}/${subState})`;
-    }
-    q("audio-raspotify-service").textContent = serviceName;
-    q("audio-raspotify-device-name").textContent = deviceName || "-";
-    q("audio-raspotify-backend").textContent = backend || "-";
-    q("audio-raspotify-output").textContent = output || "-";
-    q("audio-raspotify-last-error").textContent = lastError || "—";
-
-    const badge = q("audio-raspotify-status-badge");
-    if (badge) {
-      badge.classList.remove("text-bg-success", "text-bg-warning", "text-bg-secondary", "text-bg-danger");
-      if (!installed) {
-        badge.classList.add("text-bg-secondary");
-        badge.textContent = "not installed";
-      } else if (running) {
-        badge.classList.add("text-bg-success");
-        badge.textContent = "running";
-      } else {
-        badge.classList.add("text-bg-warning");
-        badge.textContent = "inactive";
-      }
-    }
-
     const radio = (data.radio && typeof data.radio === "object") ? data.radio : {};
     const rtspAdapter = (radio.rtsp_adapter && typeof radio.rtsp_adapter === "object") ? radio.rtsp_adapter : {};
     const adapterMeta = rtspAdapter.active
@@ -4088,29 +4058,6 @@
     const payload = await fetchJson("/api/audio/status", { cache: "no-store" });
     renderAudioHubStatus(payload);
     return payload;
-  }
-
-  async function raspotifyAction(action) {
-    const safeAction = String(action || "").trim().toLowerCase();
-    if (!["start", "stop", "restart"].includes(safeAction)) {
-      throw new Error("Ungueltige Raspotify-Action.");
-    }
-    const btn = q(`btn-audio-raspotify-${safeAction}`);
-    const original = btn ? btn.innerHTML : "";
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Läuft...';
-    }
-    try {
-      await fetchJson(`/api/audio/raspotify/${safeAction}`, { method: "POST" });
-      await refreshAudioHubStatus();
-      toast(`Raspotify ${safeAction}`, "success");
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = original;
-      }
-    }
   }
 
   async function audioRadioPlay() {
@@ -4244,6 +4191,57 @@
     const firstPath = files.length > 0 ? String(files[0].path || "") : "";
     q("stream-audio-file-path").value = firstPath;
     return payload;
+  }
+
+  function renderStreamAudioPathBrowser(data = {}) {
+    streamAudioBrowserState.currentPath = String(data.current_path || "");
+    streamAudioBrowserState.parentPath = String(data.parent_path || "");
+    streamAudioBrowserState.rootPath = String(data.root_path || "/mnt");
+
+    const currentEl = q("stream-audio-browser-current");
+    if (currentEl) currentEl.textContent = streamAudioBrowserState.currentPath || "-";
+
+    const listEl = q("stream-audio-browser-list");
+    if (!listEl) return;
+
+    const rows = [];
+    if (streamAudioBrowserState.currentPath && streamAudioBrowserState.currentPath !== streamAudioBrowserState.rootPath) {
+      rows.push(`<button type="button" class="list-group-item list-group-item-action js-stream-audio-path-entry" data-kind="dir" data-path="${escapeHtml(streamAudioBrowserState.parentPath)}"><i class="bi bi-arrow-up-circle me-1"></i>..</button>`);
+    }
+
+    const directories = Array.isArray(data.directories) ? data.directories : [];
+    for (const dir of directories) {
+      const name = escapeHtml(String(dir.name || ""));
+      const path = escapeHtml(String(dir.path || ""));
+      rows.push(`<button type="button" class="list-group-item list-group-item-action js-stream-audio-path-entry" data-kind="dir" data-path="${path}"><i class="bi bi-folder2 me-1"></i>${name}</button>`);
+    }
+
+    const files = Array.isArray(data.files) ? data.files : [];
+    for (const file of files) {
+      const sizeKb = Math.max(0, Math.round(Number(file.size_bytes || 0) / 1024));
+      const name = escapeHtml(String(file.name || ""));
+      const path = escapeHtml(String(file.path || ""));
+      rows.push(`<button type="button" class="list-group-item list-group-item-action js-stream-audio-path-entry" data-kind="file" data-path="${path}"><i class="bi bi-file-earmark-music me-1"></i>${name} <span class="text-secondary">(${sizeKb} KB)</span></button>`);
+    }
+
+    listEl.innerHTML = rows.length ? rows.join("") : '<div class="text-secondary p-2">Keine Unterordner oder Audiodateien.</div>';
+  }
+
+  async function refreshStreamAudioPathBrowser(path = "") {
+    const query = new URLSearchParams();
+    const targetPath = String(path || streamAudioBrowserState.currentPath || "").trim();
+    if (targetPath) query.set("path", targetPath);
+    const payload = await fetchJson(`/api/stream/player/audio/path-browser?${query.toString()}`, { timeoutMs: 10000 });
+    renderStreamAudioPathBrowser((payload || {}).data || {});
+  }
+
+  async function openStreamAudioPathModal() {
+    const inputPath = String(q("stream-audio-file-path")?.value || "").trim();
+    await refreshStreamAudioPathBrowser(inputPath);
+    const modalEl = q("streamAudioFileBrowserModal");
+    if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
+    streamAudioBrowserState.modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+    streamAudioBrowserState.modal.show();
   }
 
   async function streamAudioPlayFile() {
@@ -6408,6 +6406,10 @@
       const selected = String(q("stream-audio-file-select")?.value || "").trim();
       if (selected) q("stream-audio-file-path").value = selected;
     });
+    const streamAudioBrowseBtn = q("btn-stream-audio-file-browse");
+    if (streamAudioBrowseBtn) {
+      streamAudioBrowseBtn.addEventListener("click", () => run(openStreamAudioPathModal));
+    }
     q("btn-stream-player-repo-save").addEventListener("click", () => run(savePlayerRepoConfig));
     q("btn-stream-player-install-update").addEventListener("click", () => run(startStreamPlayerInstallUpdate));
     q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
@@ -6545,6 +6547,55 @@
         }
       });
     }
+    const streamAudioPathList = q("stream-audio-browser-list");
+    if (streamAudioPathList) {
+      streamAudioPathList.addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("button.js-stream-audio-path-entry") : null;
+        if (!btn) return;
+        const path = String(btn.dataset.path || "").trim();
+        const kind = String(btn.dataset.kind || "").trim();
+        if (!path) return;
+        run(async () => {
+          if (kind === "file") {
+            const input = q("stream-audio-file-path");
+            if (input) input.value = path;
+            const modalEl = q("streamAudioFileBrowserModal");
+            if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+              window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            }
+            return;
+          }
+          await refreshStreamAudioPathBrowser(path);
+        });
+      });
+    }
+    const streamAudioPathUpBtn = q("btn-stream-audio-browser-up");
+    if (streamAudioPathUpBtn) {
+      streamAudioPathUpBtn.addEventListener("click", () => run(async () => {
+        const path = String(streamAudioBrowserState.parentPath || "").trim();
+        if (!path) return;
+        await refreshStreamAudioPathBrowser(path);
+      }));
+    }
+    const streamAudioPathRootBtn = q("btn-stream-audio-browser-root");
+    if (streamAudioPathRootBtn) {
+      streamAudioPathRootBtn.addEventListener("click", () => run(() => refreshStreamAudioPathBrowser(streamAudioBrowserState.rootPath || "/mnt")));
+    }
+    const streamAudioPathRefreshBtn = q("btn-stream-audio-browser-refresh");
+    if (streamAudioPathRefreshBtn) {
+      streamAudioPathRefreshBtn.addEventListener("click", () => run(() => refreshStreamAudioPathBrowser(streamAudioBrowserState.currentPath || "/mnt")));
+    }
+    const streamAudioPathApplyDirBtn = q("btn-stream-audio-browser-apply-dir");
+    if (streamAudioPathApplyDirBtn) {
+      streamAudioPathApplyDirBtn.addEventListener("click", () => {
+        const input = q("stream-audio-file-path");
+        if (input) input.value = String(streamAudioBrowserState.currentPath || "").trim();
+        const modalEl = q("streamAudioFileBrowserModal");
+        if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+          window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        }
+      });
+    }
     const repoSaveQuick = q("btn-stream-player-repo-save-quick");
     if (repoSaveQuick) {
       repoSaveQuick.addEventListener("click", () => run(savePlayerRepoConfig));
@@ -6597,9 +6648,6 @@
     q("btn-audio-output-refresh").addEventListener("click", () => run(refreshAudioOutputs));
     q("btn-audio-output-set").addEventListener("click", () => run(() => setAudioOutput("")));
     q("btn-audio-status-refresh").addEventListener("click", () => run(refreshAudioHubStatus));
-    q("btn-audio-raspotify-start").addEventListener("click", () => run(() => raspotifyAction("start")));
-    q("btn-audio-raspotify-stop").addEventListener("click", () => run(() => raspotifyAction("stop")));
-    q("btn-audio-raspotify-restart").addEventListener("click", () => run(() => raspotifyAction("restart")));
     q("btn-audio-radio-play").addEventListener("click", () => run(audioRadioPlay));
     q("btn-audio-radio-stop").addEventListener("click", () => run(audioRadioStop));
     q("btn-audio-tts-test").addEventListener("click", () => run(audioTtsTest));

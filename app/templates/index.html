@@ -1190,35 +1190,14 @@
                     <select id="stream-audio-file-select" class="form-select form-select-sm mb-2">
                       <option value="">Keine Audio-Dateien gefunden</option>
                     </select>
-                    <input id="stream-audio-file-path" type="text" class="form-control form-control-sm" placeholder="/pfad/zur/datei.mp3">
+                    <div class="input-group input-group-sm mb-2">
+                      <input id="stream-audio-file-path" type="text" class="form-control" placeholder="/pfad/zur/datei.mp3">
+                      <button id="btn-stream-audio-file-browse" class="btn btn-outline-secondary" type="button">Durchsuchen</button>
+                    </div>
                     <div class="small text-uppercase text-secondary mt-3 mb-2">Webradio / Webstream</div>
                     <input id="stream-audio-stream-url" type="url" class="form-control form-control-sm" placeholder="https://example.com/stream.mp3">
-                  </div>
-                </div>
-                <div class="col-12 col-xl-6">
-                  <div class="border rounded p-3 h-100">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                      <div class="small text-uppercase text-secondary mb-0">Raspotify</div>
-                      <span id="audio-raspotify-status-badge" class="badge text-bg-secondary">unknown</span>
-                    </div>
-                    <div id="audio-raspotify-status" class="small mb-2">Status: -</div>
-                    <dl class="portal-kv mb-2">
-                      <dt>Dienst</dt><dd id="audio-raspotify-service">-</dd>
-                      <dt>Device</dt><dd id="audio-raspotify-device-name">-</dd>
-                      <dt>Backend</dt><dd id="audio-raspotify-backend">-</dd>
-                      <dt>Output</dt><dd id="audio-raspotify-output">-</dd>
-                      <dt>Last Error</dt><dd id="audio-raspotify-last-error">-</dd>
-                    </dl>
-                    <div class="d-flex flex-wrap gap-2">
-                      <button id="btn-audio-raspotify-start" class="btn btn-outline-success btn-sm">Start</button>
-                      <button id="btn-audio-raspotify-stop" class="btn btn-outline-danger btn-sm">Stop</button>
-                      <button id="btn-audio-raspotify-restart" class="btn btn-outline-warning btn-sm">Restart</button>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-12 col-xl-6">
-                  <div class="border rounded p-3 h-100">
-                    <div class="small text-uppercase text-secondary mb-2">Webradio (mpv)</div>
+
+                    <div class="small text-uppercase text-secondary mt-3 mb-2">Webradio (mpv)</div>
                     <div id="audio-radio-status" class="small mb-2">Status: -</div>
                     <input id="audio-radio-url" type="url" class="form-control form-control-sm mb-2" placeholder="https://example.com/stream.mp3">
                     <div class="d-flex flex-wrap gap-2">
@@ -2011,6 +1990,35 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
           <button id="btn-repo-install-path-apply" type="button" class="btn btn-primary btn-sm">Diesen Ordner übernehmen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="streamAudioFileBrowserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-folder2-open"></i>
+            Audio-Datei wählen
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="small text-secondary mb-2">Aktueller Pfad: <span id="stream-audio-browser-current">-</span></div>
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <button id="btn-stream-audio-browser-root" type="button" class="btn btn-outline-secondary btn-sm">/mnt</button>
+            <button id="btn-stream-audio-browser-up" type="button" class="btn btn-outline-secondary btn-sm">Eine Ebene hoch</button>
+            <button id="btn-stream-audio-browser-refresh" type="button" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+          </div>
+          <div id="stream-audio-browser-list" class="list-group small" style="max-height: 360px; overflow:auto;">
+            <div class="text-secondary">Lade Verzeichnisse…</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button id="btn-stream-audio-browser-apply-dir" type="button" class="btn btn-primary btn-sm">Diesen Ordner übernehmen</button>
         </div>
       </div>
     </div>

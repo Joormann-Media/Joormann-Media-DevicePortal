@@ -997,6 +997,29 @@ def _path_browser_resolve(raw_path: str, roots: list[Path]) -> tuple[Path, Path]
     return current, matched_root
 
 
+def _audio_path_browser_root() -> Path:
+    configured = str(os.getenv('DEVICEPLAYER_AUDIO_BROWSER_ROOT') or '').strip()
+    candidate = Path(configured).expanduser() if configured else Path('/mnt')
+    resolved = candidate.resolve()
+    if not resolved.exists() or not resolved.is_dir():
+        raise RuntimeError('Audio-Dateibrowser Root nicht verfügbar.')
+    return resolved
+
+
+def _audio_path_browser_resolve(raw_path: str, root: Path) -> Path:
+    selected = str(raw_path or '').strip()
+    current = root if not selected else Path(selected).expanduser()
+    current = current.resolve()
+    if not current.exists() or not current.is_dir():
+        raise RuntimeError('Verzeichnis existiert nicht.')
+    try:
+        if not current.is_relative_to(root):
+            raise RuntimeError('Pfad liegt außerhalb von /mnt.')
+    except Exception:
+        raise RuntimeError('Pfad liegt außerhalb von /mnt.')
+    return current
+
+
 def _managed_repo_service_status(repo: dict) -> dict:
     def _probe_runtime_health(target: dict) -> dict:
         urls: list[str] = []
@@ -1577,6 +1600,64 @@ def api_stream_player_audio_files():
             }
         )
     return jsonify(ok=True, root=str(root), files=files)
+
+
+@bp_stream.get('/api/stream/player/audio/path-browser')
+def api_stream_player_audio_path_browser():
+    try:
+        root = _audio_path_browser_root()
+        current = _audio_path_browser_resolve(str(request.args.get('path') or ''), root)
+    except RuntimeError as exc:
+        return jsonify(ok=False, error='invalid_path', detail=str(exc)), 400
+
+    allowed_ext = {'.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac'}
+    directories: list[dict] = []
+    files: list[dict] = []
+    try:
+        for child in sorted(current.iterdir(), key=lambda item: item.name.lower()):
+            name = child.name
+            if name.startswith('.'):
+                continue
+            try:
+                if child.is_dir():
+                    directories.append({'name': name, 'path': str(child.resolve())})
+                    continue
+                if not child.is_file():
+                    continue
+            except Exception:
+                continue
+            if child.suffix.lower() not in allowed_ext:
+                continue
+            size_bytes = 0
+            try:
+                size_bytes = int(child.stat().st_size or 0)
+            except Exception:
+                size_bytes = 0
+            files.append({'name': name, 'path': str(child.resolve()), 'size_bytes': size_bytes})
+    except Exception as exc:
+        return jsonify(ok=False, error='path_browser_failed', detail=str(exc)), 500
+
+    parent_path = ''
+    if current != root:
+        parent_candidate = current.parent.resolve()
+        try:
+            if parent_candidate.is_relative_to(root):
+                parent_path = str(parent_candidate)
+            else:
+                parent_path = str(root)
+        except Exception:
+            parent_path = str(root)
+
+    return jsonify(
+        ok=True,
+        data={
+            'current_path': str(current),
+            'root_path': str(root),
+            'parent_path': parent_path,
+            'directories': directories,
+            'files': files,
+        },
+    )
 
 
 @bp_stream.post('/api/stream/player/audio/play-file')
