@@ -1576,9 +1576,21 @@ def api_stream_player_audio_status():
 
 @bp_stream.get('/api/stream/player/audio/files')
 def api_stream_player_audio_files():
+    requested_path = str(request.args.get('path') or '').strip()
     root = _resolve_audio_allowed_root()
+    if requested_path:
+        try:
+            browser_root = _audio_path_browser_root()
+            candidate = Path(requested_path).expanduser().resolve()
+            if not candidate.exists() or not candidate.is_dir():
+                return jsonify(ok=False, error='invalid_path', detail='Verzeichnis existiert nicht.'), 400
+            if not candidate.is_relative_to(browser_root):
+                return jsonify(ok=False, error='invalid_path', detail='Pfad liegt außerhalb von /mnt.'), 400
+            root = candidate
+        except Exception:
+            return jsonify(ok=False, error='invalid_path', detail='Ungültiger Audio-Pfad.'), 400
     if not root.exists() or not root.is_dir():
-        return jsonify(ok=True, root=str(root), files=[])
+        return jsonify(ok=True, root=str(root), current_path=str(root), files=[])
 
     allowed_ext = {'.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac'}
     files: list[dict] = []
@@ -1599,7 +1611,7 @@ def api_stream_player_audio_files():
                 'size_bytes': int(path.stat().st_size or 0),
             }
         )
-    return jsonify(ok=True, root=str(root), files=files)
+    return jsonify(ok=True, root=str(root), current_path=str(root), files=files)
 
 
 @bp_stream.get('/api/stream/player/audio/path-browser')

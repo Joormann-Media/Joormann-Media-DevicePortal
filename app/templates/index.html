@@ -54,9 +54,6 @@
               <span id="hero-update" class="badge text-bg-secondary">Update-Check läuft…</span>
             </button>
           </div>
-          <div class="mt-2">
-            <span id="hero-update-player" class="badge text-bg-secondary">Player-Check läuft…</span>
-          </div>
           <div class="hero-live-switches mt-3 ms-lg-auto">
             <div class="hero-live-switch" id="hero-flag-active-wrap">
               <div class="hero-live-switch-label">Active</div>
@@ -863,8 +860,12 @@
       </div>
 
       <div class="tab-pane fade" id="stream-pane" role="tabpanel" aria-labelledby="stream-tab">
-        <div class="row g-3">
-          <div class="col-12 col-xl-7">
+        <div id="stream-feature-empty" class="portal-card p-4 d-none">
+          <h2 class="h5 mb-1">Stream-Module nicht erkannt</h2>
+          <p class="text-secondary mb-0">Dieser Bereich wird angezeigt, sobald AudioPlayer, DisplayPlayer oder DevicePlayer installiert/aktiv erkannt wurde.</p>
+        </div>
+        <div id="stream-feature-row" class="row g-3">
+          <div id="stream-feature-stream-col" class="col-12 col-xl-7">
             <div class="portal-card p-4 h-100">
               <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                 <div>
@@ -1094,7 +1095,7 @@
             </div>
           </div>
 
-          <div class="col-12 col-xl-5">
+          <div id="stream-feature-spotify-col" class="col-12 col-xl-5">
             <div class="portal-card p-4 h-100">
               <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
                 <h2 class="h5 mb-0">Spotify Connect</h2>
@@ -1157,7 +1158,7 @@
             </div>
           </div>
 
-          <div class="col-12">
+          <div id="stream-feature-audio-col" class="col-12">
             <div class="portal-card p-4">
               <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                 <div>
@@ -1193,6 +1194,7 @@
                     <div class="input-group input-group-sm mb-2">
                       <input id="stream-audio-file-path" type="text" class="form-control" placeholder="/pfad/zur/datei.mp3">
                       <button id="btn-stream-audio-file-browse" class="btn btn-outline-secondary" type="button">Durchsuchen</button>
+                      <button id="btn-stream-audio-files-load" class="btn btn-outline-primary" type="button">Dateien laden</button>
                     </div>
                     <div class="small text-uppercase text-secondary mt-3 mb-2">Webradio / Webstream</div>
                     <input id="stream-audio-stream-url" type="url" class="form-control form-control-sm" placeholder="https://example.com/stream.mp3">

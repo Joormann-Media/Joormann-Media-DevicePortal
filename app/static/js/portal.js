@@ -17,6 +17,13 @@
   let streamAudioMuted = false;
   let managedInstallRepos = [];
   let autodiscoverServices = [];
+  const streamFeatureState = {
+    hasAudioPlayer: false,
+    hasDisplayPlayer: false,
+    hasDevicePlayer: false,
+    playerInstalled: false,
+    spotifyInstalled: false,
+  };
   const repoInstallPathState = {
     currentPath: "",
     parentPath: "",
@@ -136,6 +143,72 @@
 
   function q(id) {
     return document.getElementById(id);
+  }
+
+  function _repoLooksInstalled(item) {
+    const source = item && typeof item === "object" ? item : {};
+    const status = (source.service_status && typeof source.service_status === "object") ? source.service_status : {};
+    const useService = source.use_service !== false;
+    if (useService) {
+      return !!(status.service_installed || status.service_running);
+    }
+    if (typeof status.runtime_reachable !== "undefined") {
+      return !!status.runtime_reachable;
+    }
+    return !!status.service_running;
+  }
+
+  function _detectRepoKinds(item) {
+    const source = item && typeof item === "object" ? item : {};
+    const bag = [
+      String(source.name || ""),
+      String(source.repo_name || ""),
+      String(source.repo_link || ""),
+      String(source.service_name || ""),
+      String(source.install_dir || ""),
+    ].join(" ").toLowerCase();
+    return {
+      audio: bag.includes("jarvis-audioplayer") || bag.includes("joormann-media-jarvis-audioplayer"),
+      display: bag.includes("jarvis-displayplayer") || bag.includes("joormann-media-jarvis-displayplayer"),
+      device: bag.includes("deviceplayer") || bag.includes("joormann-media-deviceplayer"),
+    };
+  }
+
+  function recomputeStreamFeatureState() {
+    let hasAudioPlayer = false;
+    let hasDisplayPlayer = false;
+    let hasDevicePlayer = false;
+    const consume = (entry) => {
+      const kinds = _detectRepoKinds(entry);
+      const installed = _repoLooksInstalled(entry) || String(entry?.source || "").toLowerCase() === "autodiscover";
+      if (!installed) return;
+      if (kinds.audio) hasAudioPlayer = true;
+      if (kinds.display) hasDisplayPlayer = true;
+      if (kinds.device) hasDevicePlayer = true;
+    };
+    for (const item of (Array.isArray(managedInstallRepos) ? managedInstallRepos : [])) consume(item);
+    for (const item of (Array.isArray(autodiscoverServices) ? autodiscoverServices : [])) consume(item);
+    streamFeatureState.hasAudioPlayer = hasAudioPlayer;
+    streamFeatureState.hasDisplayPlayer = hasDisplayPlayer;
+    streamFeatureState.hasDevicePlayer = hasDevicePlayer;
+  }
+
+  function toggleVisible(el, visible) {
+    if (!el) return;
+    el.classList.toggle("d-none", !visible);
+  }
+
+  function applyStreamFeatureVisibility() {
+    const hasStream = !!(streamFeatureState.hasDisplayPlayer || streamFeatureState.hasDevicePlayer || streamFeatureState.playerInstalled);
+    const hasAudio = !!streamFeatureState.hasAudioPlayer;
+    const hasSpotify = !!(hasAudio && streamFeatureState.spotifyInstalled);
+    const anyVisible = hasStream || hasAudio || hasSpotify;
+
+    toggleVisible(q("stream-feature-stream-col"), hasStream);
+    toggleVisible(q("stream-feature-audio-col"), hasAudio);
+    toggleVisible(q("stream-feature-spotify-col"), hasSpotify);
+    toggleVisible(q("stream-feature-row"), anyVisible);
+    toggleVisible(q("stream-feature-empty"), !anyVisible);
   }
 
   function isNearBottom(el, thresholdPx = 28) {
@@ -1512,22 +1585,6 @@
         updateBadge.textContent = `Up to date (${localVersion})`;
       }
     }
-    const playerBadge = q("hero-update-player");
-    if (playerBadge) {
-      playerBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
-      const localVersion = playerLocalVersion(playerUpdate);
-      if (playerUpdate.available) {
-        playerBadge.classList.add("text-bg-warning");
-        playerBadge.textContent = `Player Update verfügbar (${localVersion} -> ${playerRemoteShort(playerUpdate)})`;
-      } else if (playerUpdate.error) {
-        playerBadge.classList.add("text-bg-secondary");
-        playerBadge.textContent = "Player-Check nicht verfügbar";
-      } else {
-        playerBadge.classList.add("text-bg-success");
-        playerBadge.textContent = `Player up to date (${localVersion})`;
-      }
-    }
-
     q("status-hostname").textContent = state.hostname || "-";
     q("system-hostname-current").textContent = state.hostname || "-";
     q("status-ip").textContent = state.ip || "-";
@@ -3859,6 +3916,8 @@
         playerStatusEl.textContent = "Status: -";
       }
     }
+    streamFeatureState.playerInstalled = !!(player.service_installed || player.active);
+    applyStreamFeatureVisibility();
 
     if (spotifyConnect && typeof spotifyConnect === "object") {
       renderSpotifyConnectStatus(spotifyConnect);
@@ -3914,6 +3973,8 @@
         badge.textContent = "not ready";
       }
     }
+    streamFeatureState.spotifyInstalled = installed;
+    applyStreamFeatureVisibility();
   }
 
   async function refreshStreamOverview() {
@@ -3956,6 +4017,7 @@
   async function refreshPlayerStatus() {
     const payload = await fetchJson("/api/stream/player/status");
     const player = payload.player || {};
+    streamFeatureState.playerInstalled = !!(player.service_installed || player.active);
     const playerStatusEl = q("stream-player-status");
     if (playerStatusEl) {
       if (player && player.error) {
@@ -3966,6 +4028,7 @@
         playerStatusEl.textContent = "Status: -";
       }
     }
+    applyStreamFeatureVisibility();
   }
 
   async function refreshSpotifyConnectStatus() {
@@ -4166,12 +4229,21 @@
     return payload;
   }
 
-  async function refreshStreamAudioFiles() {
-    const payload = await fetchJson("/api/stream/player/audio/files", { cache: "no-store" });
+  async function refreshStreamAudioFiles(pathOverride = "") {
+    const rawInput = String(q("stream-audio-file-path")?.value || "").trim();
+    const requestedPath = String(pathOverride || rawInput || "").trim();
+    const query = new URLSearchParams();
+    if (requestedPath && !/^https?:\/\//i.test(requestedPath) && !/\.[A-Za-z0-9]{2,6}$/.test(requestedPath)) {
+      query.set("path", requestedPath);
+    }
+    const suffix = query.toString();
+    const payload = await fetchJson(`/api/stream/player/audio/files${suffix ? `?${suffix}` : ""}`, { cache: "no-store" });
     const files = Array.isArray(payload.files) ? payload.files : [];
-    const root = String(payload.root || "-");
-    q("stream-audio-root").textContent = root;
+    const currentPath = String(payload.current_path || payload.root || "-");
+    q("stream-audio-root").textContent = currentPath;
     const select = q("stream-audio-file-select");
+    let firstPath = files.length > 0 ? String(files[0].path || "") : "";
+    const currentInput = String(q("stream-audio-file-path")?.value || "").trim();
     if (select) {
       select.innerHTML = "";
       if (files.length === 0) {
@@ -4184,12 +4256,17 @@
           const opt = document.createElement("option");
           opt.value = String(file.path || "");
           opt.textContent = `${String(file.relative_path || file.name || "audio")} (${Math.round((Number(file.size_bytes || 0) / 1024))} KB)`;
+          if (currentInput && currentInput === String(file.path || "")) {
+            opt.selected = true;
+            firstPath = currentInput;
+          }
           select.appendChild(opt);
         }
       }
     }
-    const firstPath = files.length > 0 ? String(files[0].path || "") : "";
-    q("stream-audio-file-path").value = firstPath;
+    if (!currentInput || currentInput === currentPath || currentInput.endsWith("/")) {
+      q("stream-audio-file-path").value = firstPath || currentPath;
+    }
     return payload;
   }
 
@@ -4448,6 +4525,8 @@
     managedInstallRepos = list;
     if (!list.length) {
       host.innerHTML = '<div class="text-secondary">Keine zusätzlichen Repos hinterlegt.</div>';
+      recomputeStreamFeatureState();
+      applyStreamFeatureVisibility();
       return;
     }
     const rows = list.map((item) => {
@@ -4502,6 +4581,8 @@
       `;
     }).join("");
     host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Installationspfad</th><th>Service-Modus</th><th>Service</th><th>User</th><th>Autostart (Config)</th><th>Autostart (System)</th><th>Installiert</th><th>Läuft</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    recomputeStreamFeatureState();
+    applyStreamFeatureVisibility();
   }
 
   function renderAutodiscoverServices(items = []) {
@@ -4511,6 +4592,8 @@
     autodiscoverServices = list;
     if (!list.length) {
       host.innerHTML = '<div class="text-secondary">Keine Autodiscover-Einträge.</div>';
+      recomputeStreamFeatureState();
+      applyStreamFeatureVisibility();
       return;
     }
     const rows = list.map((item) => {
@@ -4528,6 +4611,8 @@
       </tr>`;
     }).join("");
     host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Host</th><th>Last Seen</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    recomputeStreamFeatureState();
+    applyStreamFeatureVisibility();
   }
 
   async function refreshAutodiscoverServices() {
@@ -6410,6 +6495,10 @@
     if (streamAudioBrowseBtn) {
       streamAudioBrowseBtn.addEventListener("click", () => run(openStreamAudioPathModal));
     }
+    const streamAudioFilesLoadBtn = q("btn-stream-audio-files-load");
+    if (streamAudioFilesLoadBtn) {
+      streamAudioFilesLoadBtn.addEventListener("click", () => run(() => refreshStreamAudioFiles()));
+    }
     q("btn-stream-player-repo-save").addEventListener("click", () => run(savePlayerRepoConfig));
     q("btn-stream-player-install-update").addEventListener("click", () => run(startStreamPlayerInstallUpdate));
     q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
@@ -6588,11 +6677,15 @@
     const streamAudioPathApplyDirBtn = q("btn-stream-audio-browser-apply-dir");
     if (streamAudioPathApplyDirBtn) {
       streamAudioPathApplyDirBtn.addEventListener("click", () => {
+        const chosenPath = String(streamAudioBrowserState.currentPath || "").trim();
         const input = q("stream-audio-file-path");
-        if (input) input.value = String(streamAudioBrowserState.currentPath || "").trim();
+        if (input) input.value = chosenPath;
         const modalEl = q("streamAudioFileBrowserModal");
         if (modalEl && window.bootstrap && window.bootstrap.Modal) {
           window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        }
+        if (chosenPath) {
+          run(() => refreshStreamAudioFiles(chosenPath));
         }
       });
     }
@@ -6950,6 +7043,7 @@
     initRefs();
     setupSessionCloseLogout();
     bindButtons();
+    applyStreamFeatureVisibility();
     await run(runRuntimeWarmupFlow);
     await run(refreshStatus);
     await run(refreshPanelFlagsLive);
