@@ -170,6 +170,12 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
     payload['piSerial'] = pi_serial
     payload['machineId'] = machine_id
     snapshots = _collect_runtime_snapshots(cfg, dev, fp, host, ip)
+    network = snapshots.get('network') if isinstance(snapshots.get('network'), dict) else {}
+    primary_mac = str(network.get('primaryMacAddress') or network.get('macAddress') or '').strip()
+    if primary_mac:
+        payload['primaryMacAddress'] = primary_mac
+        payload['macAddress'] = primary_mac
+        payload['mac_address'] = primary_mac
     payload.update(snapshots)
     return payload
 
@@ -221,9 +227,64 @@ def _network_identity(network: dict, fallback_ip: str) -> tuple[str, str, str, s
 
     local_lan_ip = str(lan.get('ip') or wifi.get('ip') or fallback_ip or '').strip()
     primary_mac = str(lan.get('mac') or wifi.get('mac') or '').strip()
+    if not primary_mac:
+        primary_mac = _detect_primary_mac(local_lan_ip)
     tailscale_ip = str(tailscale.get('ip') or '').strip()
     public_ip = _detect_public_ip()
     return local_lan_ip, public_ip, tailscale_ip, primary_mac
+
+
+def _normalize_mac(value: str) -> str:
+    raw = str(value or '').strip().upper().replace('-', ':')
+    if re.fullmatch(r'([0-9A-F]{2}:){5}[0-9A-F]{2}', raw):
+        return raw
+    return ''
+
+
+def _detect_primary_mac(preferred_ip: str = '') -> str:
+    preferred_ip = str(preferred_ip or '').strip()
+    rows: list[tuple[str, str]] = []
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            ['ip', '-o', '-4', 'addr', 'show', 'up'],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        for line in (proc.stdout or '').splitlines():
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            ifname = parts[1]
+            ipv4 = parts[3].split('/')[0].strip()
+            if ifname.startswith(('lo', 'docker', 'veth', 'br-', 'virbr', 'tun', 'tap')):
+                continue
+            if not ipv4:
+                continue
+            mac_path = Path(f'/sys/class/net/{ifname}/address')
+            if not mac_path.exists():
+                continue
+            mac = _normalize_mac(mac_path.read_text(encoding='utf-8').strip())
+            if not mac:
+                continue
+            rows.append((ifname, mac))
+            if preferred_ip and ipv4 == preferred_ip:
+                return mac
+    except Exception:
+        pass
+
+    for ifname in ('eth0', 'enp0s3', 'enp3s0', 'wlan0', 'wlp2s0'):
+        mac_path = Path(f'/sys/class/net/{ifname}/address')
+        if not mac_path.exists():
+            continue
+        mac = _normalize_mac(mac_path.read_text(encoding='utf-8').strip())
+        if mac:
+            return mac
+
+    return rows[0][1] if rows else ''
 
 
 def _hardware_components_from_snapshots(fp: dict, snapshots: dict, primary_mac: str, local_lan_ip: str) -> list[dict]:
@@ -415,6 +476,7 @@ def _panel_hardware_register_payload(cfg: dict, dev: dict, fp: dict, host: str, 
         'cpuModel': str(((fp.get('cpu') or {}).get('model') if isinstance(fp.get('cpu'), dict) else '') or ''),
         'ramTotal': int(mem_total_kb) * 1024 if mem_total_kb > 0 else None,
         'primaryMacAddress': primary_mac,
+        'macAddress': primary_mac,
         'localLanIp': local_lan_ip,
         'publicIp': public_ip,
         'tailscaleIp': tailscale_ip,
@@ -445,6 +507,9 @@ def _panel_hardware_register_payload(cfg: dict, dev: dict, fp: dict, host: str, 
         'device_uuid': dev.get('device_uuid') or '',
         'machineId': dev.get('machine_id') or fp.get('machine_id') or '',
         'machine_id': dev.get('machine_id') or fp.get('machine_id') or '',
+        'primaryMacAddress': primary_mac,
+        'macAddress': primary_mac,
+        'mac_address': primary_mac,
         'authKey': dev.get('auth_key') or '',
         'auth_key': dev.get('auth_key') or '',
         'hardwareDevice': hardware_device,
@@ -581,6 +646,12 @@ def _panel_sync_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str) -> d
     payload['piSerial'] = pi_serial
     payload['machineId'] = machine_id
     snapshots = _collect_runtime_snapshots(cfg, dev, fp, host, ip)
+    network = snapshots.get('network') if isinstance(snapshots.get('network'), dict) else {}
+    primary_mac = str(network.get('primaryMacAddress') or network.get('macAddress') or '').strip()
+    if primary_mac:
+        payload['primaryMacAddress'] = primary_mac
+        payload['macAddress'] = primary_mac
+        payload['mac_address'] = primary_mac
     payload.update(snapshots)
     return payload
 
@@ -862,6 +933,13 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         },
         'tailscale': ((net_info.get('tailscale') if isinstance(net_info, dict) else {}) or {}),
     }
+    local_lan_ip, public_ip, tailscale_ip, primary_mac = _network_identity(network, ip)
+    network['primaryMacAddress'] = primary_mac
+    network['macAddress'] = primary_mac
+    network['localLanIp'] = local_lan_ip
+    network['publicIp'] = public_ip
+    network['tailscaleIp'] = tailscale_ip
+    identity['primaryMacAddress'] = primary_mac
 
     storage = _storage_snapshot(storage_info if isinstance(storage_info, dict) else {})
     software = _software_snapshot(
