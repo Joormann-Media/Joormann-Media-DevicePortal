@@ -132,6 +132,11 @@
     return document.getElementById(id);
   }
 
+  function isNearBottom(el, thresholdPx = 28) {
+    if (!el) return true;
+    return (el.scrollTop + el.clientHeight) >= (el.scrollHeight - thresholdPx);
+  }
+
   function plainText(input) {
     if (typeof input !== "string") return "";
     return input
@@ -4749,6 +4754,7 @@
   function renderStreamPlayerUpdateStatus(data) {
     const logEl = getUpdateLogEl();
     if (!logEl) return;
+    const shouldStickBottom = isNearBottom(logEl);
     const status = String((data || {}).status || "unknown");
     const lines = [
       `status: ${status}`,
@@ -4767,7 +4773,9 @@
       (data || {}).log || "-",
     ];
     logEl.textContent = lines.join("\n");
-    logEl.scrollTop = logEl.scrollHeight;
+    if (shouldStickBottom) {
+      logEl.scrollTop = logEl.scrollHeight;
+    }
   }
 
   async function fetchStreamPlayerUpdateStatus(jobId = "") {
@@ -6009,6 +6017,7 @@
 
   function renderPortalUpdateStatus(data) {
     const logEl = getUpdateLogEl();
+    const shouldStickBottom = isNearBottom(logEl);
     const status = String(data.status || "unknown");
     const success = !!data.success;
     const lines = [
@@ -6032,7 +6041,9 @@
       data.log || "-",
     ];
     logEl.textContent = lines.join("\n");
-    logEl.scrollTop = logEl.scrollHeight;
+    if (shouldStickBottom) {
+      logEl.scrollTop = logEl.scrollHeight;
+    }
     try {
       window.localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ data, cached_at: new Date().toISOString() }));
     } catch (_) {
