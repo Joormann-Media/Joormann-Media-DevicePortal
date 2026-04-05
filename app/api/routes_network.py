@@ -131,8 +131,20 @@ def _bluetooth_adapter_exists() -> bool:
 
 
 def _runtime_module_capabilities() -> dict:
-    wifi_ifname = "wlan0"
-    wifi_available = _interface_exists(wifi_ifname)
+    wifi_ifname = ""
+    wifi_available = False
+    try:
+        net = get_network_info()
+        interfaces = net.get("interfaces") if isinstance(net.get("interfaces"), dict) else {}
+        wifi = interfaces.get("wifi") if isinstance(interfaces.get("wifi"), dict) else {}
+        wifi_ifname = str(wifi.get("ifname") or "").strip()
+        wifi_available = bool(wifi_ifname and _interface_exists(wifi_ifname))
+    except Exception:
+        wifi_ifname = ""
+        wifi_available = False
+    if not wifi_ifname:
+        wifi_ifname = "wlan0"
+        wifi_available = wifi_available or _interface_exists(wifi_ifname)
     return {
         "wifi": {
             "available": wifi_available,

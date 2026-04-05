@@ -5,6 +5,8 @@ import hmac
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 from urllib.parse import urlencode
 
 import requests
@@ -217,6 +219,67 @@ def _detect_public_ip() -> str:
             if ip and len(ip) <= 128:
                 return ip
     return ''
+
+
+def _tailscale_runtime_status(network_info: dict | None = None) -> dict:
+    source = (network_info or {}).get('tailscale') if isinstance(network_info, dict) else {}
+    source = source if isinstance(source, dict) else {}
+
+    present = bool(source.get('present'))
+    ip = str(source.get('ip') or '').strip()
+    service_active = False
+    service_enabled = False
+
+    try:
+        service_active = subprocess.run(
+            ['systemctl', 'is-active', '--quiet', 'tailscaled'],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).returncode == 0
+    except Exception:
+        service_active = False
+
+    try:
+        service_enabled = subprocess.run(
+            ['systemctl', 'is-enabled', '--quiet', 'tailscaled'],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).returncode == 0
+    except Exception:
+        service_enabled = False
+
+    if service_active or service_enabled:
+        present = True
+
+    tailscale_bin = shutil.which('tailscale')
+    if present and not ip and tailscale_bin:
+        try:
+            proc = subprocess.run(
+                [tailscale_bin, 'ip', '-4'],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=4,
+            )
+            for line in (proc.stdout or '').splitlines():
+                candidate = line.strip()
+                if candidate and re.fullmatch(r'(\d{1,3}\.){3}\d{1,3}', candidate):
+                    ip = candidate
+                    break
+        except Exception:
+            pass
+
+    return {
+        **source,
+        'present': present,
+        'ip': ip,
+        'service_active': service_active,
+        'service_enabled': service_enabled,
+    }
 
 
 def _network_identity(network: dict, fallback_ip: str) -> tuple[str, str, str, str]:
@@ -667,7 +730,7 @@ def _safe_call(default: object, fn):
 
 
 def _software_snapshot(update_info: dict, player_update_info: dict, network_info: dict, storage_info: dict) -> list[dict]:
-    tailscale = (network_info.get('tailscale') if isinstance(network_info, dict) else {}) or {}
+    tailscale = _tailscale_runtime_status(network_info)
     tailscale_present = bool(tailscale.get('present'))
     tailscale_ip = str(tailscale.get('ip') or '').strip()
     local_version = str(update_info.get('local_version') or '').strip()
@@ -715,7 +778,10 @@ def _software_snapshot(update_info: dict, player_update_info: dict, network_info
             'status': 'connected' if tailscale_present and tailscale_ip else ('installed' if tailscale_present else 'missing'),
             'version': tailscale_ip or '',
             'source': 'network_info',
-            'notes': '',
+            'notes': (
+                'tailscaled active' if bool(tailscale.get('service_active'))
+                else ('tailscaled enabled' if bool(tailscale.get('service_enabled')) else '')
+            ),
         },
         {
             'name': 'Storage Service',
@@ -931,7 +997,7 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
             'clients': ap_clients.get('clients') if isinstance(ap_clients, dict) and isinstance(ap_clients.get('clients'), list) else [],
             'clients_count': len(ap_clients.get('clients') or []) if isinstance(ap_clients, dict) and isinstance(ap_clients.get('clients'), list) else 0,
         },
-        'tailscale': ((net_info.get('tailscale') if isinstance(net_info, dict) else {}) or {}),
+        'tailscale': _tailscale_runtime_status(net_info if isinstance(net_info, dict) else {}),
     }
     local_lan_ip, public_ip, tailscale_ip, primary_mac = _network_identity(network, ip)
     network['primaryMacAddress'] = primary_mac

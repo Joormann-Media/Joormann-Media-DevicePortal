@@ -222,6 +222,137 @@ def _allowed_lan_interfaces() -> set[str]:
     return interfaces
 
 
+def _allowed_wifi_interfaces() -> set[str]:
+    interfaces: set[str] = set()
+    try:
+        for path in Path("/sys/class/net").iterdir():
+            ifname = path.name
+            if ifname == "lo":
+                continue
+            if (path / "wireless").exists():
+                interfaces.add(ifname)
+    except Exception:
+        pass
+    if not interfaces:
+        interfaces = set(ALLOWED_WIFI_INTERFACES)
+    return interfaces
+
+
+def _default_wifi_iface() -> str:
+    interfaces = _allowed_wifi_interfaces()
+    if "wlan0" in interfaces:
+        return "wlan0"
+    return sorted(interfaces)[0] if interfaces else DEFAULT_WIFI_IFACE
+
+
+def _resolve_wifi_iface(ifname: str | None) -> str:
+    iface = (ifname or "").strip()
+    allowed = _allowed_wifi_interfaces()
+    if iface and iface in allowed:
+        return iface
+    if iface and (Path("/sys/class/net") / iface).exists():
+        return iface
+    return _default_wifi_iface()
+
+
+def _resolve_lan_iface(ifname: str | None) -> str:
+    iface = (ifname or "").strip()
+    allowed = _allowed_lan_interfaces()
+    if iface and iface in allowed:
+        return iface
+    if iface and (Path("/sys/class/net") / iface).exists():
+        return iface
+    # Prefer interface that currently has IPv4 address.
+    try:
+        proc = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", "up"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        for line in (proc.stdout or "").splitlines():
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            candidate = parts[1]
+            if candidate in allowed:
+                return candidate
+    except Exception:
+        pass
+
+    # Then prefer link with carrier.
+    for candidate in sorted(allowed):
+        try:
+            carrier = (Path(f"/sys/class/net/{candidate}/carrier").read_text(encoding="utf-8").strip())
+            if carrier == "1":
+                return candidate
+        except Exception:
+            continue
+
+    if "eth0" in allowed:
+        return "eth0"
+    return sorted(allowed)[0] if allowed else "eth0"
+
+
+def _detect_iface_fallbacks() -> dict:
+    lan_iface = _resolve_lan_iface(None)
+    wifi_iface = _resolve_wifi_iface(None)
+
+    def _carrier(name: str) -> bool:
+        try:
+            value = (Path(f"/sys/class/net/{name}/carrier").read_text(encoding="utf-8").strip())
+            return value == "1"
+        except Exception:
+            return False
+
+    def _enabled(name: str) -> bool:
+        try:
+            value = (Path(f"/sys/class/net/{name}/operstate").read_text(encoding="utf-8").strip().lower())
+            return value in {"up", "unknown"}
+        except Exception:
+            return False
+
+    def _mac(name: str) -> str:
+        try:
+            return (Path(f"/sys/class/net/{name}/address").read_text(encoding="utf-8").strip() or "").upper()
+        except Exception:
+            return ""
+
+    def _ip(name: str) -> str:
+        try:
+            proc = subprocess.run(
+                ["ip", "-4", "-o", "addr", "show", "dev", name],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            for line in (proc.stdout or "").splitlines():
+                parts = line.split()
+                if len(parts) >= 4:
+                    return parts[3].split("/")[0].strip()
+        except Exception:
+            pass
+        return ""
+
+    return {
+        "lan": {
+            "ifname": lan_iface,
+            "enabled": _enabled(lan_iface),
+            "carrier": _carrier(lan_iface),
+            "ip": _ip(lan_iface),
+            "mac": _mac(lan_iface),
+        },
+        "wifi": {
+            "ifname": wifi_iface,
+            "enabled": _enabled(wifi_iface),
+            "ip": _ip(wifi_iface),
+            "mac": _mac(wifi_iface),
+        },
+    }
+
+
 def _derive_ap_ssid(hostname: str) -> str:
     return f"{hostname}-ap"[:32]
 
@@ -240,6 +371,41 @@ def get_network_info(timeout: int = 12) -> dict:
         raise NetControlError(code="network_info_invalid_json", message="Network status script returned invalid JSON", detail=str(exc))
     if not isinstance(payload, dict):
         raise NetControlError(code="network_info_invalid", message="Network status payload must be a JSON object")
+
+    # Robust fallback for hosts where scripts/defaults still report eth0/wlan0,
+    # but actual interfaces are enp*/wlp*/... .
+    interfaces = payload.get("interfaces") if isinstance(payload.get("interfaces"), dict) else {}
+    lan = interfaces.get("lan") if isinstance(interfaces.get("lan"), dict) else {}
+    wifi = interfaces.get("wifi") if isinstance(interfaces.get("wifi"), dict) else {}
+    fallback = _detect_iface_fallbacks()
+    lan_fallback = fallback.get("lan") if isinstance(fallback.get("lan"), dict) else {}
+    wifi_fallback = fallback.get("wifi") if isinstance(fallback.get("wifi"), dict) else {}
+
+    lan_ifname = str(lan.get("ifname") or "").strip()
+    if not lan_ifname or not (Path("/sys/class/net") / lan_ifname).exists():
+        lan["ifname"] = lan_fallback.get("ifname") or lan_ifname or "eth0"
+    if not str(lan.get("mac") or "").strip():
+        lan["mac"] = lan_fallback.get("mac") or ""
+    if not str(lan.get("ip") or "").strip():
+        lan["ip"] = lan_fallback.get("ip") or ""
+    if "enabled" not in lan:
+        lan["enabled"] = bool(lan_fallback.get("enabled"))
+    if "carrier" not in lan:
+        lan["carrier"] = bool(lan_fallback.get("carrier"))
+
+    wifi_ifname = str(wifi.get("ifname") or "").strip()
+    if not wifi_ifname or not (Path("/sys/class/net") / wifi_ifname).exists():
+        wifi["ifname"] = wifi_fallback.get("ifname") or wifi_ifname or _default_wifi_iface()
+    if not str(wifi.get("mac") or "").strip():
+        wifi["mac"] = wifi_fallback.get("mac") or ""
+    if not str(wifi.get("ip") or "").strip():
+        wifi["ip"] = wifi_fallback.get("ip") or ""
+    if "enabled" not in wifi:
+        wifi["enabled"] = bool(wifi_fallback.get("enabled"))
+
+    interfaces["lan"] = lan
+    interfaces["wifi"] = wifi
+    payload["interfaces"] = interfaces
     return payload
 
 
@@ -256,7 +422,7 @@ def hostname_rename_preview(new_hostname: str, ap_profile: str = DEFAULT_AP_PROF
 
     ap_info: dict = {}
     try:
-        ap_info = get_ap_status(ifname=DEFAULT_WIFI_IFACE, profile=(ap_profile or DEFAULT_AP_PROFILE))
+        ap_info = get_ap_status(ifname=_default_wifi_iface(), profile=(ap_profile or DEFAULT_AP_PROFILE))
     except Exception:
         ap_info = {}
 
@@ -624,7 +790,7 @@ def audio_volume_set(sink_name: str | None, volume_percent: int) -> dict:
 
 
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
-    iface = (ifname or "eth0").strip()
+    iface = _resolve_lan_iface(ifname)
     if iface not in _allowed_lan_interfaces():
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     state_arg = "up" if enabled else "down"
@@ -704,7 +870,7 @@ def _parse_wifi_profiles_output(raw: str) -> list[dict]:
 
 
 def wifi_scan(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    iface = _resolve_wifi_iface(ifname)
     rc, out, err = _run_script("wifi_profile.sh", ["scan", iface], timeout=20, use_sudo=True)
     if rc != 0:
         raise NetControlError(code="wifi_scan_failed", message="Failed to scan Wi-Fi networks", detail=err or out)
@@ -713,7 +879,7 @@ def wifi_scan(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
 
 def wifi_connect(ssid: str, password: str = "", ifname: str = DEFAULT_WIFI_IFACE, hidden: bool = False) -> dict:
     ssid = (ssid or "").strip()
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    iface = _resolve_wifi_iface(ifname)
     if not ssid:
         raise NetControlError(code="invalid_payload", message="Missing ssid")
     args = ["connect", ssid, password or "", iface, "yes" if hidden else "no"]
@@ -803,7 +969,7 @@ def wifi_profile_up(ssid: str, uuid: str = "") -> dict:
 
 
 def wifi_disconnect(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    iface = _resolve_wifi_iface(ifname)
     rc, out, err = _run_script("wifi_disconnect.sh", [iface], timeout=12, use_sudo=True)
     parsed = _parse_kv_output(out)
     if rc != 0 and rc != 10:
@@ -812,7 +978,7 @@ def wifi_disconnect(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
 
 
 def wifi_request_dhcp(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    iface = _resolve_wifi_iface(ifname)
     rc, out, err = _run_script("wifi_dhcp.sh", [iface], timeout=35, use_sudo=True)
     if rc != 0:
         raise NetControlError(code="wifi_dhcp_failed", message="Failed to request DHCP lease", detail=err or out)
@@ -821,7 +987,7 @@ def wifi_request_dhcp(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
 
 
 def get_wifi_status(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    iface = _resolve_wifi_iface(ifname)
     rc, out, err = _run_script("wifi_status.sh", [iface], timeout=8, use_sudo=True)
     if rc != 0:
         raise NetControlError(code="wifi_status_failed", message="Failed to read Wi-Fi status", detail=err or out)
@@ -843,9 +1009,9 @@ def get_wifi_status(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
 
 
 def set_ap_enabled(enabled: bool, ifname: str = DEFAULT_WIFI_IFACE, profile: str = DEFAULT_AP_PROFILE) -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    iface = _resolve_wifi_iface(ifname)
     ap_profile = (profile or DEFAULT_AP_PROFILE).strip() or DEFAULT_AP_PROFILE
-    if iface not in ALLOWED_WIFI_INTERFACES:
+    if iface not in _allowed_wifi_interfaces():
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     script_name = "ap_enable.sh" if enabled else "ap_disable.sh"
     rc, out, err = _run_script(script_name, [iface, ap_profile], timeout=20, use_sudo=True)
@@ -861,9 +1027,9 @@ def set_ap_enabled(enabled: bool, ifname: str = DEFAULT_WIFI_IFACE, profile: str
 
 
 def get_ap_status(ifname: str = DEFAULT_WIFI_IFACE, profile: str = DEFAULT_AP_PROFILE) -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
+    iface = _resolve_wifi_iface(ifname)
     ap_profile = (profile or DEFAULT_AP_PROFILE).strip() or DEFAULT_AP_PROFILE
-    if iface not in ALLOWED_WIFI_INTERFACES:
+    if iface not in _allowed_wifi_interfaces():
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     rc, out, err = _run_script("ap_status.sh", [iface, ap_profile], timeout=8, use_sudo=True)
     if rc != 0:
@@ -888,8 +1054,8 @@ def get_ap_status(ifname: str = DEFAULT_WIFI_IFACE, profile: str = DEFAULT_AP_PR
 
 
 def get_ap_clients(ifname: str = DEFAULT_WIFI_IFACE) -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
-    if iface not in ALLOWED_WIFI_INTERFACES:
+    iface = _resolve_wifi_iface(ifname)
+    if iface not in _allowed_wifi_interfaces():
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     rc, out, err = _run_script("ap_clients.sh", [iface], timeout=12, use_sudo=True)
     if rc != 0:
@@ -997,8 +1163,8 @@ def storage_unmount(mount_path: str) -> dict:
 
 
 def start_wps(ifname: str = DEFAULT_WIFI_IFACE, target_bssid: str = "", target_ssid: str = "") -> dict:
-    iface = (ifname or DEFAULT_WIFI_IFACE).strip() or DEFAULT_WIFI_IFACE
-    if iface not in ALLOWED_WIFI_INTERFACES:
+    iface = _resolve_wifi_iface(ifname)
+    if iface not in _allowed_wifi_interfaces():
         raise NetControlError(code="invalid_interface", message=f"Interface {iface!r} is not allowed")
     bssid = (target_bssid or "").strip()
     ssid = (target_ssid or "").strip()

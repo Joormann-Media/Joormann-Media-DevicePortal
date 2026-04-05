@@ -4,12 +4,63 @@ set -euo pipefail
 LAN_IF="${1:-eth0}"
 WIFI_IF="${2:-wlan0}"
 
+detect_lan_iface() {
+  local iface=""
+  local candidate=""
+  # Prefer active interface with IPv4 address.
+  candidate="$(ip -4 -o addr show up 2>/dev/null | awk '{print $2}' | awk '!/^lo$/ && !/^wl/ && !/^docker/ && !/^veth/ && !/^br-/ && !/^virbr/ && !/^tun/ && !/^tap/ {print; exit}')"
+  if [[ -n "$candidate" ]]; then
+    echo "$candidate"
+    return
+  fi
+  # Then prefer interface with physical carrier.
+  for candidate in /sys/class/net/*; do
+    candidate="$(basename "$candidate")"
+    [[ "$candidate" == "lo" ]] && continue
+    [[ "$candidate" =~ ^wl ]] && continue
+    [[ "$candidate" =~ ^(docker|veth|br-|virbr|tun|tap) ]] && continue
+    if [[ -f "/sys/class/net/$candidate/carrier" ]] && [[ "$(cat "/sys/class/net/$candidate/carrier" 2>/dev/null || echo 0)" == "1" ]]; then
+      echo "$candidate"
+      return
+    fi
+  done
+  if command -v nmcli >/dev/null 2>&1; then
+    iface="$(nmcli -t -f DEVICE,TYPE,STATE dev status 2>/dev/null | awk -F: '$2=="ethernet" && ($3=="connected" || $3=="connecting") && $1!="" {print $1; exit}')"
+    if [[ -z "$iface" ]]; then
+      iface="$(nmcli -t -f DEVICE,TYPE dev status 2>/dev/null | awk -F: '$2=="ethernet" && $1!="" {print $1; exit}')"
+    fi
+  fi
+  if [[ -z "$iface" ]]; then
+    iface="$(ls -1 /sys/class/net 2>/dev/null | awk '!/^lo$/ && !/^wl/ && !/^docker/ && !/^veth/ && !/^br-/ && !/^virbr/ {print; exit}')"
+  fi
+  echo "$iface"
+}
+
+detect_wifi_iface() {
+  local iface=""
+  if command -v nmcli >/dev/null 2>&1; then
+    iface="$(nmcli -t -f DEVICE,TYPE dev status 2>/dev/null | awk -F: '$2=="wifi" && $1!="" {print $1; exit}')"
+  fi
+  if [[ -z "$iface" ]]; then
+    for candidate in /sys/class/net/*; do
+      [[ -e "$candidate/wireless" ]] || continue
+      iface="$(basename "$candidate")"
+      break
+    done
+  fi
+  echo "$iface"
+}
+
 cmd_present() {
   command -v "$1" >/dev/null 2>&1 && echo "1" || echo "0"
 }
 
 safe_cmd() {
-  "$@" 2>/dev/null || true
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 3s "$@" 2>/dev/null || true
+  else
+    "$@" 2>/dev/null || true
+  fi
 }
 
 iface_exists() {
@@ -47,6 +98,20 @@ NMCLI_PRESENT="$(cmd_present nmcli)"
 RFKILL_PRESENT="$(cmd_present rfkill)"
 BLUETOOTHCTL_PRESENT="$(cmd_present bluetoothctl)"
 TAILSCALE_PRESENT="$(cmd_present tailscale)"
+
+if [[ ! -d "/sys/class/net/$LAN_IF" ]]; then
+  DETECTED_LAN_IF="$(detect_lan_iface)"
+  if [[ -n "$DETECTED_LAN_IF" ]]; then
+    LAN_IF="$DETECTED_LAN_IF"
+  fi
+fi
+
+if [[ ! -d "/sys/class/net/$WIFI_IF" ]]; then
+  DETECTED_WIFI_IF="$(detect_wifi_iface)"
+  if [[ -n "$DETECTED_WIFI_IF" ]]; then
+    WIFI_IF="$DETECTED_WIFI_IF"
+  fi
+fi
 
 LAN_EXISTS="$(iface_exists "$LAN_IF")"
 LAN_ENABLED="$(iface_enabled "$LAN_IF")"
