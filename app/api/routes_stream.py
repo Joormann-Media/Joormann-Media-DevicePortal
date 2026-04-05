@@ -786,6 +786,159 @@ def api_stream_player_repo_set():
     })
 
 
+def _repo_default_name(repo_link: str) -> str:
+    value = str(repo_link or '').strip().rstrip('/')
+    if not value:
+        return 'Repo'
+    tail = value.split('/')[-1].strip() or value
+    if tail.endswith('.git'):
+        tail = tail[:-4].strip() or tail
+    return tail
+
+
+def _sanitize_managed_repo_entry(item: dict) -> dict:
+    source = item if isinstance(item, dict) else {}
+    repo_id = str(source.get('id') or '').strip()
+    name = str(source.get('name') or '').strip()
+    repo_link = str(source.get('repo_link') or source.get('repo_dir') or '').strip()
+    service_name = str(source.get('service_name') or '').strip()
+    service_user = str(source.get('service_user') or '').strip()
+    created_at = str(source.get('created_at') or '').strip()
+
+    if not repo_id:
+        seed = f"{name}|{repo_link}|{service_name}|{service_user}"
+        repo_id = hashlib.sha1(seed.encode('utf-8')).hexdigest()[:12]
+    if not name:
+        name = _repo_default_name(repo_link)
+    if not created_at:
+        created_at = utc_now()
+
+    return {
+        'id': repo_id,
+        'name': name,
+        'repo_link': repo_link,
+        'service_name': service_name,
+        'service_user': service_user,
+        'created_at': created_at,
+        'updated_at': utc_now(),
+    }
+
+
+def _managed_repos_from_config(cfg: dict) -> list[dict]:
+    raw = cfg.get('managed_install_repos')
+    if not isinstance(raw, list):
+        return []
+
+    repos: list[dict] = []
+    for item in raw:
+        sanitized = _sanitize_managed_repo_entry(item if isinstance(item, dict) else {})
+        if sanitized.get('repo_link'):
+            repos.append(sanitized)
+    return repos
+
+
+@bp_stream.get('/api/stream/player/repos')
+def api_stream_player_repos_get():
+    cfg = ensure_config()
+    repos = sorted(_managed_repos_from_config(cfg), key=lambda item: str(item.get('name') or '').lower())
+    return jsonify(ok=True, data={'repos': repos})
+
+
+@bp_stream.post('/api/stream/player/repos')
+def api_stream_player_repos_set():
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    repo_link = str(data.get('repo_link') or data.get('repo_dir') or '').strip()
+    if not repo_link:
+        return jsonify(ok=False, error='repo_link_missing', detail='Repo Link/Pfad fehlt.'), 400
+
+    target_id = str(data.get('id') or '').strip()
+    repos = _managed_repos_from_config(cfg)
+    item = _sanitize_managed_repo_entry(
+        {
+            'id': target_id,
+            'name': str(data.get('name') or '').strip(),
+            'repo_link': repo_link,
+            'service_name': str(data.get('service_name') or '').strip(),
+            'service_user': str(data.get('service_user') or '').strip(),
+        }
+    )
+
+    target_idx = -1
+    if target_id:
+        for idx, existing in enumerate(repos):
+            if str(existing.get('id') or '') == target_id:
+                target_idx = idx
+                break
+    if target_idx < 0:
+        for idx, existing in enumerate(repos):
+            if str(existing.get('repo_link') or '').strip().lower() == repo_link.lower():
+                target_idx = idx
+                item['id'] = str(existing.get('id') or item['id'])
+                item['created_at'] = str(existing.get('created_at') or item['created_at'])
+                break
+
+    if target_idx >= 0:
+        repos[target_idx] = item
+    else:
+        repos.append(item)
+
+    cfg['managed_install_repos'] = repos
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    repos = sorted(repos, key=lambda current: str(current.get('name') or '').lower())
+    return jsonify(ok=True, data={'item': item, 'repos': repos})
+
+
+@bp_stream.post('/api/stream/player/repos/<repo_id>/delete')
+def api_stream_player_repos_delete(repo_id: str):
+    cfg = ensure_config()
+    target_id = str(repo_id or '').strip()
+    if not target_id:
+        return jsonify(ok=False, error='repo_id_missing', detail='Repo-ID fehlt.'), 400
+
+    repos = _managed_repos_from_config(cfg)
+    filtered = [item for item in repos if str(item.get('id') or '').strip() != target_id]
+    if len(filtered) == len(repos):
+        return jsonify(ok=False, error='repo_not_found', detail='Repo nicht gefunden.'), 404
+
+    cfg['managed_install_repos'] = filtered
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    repos = sorted(filtered, key=lambda current: str(current.get('name') or '').lower())
+    return jsonify(ok=True, data={'repos': repos})
+
+
+@bp_stream.post('/api/stream/player/repos/<repo_id>/install-update')
+def api_stream_player_repos_install_update(repo_id: str):
+    cfg = ensure_config()
+    target_id = str(repo_id or '').strip()
+    repos = _managed_repos_from_config(cfg)
+    target = next((item for item in repos if str(item.get('id') or '').strip() == target_id), None)
+    if not target:
+        return jsonify(ok=False, error='repo_not_found', detail='Repo nicht gefunden.'), 404
+
+    repo_link = str(target.get('repo_link') or '').strip()
+    if not repo_link:
+        return jsonify(ok=False, error='repo_link_missing', detail='Repo Link/Pfad fehlt.'), 400
+
+    service_name = str(target.get('service_name') or '').strip() or STREAM_SERVICE_NAME
+    service_user = str(target.get('service_user') or '').strip()
+    try:
+        payload = player_update(repo_link, service_user=service_user, service_name=service_name)
+    except NetControlError as exc:
+        status = 500 if exc.code in ('script_missing', 'execution_failed', 'player_update_failed') else 400
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
+
+    return jsonify(ok=True, data=payload)
+
+
 @bp_stream.post('/api/stream/player/install-update')
 def api_stream_player_install_update():
     cfg = ensure_config()

@@ -86,6 +86,7 @@ DEFAULT_CONFIG: dict = {
     'player_repo_dir': '',
     'player_service_name': 'joormann-media-deviceplayer.service',
     'player_service_user': '',
+    'managed_install_repos': [],
     'spotify_connect_service_name': '',
     'spotify_connect_service_user': '',
     'spotify_connect_service_scope': '',
@@ -226,6 +227,9 @@ def ensure_config() -> dict:
         changed = True
     if not isinstance(cfg.get('panel_linked_customers'), list):
         cfg['panel_linked_customers'] = []
+        changed = True
+    if not isinstance(cfg.get('managed_install_repos'), list):
+        cfg['managed_install_repos'] = []
         changed = True
     if not isinstance(cfg.get('panel_api_keys'), dict):
         cfg['panel_api_keys'] = dict(DEFAULT_CONFIG['panel_api_keys'])

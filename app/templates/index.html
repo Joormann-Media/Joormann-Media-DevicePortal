@@ -1578,6 +1578,33 @@
                     <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
                     <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
                   </div>
+                  <hr class="my-3">
+                  <h3 class="h6 mb-2">Weitere Repos</h3>
+                  <div class="small text-secondary mb-2">Zusätzliche Repos hinterlegen und bei Bedarf direkt installieren/updaten.</div>
+                  <input id="extra-repo-id" type="hidden" value="">
+                  <div class="row g-2 mb-2">
+                    <div class="col-12 col-lg-3">
+                      <label for="extra-repo-name" class="form-label form-label-sm mb-1">Name</label>
+                      <input id="extra-repo-name" type="text" class="form-control form-control-sm" placeholder="Jarvis AudioPlayer">
+                    </div>
+                    <div class="col-12 col-lg-5">
+                      <label for="extra-repo-link" class="form-label form-label-sm mb-1">Repo Link / Pfad</label>
+                      <input id="extra-repo-link" type="text" class="form-control form-control-sm" placeholder="https://github.com/.../repo.git">
+                    </div>
+                    <div class="col-12 col-lg-2">
+                      <label for="extra-repo-service-name" class="form-label form-label-sm mb-1">Service</label>
+                      <input id="extra-repo-service-name" type="text" class="form-control form-control-sm" placeholder="my-service.service">
+                    </div>
+                    <div class="col-12 col-lg-2">
+                      <label for="extra-repo-service-user" class="form-label form-label-sm mb-1">User</label>
+                      <input id="extra-repo-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button id="btn-extra-repo-save" class="btn btn-outline-secondary btn-sm">Repo hinzufügen</button>
+                    <button id="btn-extra-repo-refresh" class="btn btn-outline-secondary btn-sm">Liste aktualisieren</button>
+                  </div>
+                  <div id="extra-repos-list" class="small text-secondary">Keine zusätzlichen Repos hinterlegt.</div>
                 </div>
               </div>
               <div class="col-12">

@@ -15,6 +15,7 @@
   let streamAudioVolumeDebounceHandle = null;
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
+  let managedInstallRepos = [];
   let audioHubPollHandle = null;
   let btDeviceState = {
     devices: [],
@@ -4344,6 +4345,128 @@
     toast("Player-Repo Link gespeichert", "success");
   }
 
+  function getManagedRepoFormValues() {
+    return {
+      id: String(q("extra-repo-id")?.value || "").trim(),
+      name: String(q("extra-repo-name")?.value || "").trim(),
+      repo_link: String(q("extra-repo-link")?.value || "").trim(),
+      service_name: String(q("extra-repo-service-name")?.value || "").trim(),
+      service_user: String(q("extra-repo-service-user")?.value || "").trim(),
+    };
+  }
+
+  function setManagedRepoFormValues(item = {}) {
+    const payload = item && typeof item === "object" ? item : {};
+    const idEl = q("extra-repo-id");
+    const nameEl = q("extra-repo-name");
+    const linkEl = q("extra-repo-link");
+    const serviceEl = q("extra-repo-service-name");
+    const userEl = q("extra-repo-service-user");
+    if (idEl) idEl.value = String(payload.id || "");
+    if (nameEl) nameEl.value = String(payload.name || "");
+    if (linkEl) linkEl.value = String(payload.repo_link || payload.repo_dir || "");
+    if (serviceEl) serviceEl.value = String(payload.service_name || "");
+    if (userEl) userEl.value = String(payload.service_user || "");
+  }
+
+  function renderManagedRepos(items = []) {
+    const host = q("extra-repos-list");
+    if (!host) return;
+    const list = Array.isArray(items) ? items : [];
+    managedInstallRepos = list;
+    if (!list.length) {
+      host.innerHTML = '<div class="text-secondary">Keine zusätzlichen Repos hinterlegt.</div>';
+      return;
+    }
+    const rows = list.map((item) => {
+      const repoId = String(item.id || "");
+      const name = escapeHtml(String(item.name || "-"));
+      const repoLinkRaw = String(item.repo_link || "");
+      const repoLink = escapeHtml(repoLinkRaw || "-");
+      const service = escapeHtml(String(item.service_name || "-"));
+      const user = escapeHtml(String(item.service_user || "-"));
+      const linkHtml = repoLinkRaw
+        ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
+        : "-";
+      return `
+        <tr>
+          <td class="fw-semibold">${name}</td>
+          <td class="text-break">${linkHtml}</td>
+          <td>${service}</td>
+          <td>${user}</td>
+          <td>
+            <div class="d-flex flex-wrap gap-1">
+              <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="load" data-id="${escapeHtml(repoId)}">Laden</button>
+              <button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="install_update" data-id="${escapeHtml(repoId)}">Install/Update</button>
+              <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="delete" data-id="${escapeHtml(repoId)}">Löschen</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+    host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Repo</th><th>Service</th><th>User</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  async function refreshManagedRepos() {
+    const payload = await fetchJson("/api/stream/player/repos", { timeoutMs: 10000 });
+    const repos = (((payload || {}).data || {}).repos) || [];
+    renderManagedRepos(repos);
+  }
+
+  async function saveManagedRepo() {
+    const form = getManagedRepoFormValues();
+    if (!form.repo_link) {
+      throw new Error("Bitte Repo Link/Pfad angeben.");
+    }
+    const payload = await fetchJson("/api/stream/player/repos", {
+      method: "POST",
+      body: form,
+      timeoutMs: 12000,
+    });
+    const repos = ((((payload || {}).data || {}).repos) || []);
+    renderManagedRepos(repos);
+    setManagedRepoFormValues({});
+    toast("Zusätzliches Repo gespeichert", "success");
+  }
+
+  function getManagedRepoById(repoId) {
+    const target = String(repoId || "").trim();
+    if (!target) return null;
+    return managedInstallRepos.find((item) => String(item.id || "") === target) || null;
+  }
+
+  async function deleteManagedRepo(repoId) {
+    const target = getManagedRepoById(repoId);
+    const label = target ? String(target.name || target.repo_link || "Repo") : "Repo";
+    if (!window.confirm(`${label} wirklich löschen?`)) return;
+    const payload = await fetchJson(`/api/stream/player/repos/${encodeURIComponent(String(repoId || "").trim())}/delete`, {
+      method: "POST",
+      timeoutMs: 12000,
+    });
+    const repos = ((((payload || {}).data || {}).repos) || []);
+    renderManagedRepos(repos);
+    const form = getManagedRepoFormValues();
+    if (form.id && form.id === String(repoId || "").trim()) {
+      setManagedRepoFormValues({});
+    }
+    toast("Repo entfernt", "success");
+  }
+
+  async function startManagedRepoInstallUpdate(repoId) {
+    const target = getManagedRepoById(repoId);
+    if (!target) {
+      throw new Error("Repo nicht gefunden.");
+    }
+    const payload = await fetchJson(`/api/stream/player/repos/${encodeURIComponent(String(repoId || "").trim())}/install-update`, {
+      method: "POST",
+      timeoutMs: 20000,
+    });
+    const data = payload.data || {};
+    streamPlayerUpdateJobId = String(data.job_id || "").trim();
+    await pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId);
+    toast(`${String(target.name || "Repo")} Install/Update gestartet`, "success");
+  }
+
   function overlayNum(id, fallback = 0) {
     const raw = String(q(id)?.value || "").trim();
     const num = Number(raw);
@@ -6013,6 +6136,41 @@
     q("btn-stream-player-repo-save").addEventListener("click", () => run(savePlayerRepoConfig));
     q("btn-stream-player-install-update").addEventListener("click", () => run(startStreamPlayerInstallUpdate));
     q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
+    const extraRepoSaveBtn = q("btn-extra-repo-save");
+    if (extraRepoSaveBtn) {
+      extraRepoSaveBtn.addEventListener("click", () => run(saveManagedRepo));
+    }
+    const extraRepoRefreshBtn = q("btn-extra-repo-refresh");
+    if (extraRepoRefreshBtn) {
+      extraRepoRefreshBtn.addEventListener("click", () => run(refreshManagedRepos));
+    }
+    const extraRepoList = q("extra-repos-list");
+    if (extraRepoList) {
+      extraRepoList.addEventListener("click", (event) => {
+        const btn = event.target && event.target.closest ? event.target.closest("button.js-extra-repo-action") : null;
+        if (!btn) return;
+        const action = String(btn.dataset.action || "").trim();
+        const repoId = String(btn.dataset.id || "").trim();
+        if (!action || !repoId) return;
+        run(async () => {
+          if (action === "load") {
+            const target = getManagedRepoById(repoId);
+            if (target) {
+              setManagedRepoFormValues(target);
+              toast("Repo in Formular geladen", "success");
+            }
+            return;
+          }
+          if (action === "delete") {
+            await deleteManagedRepo(repoId);
+            return;
+          }
+          if (action === "install_update") {
+            await startManagedRepoInstallUpdate(repoId);
+          }
+        });
+      });
+    }
     const repoSaveQuick = q("btn-stream-player-repo-save-quick");
     if (repoSaveQuick) {
       repoSaveQuick.addEventListener("click", () => run(savePlayerRepoConfig));
@@ -6390,6 +6548,7 @@
     await run(refreshAudioOutputs);
     await runQuiet(refreshAudioHubStatus, ["audio_control_unreachable", "connection refused"]);
     await run(loadPlayerRepoConfig);
+    await run(refreshManagedRepos);
     await run(() => pollStreamPlayerUpdateStatus(""));
     await run(refreshApStatus);
     await run(refreshApClients);
