@@ -1374,6 +1374,10 @@ def _llm_manager_candidate_bases(repo: dict) -> list[str]:
                 candidates.append(f"http://localhost:{parsed.port}")
         except Exception:
             pass
+    # Fallback to default LLM-Lab dev port when none is provided.
+    if not port:
+        candidates.append("http://127.0.0.1:5035")
+        candidates.append("http://localhost:5035")
     # dedupe, preserve order
     seen: set[str] = set()
     out: list[str] = []
