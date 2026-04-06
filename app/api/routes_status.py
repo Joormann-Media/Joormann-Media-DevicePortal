@@ -219,6 +219,12 @@ def _build_runtime_viewmodel() -> dict:
         legacy["system_update_summary"] = cached_summary if isinstance(cached_summary, dict) else {}
     except Exception:
         legacy["system_update_summary"] = {}
+    try:
+        cfg = ensure_config()
+        llm_manager = cfg.get("llm_manager")
+        legacy["llm_manager"] = llm_manager if isinstance(llm_manager, dict) else {}
+    except Exception:
+        legacy["llm_manager"] = {}
 
     # DevicePortal classic UI expects these keys, even when empty.
     legacy.setdefault("software_requirements", {})

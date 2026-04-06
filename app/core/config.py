@@ -111,6 +111,7 @@ DEFAULT_CONFIG: dict = {
         'webhook_url': '',
         'updated_at': None,
     },
+    'llm_manager': {},
 }
 
 

@@ -38,6 +38,18 @@ def _is_local_unauth_stream_sync() -> bool:
         return False
 
 
+def _is_local_unauth_llm_report() -> bool:
+    if request.method != "POST" or request.path != "/api/llm-manager/report":
+        return False
+    remote = (request.remote_addr or "").strip()
+    if not remote:
+        return False
+    try:
+        return ip_address(remote).is_loopback
+    except ValueError:
+        return False
+
+
 def create_app() -> Flask:
     app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -104,6 +116,9 @@ def create_app() -> Flask:
 
         # Allow local service-driven stream sync even when panel-remote auth is active.
         if _is_local_unauth_stream_sync():
+            return None
+        # Allow local LLM manager report without login.
+        if _is_local_unauth_llm_report():
             return None
 
         if is_authenticated():

@@ -1628,6 +1628,30 @@
             <div class="row g-3">
               <div class="col-12">
                 <div class="portal-card p-4">
+                  <section id="llm-manager-card" class="mb-3 d-none">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <h3 class="h6 mb-2">LLM-Manager</h3>
+                        <div id="llm-manager-health" class="small text-secondary">Health: -</div>
+                      </div>
+                      <div id="llm-manager-badges" class="d-flex flex-wrap gap-1 small"></div>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-12 col-xl-5">
+                        <div class="d-flex flex-wrap gap-2">
+                          <button id="btn-llm-manager-details" class="btn btn-outline-dark btn-sm">Details</button>
+                          <button id="btn-llm-manager-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
+                          <button id="btn-llm-manager-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
+                          <button id="btn-llm-manager-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
+                          <button id="btn-llm-manager-autostart" class="btn btn-outline-warning btn-sm" data-enabled="1">Autostart aktivieren</button>
+                        </div>
+                      </div>
+                      <div class="col-12 col-xl-7">
+                        <div class="small text-uppercase text-secondary mb-2">Modelle</div>
+                        <div id="llm-manager-models" class="small text-secondary">Keine Modelle gemeldet.</div>
+                      </div>
+                    </div>
+                  </section>
                   <section class="mb-3">
                     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
                       <div>

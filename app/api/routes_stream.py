@@ -1284,6 +1284,42 @@ def _is_remote_autodiscover_repo(repo: dict) -> bool:
     return True
 
 
+def _sanitize_llm_manager_payload(payload: dict) -> dict:
+    data = payload if isinstance(payload, dict) else {}
+    models_raw = data.get("models") if isinstance(data.get("models"), list) else []
+    models = []
+    for item in models_raw:
+        if not isinstance(item, dict):
+            continue
+        models.append({
+            "name": str(item.get("name") or "").strip(),
+            "model": str(item.get("model") or "").strip(),
+            "digest": str(item.get("digest") or "").strip(),
+            "size": int(item.get("size") or 0),
+            "modified_at": str(item.get("modified_at") or "").strip(),
+            "format": str(item.get("format") or "").strip(),
+            "family": str(item.get("family") or "").strip(),
+            "parameter_size": str(item.get("parameter_size") or "").strip(),
+            "quantization_level": str(item.get("quantization_level") or "").strip(),
+            "update_status": str(item.get("update_status") or "unknown").strip(),
+        })
+
+    return {
+        "reported_at": utc_now(),
+        "source": str(data.get("source") or "llm-lab").strip(),
+        "repo_link": str(data.get("repo_link") or "").strip(),
+        "install_dir": str(data.get("install_dir") or "").strip(),
+        "service_name": str(data.get("service_name") or "").strip(),
+        "service_user": str(data.get("service_user") or "").strip(),
+        "api_base_url": str(data.get("api_base_url") or "").strip(),
+        "health_url": str(data.get("health_url") or "").strip(),
+        "ui_url": str(data.get("ui_url") or "").strip(),
+        "ollama": data.get("ollama") if isinstance(data.get("ollama"), dict) else {},
+        "default_model": str(data.get("default_model") or "").strip(),
+        "models": models,
+    }
+
+
 def _path_browser_allowed_roots(cfg: dict) -> list[Path]:
     candidates: list[Path] = []
     service_user = str(cfg.get('player_service_user') or '').strip()
@@ -1580,6 +1616,26 @@ def api_autodiscover_services():
         normalized.append(item)
     normalized = sorted(normalized, key=lambda row: str(row.get('last_seen_at') or row.get('updated_at') or ''), reverse=True)
     return jsonify(ok=True, data={'services': normalized})
+
+
+@bp_stream.post('/api/llm-manager/report')
+def api_llm_manager_report():
+    cfg = ensure_config()
+    payload = request.get_json(force=True, silent=True) or {}
+    sanitized = _sanitize_llm_manager_payload(payload)
+    cfg['llm_manager'] = sanitized
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+    return jsonify(ok=True, data={'llm_manager': sanitized})
+
+
+@bp_stream.get('/api/llm-manager/status')
+def api_llm_manager_status():
+    cfg = ensure_config()
+    llm = cfg.get('llm_manager')
+    return jsonify(ok=True, data={'llm_manager': llm if isinstance(llm, dict) else {}})
 
 
 @bp_stream.post('/api/autodiscover/services/<service_id>/promote')

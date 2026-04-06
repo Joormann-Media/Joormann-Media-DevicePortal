@@ -16,6 +16,7 @@
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
   let currentSystemUpdateSummary = null;
+  let llmManagerState = { info: null, repo: null, update: null };
   let managedInstallRepos = [];
   let autodiscoverServices = [];
   let repoUpdatesState = { has_updates: false, update_count: 0, checked_at: "", items: [] };
@@ -2051,6 +2052,8 @@
     }
     renderStatusHealthCard();
     renderStatusSoftwareSection();
+    const llmInfo = (data.config && typeof data.config === "object") ? data.config.llm_manager : null;
+    renderLlmManagerCard(data, llmInfo);
   }
 
   function isWifiAvailable() {
@@ -4957,6 +4960,107 @@
     host.innerHTML = buildServiceBadgesHtml(status, configAutostart, includeServiceBadge, serviceEnabled, updateInfo);
   }
 
+  function findLlmManagerRepo(repos = []) {
+    const list = Array.isArray(repos) ? repos : [];
+    return list.find((item) => {
+      const name = String(item?.name || "").toLowerCase();
+      const link = String(item?.repo_link || item?.repo_dir || "").toLowerCase();
+      const service = String(item?.service_name || "").toLowerCase();
+      return name.includes("llm-lab") || link.includes("jarvis-llm-lab") || service.includes("llm-lab");
+    }) || null;
+  }
+
+  function renderLlmManagerModels(info) {
+    const host = q("llm-manager-models");
+    if (!host) return;
+    const models = Array.isArray(info?.models) ? info.models : [];
+    if (!models.length) {
+      host.classList.add("text-secondary");
+      host.textContent = "Keine Modelle gemeldet.";
+      return;
+    }
+    const defaultModel = String(info?.default_model || "").trim();
+    const rows = models.map((m) => {
+      const name = String(m?.name || m?.model || "-");
+      const digest = String(m?.digest || "").trim();
+      const shortDigest = digest ? digest.slice(0, 12) : "-";
+      const modified = String(m?.modified_at || "-");
+      const updateStatus = String(m?.update_status || "unknown");
+      const tag = defaultModel && name === defaultModel ? " (default)" : "";
+      return `<tr>
+        <td class="text-break">${escapeHtml(name)}${escapeHtml(tag)}</td>
+        <td class="text-break">${escapeHtml(shortDigest)}</td>
+        <td>${escapeHtml(modified)}</td>
+        <td>${escapeHtml(updateStatus)}</td>
+      </tr>`;
+    }).join("");
+    host.classList.remove("text-secondary");
+    host.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Model</th><th>Version</th><th>Geändert</th><th>Update</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+
+  function renderLlmManagerCard(statusPayload = {}, llmInfo = null) {
+    const card = q("llm-manager-card");
+    if (!card) return;
+    const cfg = statusPayload && typeof statusPayload === "object" ? (statusPayload.config || {}) : {};
+    const repos = Array.isArray(cfg.managed_install_repos) ? cfg.managed_install_repos : [];
+    const repo = findLlmManagerRepo(repos);
+    if (!repo || typeof repo !== "object") {
+      card.classList.add("d-none");
+      return;
+    }
+    const status = (repo.service_status && typeof repo.service_status === "object") ? repo.service_status : {};
+    const installed = !!(status.service_installed || status.service_running);
+    if (!installed) {
+      card.classList.add("d-none");
+      return;
+    }
+    card.classList.remove("d-none");
+    const updateInfo = resolveRepoUpdateInfo(repo);
+    llmManagerState = { info: llmInfo, repo, update: updateInfo };
+
+    const badgesHost = q("llm-manager-badges");
+    if (badgesHost) {
+      badgesHost.innerHTML = buildServiceBadgesHtml(status, repo.autostart !== false, true, true, updateInfo);
+    }
+    const healthEl = q("llm-manager-health");
+    if (healthEl) {
+      const ollama = (llmInfo && typeof llmInfo === "object" && typeof llmInfo.ollama === "object") ? llmInfo.ollama : {};
+      const ollamaOk = !!ollama.reachable;
+      const runtimeOk = !!status.runtime_reachable;
+      let label = (ollamaOk || runtimeOk || status.service_running) ? "Health: ok" : "Health: nein";
+      if (ollama && String(ollama.version || "").trim()) {
+        label += ` · Ollama: ${String(ollama.version).trim()}`;
+      }
+      healthEl.textContent = label;
+    }
+
+    const updateBtn = q("btn-llm-manager-update");
+    if (updateBtn) {
+      updateBtn.classList.toggle("d-none", !(updateInfo && updateInfo.available));
+    }
+
+    const toggleBtn = q("btn-llm-manager-toggle");
+    if (toggleBtn) {
+      const running = !!status.service_running;
+      toggleBtn.dataset.action = running ? "stop" : "start";
+      toggleBtn.textContent = running ? "Stop" : "Start";
+      toggleBtn.classList.remove("btn-outline-success", "btn-outline-warning");
+      toggleBtn.classList.add(running ? "btn-outline-warning" : "btn-outline-success");
+    }
+
+    const autostartBtn = q("btn-llm-manager-autostart");
+    if (autostartBtn) {
+      const enabled = !!status.service_enabled;
+      autostartBtn.dataset.enabled = enabled ? "0" : "1";
+      autostartBtn.textContent = enabled ? "Autostart deaktivieren" : "Autostart aktivieren";
+    }
+
+    renderLlmManagerModels(llmInfo || {});
+  }
+
   function syncSystemRepoUpdateButtons(portalUpdateInfo, playerUpdateInfo) {
     const portalBtn = q("btn-system-portal-update");
     if (portalBtn) {
@@ -7377,6 +7481,50 @@
           }
         });
       });
+    }
+    const llmDetailsBtn = q("btn-llm-manager-details");
+    if (llmDetailsBtn) {
+      llmDetailsBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(llmManagerState?.repo?.id || "").trim();
+        if (!repoId) throw new Error("LLM-Manager Repo nicht gefunden.");
+        showManagedRepoDetails(repoId);
+      }));
+    }
+    const llmUpdateBtn = q("btn-llm-manager-update");
+    if (llmUpdateBtn) {
+      llmUpdateBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(llmManagerState?.repo?.id || "").trim();
+        if (!repoId) throw new Error("LLM-Manager Repo nicht gefunden.");
+        await startManagedRepoInstallUpdate(repoId);
+        await refreshStatus();
+      }));
+    }
+    const llmToggleBtn = q("btn-llm-manager-toggle");
+    if (llmToggleBtn) {
+      llmToggleBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(llmManagerState?.repo?.id || "").trim();
+        const action = String(llmToggleBtn.dataset.action || "").trim().toLowerCase();
+        if (!repoId) throw new Error("LLM-Manager Repo nicht gefunden.");
+        if (!action) throw new Error("Ungültige Action.");
+        await controlManagedRepoService(repoId, action);
+      }));
+    }
+    const llmRestartBtn = q("btn-llm-manager-restart");
+    if (llmRestartBtn) {
+      llmRestartBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(llmManagerState?.repo?.id || "").trim();
+        if (!repoId) throw new Error("LLM-Manager Repo nicht gefunden.");
+        await controlManagedRepoService(repoId, "restart");
+      }));
+    }
+    const llmAutostartBtn = q("btn-llm-manager-autostart");
+    if (llmAutostartBtn) {
+      llmAutostartBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(llmManagerState?.repo?.id || "").trim();
+        const enabled = String(llmAutostartBtn.dataset.enabled || "").trim() === "1";
+        if (!repoId) throw new Error("LLM-Manager Repo nicht gefunden.");
+        await toggleManagedRepoAutostart(repoId, enabled);
+      }));
     }
     const autodiscoverRefreshBtn = q("btn-autodiscover-refresh");
     if (autodiscoverRefreshBtn) {
