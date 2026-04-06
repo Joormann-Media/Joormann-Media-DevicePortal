@@ -5039,7 +5039,7 @@
       return;
     }
     const status = (repo.service_status && typeof repo.service_status === "object") ? repo.service_status : {};
-    const running = !!(status.service_running || status.runtime_reachable);
+    const running = isServiceActive(status);
     const installed = !!(status.service_installed || running || _repoLooksInstalled(repo));
     if (!installed) {
       card.classList.add("d-none");
