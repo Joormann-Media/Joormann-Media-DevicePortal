@@ -4094,6 +4094,8 @@
     const activeSource = String(data.active_source || "idle");
     const bluetooth = (data.bluetooth && typeof data.bluetooth === "object") ? data.bluetooth : {};
     const outputs = (data.outputs && typeof data.outputs === "object") ? data.outputs : {};
+    const savedOutput = String(((outputs.saved || {}).selected_output) || "").trim();
+    const effectiveOutput = String(outputs.current_output || "").trim() || savedOutput;
     const errors = Array.isArray(data.errors) ? data.errors : [];
 
     q("audio-status-source").textContent = activeSource || "-";
@@ -4103,7 +4105,7 @@
       q("audio-status-bluetooth").textContent = "nicht verfuegbar";
     }
     if (outputs.ok) {
-      q("audio-status-output").textContent = String(outputs.current_output || "-");
+      q("audio-status-output").textContent = effectiveOutput || "-";
     } else {
       q("audio-status-output").textContent = "nicht verfuegbar";
     }
@@ -4466,6 +4468,9 @@
   async function audioRadioPlay() {
     const url = String(q("audio-radio-url")?.value || "").trim();
     if (!url) throw new Error("Bitte Webradio-URL eingeben.");
+    const selectedOutput = String(q("bt-audio-output-select")?.value || "").trim()
+      || String((btDeviceState.audioOutputs && btDeviceState.audioOutputs.current_output) || "").trim()
+      || String(((btDeviceState.audioOutputs || {}).saved || {}).selected_output || "").trim();
     const btn = q("btn-audio-radio-play");
     const original = btn ? btn.innerHTML : "";
     if (btn) {
@@ -4473,7 +4478,11 @@
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Start...';
     }
     try {
-      await fetchJson("/api/audio/radio/play", { method: "POST", body: { stream_url: url }, timeoutMs: 12000 });
+      await fetchJson("/api/audio/radio/play", {
+        method: "POST",
+        body: selectedOutput ? { stream_url: url, output: selectedOutput } : { stream_url: url },
+        timeoutMs: 12000,
+      });
       await refreshAudioHubStatus();
       toast("Radio gestartet", "success");
     } finally {
@@ -5887,6 +5896,7 @@
     const data = payload && payload.data ? payload.data : payload || {};
     btDeviceState.audioOutputs = {
       current_output: String(data.current_output || ""),
+      saved: (data.saved && typeof data.saved === "object") ? data.saved : {},
       available_outputs: Array.isArray(data.available_outputs) ? data.available_outputs : [],
     };
     const current = String(data.current_output || "-");

@@ -223,6 +223,16 @@ def _mixer_cfg(cfg: dict) -> dict:
     return profile
 
 
+def _resolve_radio_output_id(request_data: dict | None = None) -> str:
+    data = request_data if isinstance(request_data, dict) else {}
+    explicit = str(data.get("output") or data.get("output_id") or "").strip()
+    if explicit:
+        return explicit
+    cfg = ensure_config()
+    profile = cfg.get("audio_output") if isinstance(cfg.get("audio_output"), dict) else {}
+    return str(profile.get("selected_output") or "").strip()
+
+
 @bp_audio.get("/api/audio/bluetooth/scan")
 def api_audio_bluetooth_scan():
     raw_duration = request.args.get("duration", "8")
@@ -409,9 +419,20 @@ def api_audio_raspotify_restart():
 def api_audio_radio_play():
     data = request.get_json(force=True, silent=True) or {}
     stream_url = str(data.get("stream_url") or data.get("url") or "").strip()
+    output_id = _resolve_radio_output_id(data)
+    output_warning = ""
+    if output_id:
+        try:
+            audio_output_set(output_id)
+        except NetControlError as exc:
+            output_warning = f"{exc.code}: {exc.message}"
     result = radio_service.play(stream_url)
     if not result.get("ok"):
         return _error("radio_failed", result.get("message", "Radio-Start fehlgeschlagen"), status=400)
+    if output_id:
+        result["output_id"] = output_id
+    if output_warning:
+        result["output_warning"] = output_warning
     return _ok(result)
 
 
@@ -419,9 +440,20 @@ def api_audio_radio_play():
 def api_audio_radio_start():
     data = request.get_json(force=True, silent=True) or {}
     stream_url = str(data.get("stream_url") or data.get("url") or data.get("streamUrl") or "").strip()
+    output_id = _resolve_radio_output_id(data)
+    output_warning = ""
+    if output_id:
+        try:
+            audio_output_set(output_id)
+        except NetControlError as exc:
+            output_warning = f"{exc.code}: {exc.message}"
     result = radio_service.play(stream_url)
     if not result.get("ok"):
         return _error("radio_failed", result.get("message", "Radio-Start fehlgeschlagen"), status=400)
+    if output_id:
+        result["output_id"] = output_id
+    if output_warning:
+        result["output_warning"] = output_warning
     return _ok(result)
 
 

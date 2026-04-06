@@ -97,6 +97,9 @@ def collect_status(
     include_bluetooth: bool = True,
 ) -> dict[str, Any]:
     errors: list[dict[str, str]] = []
+    cfg = ensure_config()
+    output_profile = cfg.get("audio_output") if isinstance(cfg.get("audio_output"), dict) else {}
+    selected_output = str(output_profile.get("selected_output") or "").strip()
 
     bluetooth: dict[str, Any] = {"ok": False}
     if include_bluetooth:
@@ -120,6 +123,13 @@ def collect_status(
         outputs = audio_outputs_status()
         outputs["ok"] = True
         outputs = _auto_restore_output(outputs)
+        if isinstance(outputs, dict):
+            outputs["saved"] = {
+                "selected_output": selected_output,
+                "updated_at": str(output_profile.get("updated_at") or ""),
+            }
+            if not str(outputs.get("current_output") or "").strip() and selected_output:
+                outputs["current_output"] = selected_output
     except NetControlError as exc:
         errors.append({"scope": "audio_outputs", "message": exc.message})
         outputs = {"ok": False, "error": exc.message, "detail": exc.detail}
