@@ -98,6 +98,20 @@ def _base_admin_url(cfg: dict, incoming: dict | None = None) -> str:
     return _safe_base_url(str(incoming.get('admin_base_url') or cfg.get('admin_base_url') or ''))
 
 
+def _is_hardware_node(cfg: dict) -> bool:
+    node_type = str(cfg.get('node_runtime_type') or '').strip().lower()
+    return node_type in {'server', 'workstation'}
+
+
+def _panel_api_headers(cfg: dict) -> dict[str, str]:
+    client_id = str(cfg.get('client_id') or '').strip()
+    panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+    api_key = str((panel_keys.get('raspi_to_admin') if isinstance(panel_keys, dict) else '') or '').strip()
+    if not client_id or not api_key:
+        return {}
+    return {'X-Client-Id': client_id, 'X-API-Key': api_key}
+
+
 def _device_auth_payload(dev: dict, extra: dict | None = None) -> dict:
     payload = {
         'deviceUuid': str(dev.get('device_uuid') or '').strip(),
@@ -106,6 +120,30 @@ def _device_auth_payload(dev: dict, extra: dict | None = None) -> dict:
     if extra:
         payload.update(extra)
     return payload
+
+
+def _http_get_json_with_headers(url: str, headers: dict[str, str], timeout: int = 10) -> tuple[int | None, dict | None, str]:
+    try:
+        response = requests.get(url, headers=headers, timeout=timeout)
+        try:
+            data = response.json()
+        except Exception:
+            data = {'raw': (response.text or '')[:2000]}
+        return response.status_code, data if isinstance(data, dict) else {'raw': data}, ''
+    except Exception as exc:
+        return None, None, str(exc)
+
+
+def _http_post_json_with_headers(url: str, payload: dict, headers: dict[str, str], timeout: int = 10) -> tuple[int | None, dict | None, str]:
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        try:
+            data = response.json()
+        except Exception:
+            data = {'raw': (response.text or '')[:2000]}
+        return response.status_code, data if isinstance(data, dict) else {'raw': data}, ''
+    except Exception as exc:
+        return None, None, str(exc)
 
 
 def _resolve_stream_storage_root(cfg: dict, requested_device_id: str = '') -> tuple[str, Path, str]:
@@ -344,19 +382,33 @@ def _write_player_source_file(
     PLAYER_SOURCE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
-def _load_remote_streams(base_url: str, dev: dict) -> tuple[list[dict], str]:
-    url = f"{base_url}/api/device/link/streams?" + (
-        f"deviceUuid={quote(str(dev.get('device_uuid') or '').strip())}&authKey={quote(str(dev.get('auth_key') or '').strip())}"
-    )
-    code, payload, err = http_get_json(url, timeout=12)
+def _load_remote_streams(base_url: str, dev: dict, cfg: dict) -> tuple[list[dict], str]:
+    if _is_hardware_node(cfg):
+        headers = _panel_api_headers(cfg)
+        if not headers:
+            raise RuntimeError('Hardware-Streamzugriff nicht möglich: Panel API-Key/Client-ID fehlt.')
+        code, payload, err = _http_get_json_with_headers(f"{base_url}/api/hardware-device/link/streams", headers, timeout=12)
+    else:
+        url = f"{base_url}/api/device/link/streams?" + (
+            f"deviceUuid={quote(str(dev.get('device_uuid') or '').strip())}&authKey={quote(str(dev.get('auth_key') or '').strip())}"
+        )
+        code, payload, err = http_get_json(url, timeout=12)
     if code is None:
         raise RuntimeError(f'Adminpanel nicht erreichbar: {err}')
-    if code != 200 or not isinstance(payload, dict) or not bool(payload.get('ok', False)):
+    if code != 200 or not isinstance(payload, dict):
         raise RuntimeError(f'Streamliste konnte nicht geladen werden (HTTP {code}).')
 
-    data = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+    if 'ok' in payload:
+        if not bool(payload.get('ok', False)):
+            raise RuntimeError(f'Streamliste konnte nicht geladen werden (HTTP {code}).')
+        data = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+    else:
+        if str(payload.get('status') or '').strip().lower() != 'ok':
+            raise RuntimeError(f'Streamliste konnte nicht geladen werden (HTTP {code}).')
+        data = payload
+
     streams = data.get('streams') if isinstance(data.get('streams'), list) else []
-    selected = str(data.get('selectedStreamSlug') or '').strip()
+    selected = str(data.get('selectedStreamSlug') or data.get('selected_stream_slug') or '').strip()
     return [item for item in streams if isinstance(item, dict)], selected
 
 
@@ -371,7 +423,7 @@ def api_stream_overview():
     fetch_error = ''
     if base_url:
         try:
-            streams, admin_selected = _load_remote_streams(base_url, dev)
+            streams, admin_selected = _load_remote_streams(base_url, dev, cfg)
         except Exception as exc:
             fetch_error = str(exc)
 
@@ -457,12 +509,30 @@ def api_stream_select():
     base_url = _base_admin_url(cfg, data)
     push_error = ''
     if base_url:
-        payload = _device_auth_payload(dev, {'streamSlug': slug})
-        code, resp, err = http_post_json(f'{base_url}/api/device/link/streams/select', payload, timeout=12)
-        if code is None:
-            push_error = str(err)
-        elif code >= 400 or not isinstance(resp, dict) or not bool(resp.get('ok', False)):
-            push_error = f'HTTP {code}'
+        if _is_hardware_node(cfg):
+            headers = _panel_api_headers(cfg)
+            if not headers:
+                push_error = 'hardware_stream_select_credentials_missing'
+            else:
+                code, resp, err = _http_post_json_with_headers(
+                    f'{base_url}/api/hardware-device/link/streams/select',
+                    {'streamSlug': slug},
+                    headers,
+                    timeout=12,
+                )
+                if code is None:
+                    push_error = str(err)
+                elif code >= 400:
+                    push_error = f'HTTP {code}'
+                elif isinstance(resp, dict) and str(resp.get('status') or 'ok').lower() != 'ok':
+                    push_error = f'HTTP {code}'
+        else:
+            payload = _device_auth_payload(dev, {'streamSlug': slug})
+            code, resp, err = http_post_json(f'{base_url}/api/device/link/streams/select', payload, timeout=12)
+            if code is None:
+                push_error = str(err)
+            elif code >= 400 or not isinstance(resp, dict) or not bool(resp.get('ok', False)):
+                push_error = f'HTTP {code}'
 
     ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok:
@@ -500,7 +570,7 @@ def api_stream_sync():
 
     if not stream_name:
         try:
-            streams, _ = _load_remote_streams(base_url, dev)
+            streams, _ = _load_remote_streams(base_url, dev, cfg)
             stream_name = _extract_stream_name(streams, stream_slug)
         except Exception:
             stream_name = ''
@@ -523,18 +593,35 @@ def api_stream_sync():
             lock_file.close()
         return jsonify(ok=False, error='stream_sync_lock_failed', detail=str(exc)), 500
 
-    manifest_url = f"{base_url}/api/device/link/streams/{quote(stream_slug)}/player-manifest?" + (
-        f"deviceUuid={quote(str(dev.get('device_uuid') or '').strip())}&authKey={quote(str(dev.get('auth_key') or '').strip())}"
-    )
-    code, payload, err = http_get_json(manifest_url, timeout=20)
+    if _is_hardware_node(cfg):
+        headers = _panel_api_headers(cfg)
+        if not headers:
+            _release_lock(lock_file)
+            return jsonify(ok=False, error='hardware_stream_manifest_credentials_missing', detail='Panel API-Key/Client-ID fehlt.'), 400
+        manifest_url = f"{base_url}/api/hardware-device/link/streams/{quote(stream_slug)}/player-manifest"
+        code, payload, err = _http_get_json_with_headers(manifest_url, headers, timeout=20)
+    else:
+        manifest_url = f"{base_url}/api/device/link/streams/{quote(stream_slug)}/player-manifest?" + (
+            f"deviceUuid={quote(str(dev.get('device_uuid') or '').strip())}&authKey={quote(str(dev.get('auth_key') or '').strip())}"
+        )
+        code, payload, err = http_get_json(manifest_url, timeout=20)
     if code is None:
         _release_lock(lock_file)
         return jsonify(ok=False, error='manifest_fetch_failed', detail=str(err)), 502
-    if code != 200 or not isinstance(payload, dict) or not bool(payload.get('ok', False)):
+    if code != 200 or not isinstance(payload, dict):
         _release_lock(lock_file)
         return jsonify(ok=False, error='manifest_fetch_failed', detail=f'HTTP {code}', panel_response=payload), (code if isinstance(code, int) and code >= 400 else 502)
 
-    data_payload = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+    if 'ok' in payload:
+        if not bool(payload.get('ok', False)):
+            _release_lock(lock_file)
+            return jsonify(ok=False, error='manifest_fetch_failed', detail=f'HTTP {code}', panel_response=payload), (code if isinstance(code, int) and code >= 400 else 502)
+        data_payload = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+    else:
+        if str(payload.get('status') or '').strip().lower() != 'ok':
+            _release_lock(lock_file)
+            return jsonify(ok=False, error='manifest_fetch_failed', detail=f'HTTP {code}', panel_response=payload), (code if isinstance(code, int) and code >= 400 else 502)
+        data_payload = payload
     manifest = data_payload.get('manifest') if isinstance(data_payload.get('manifest'), dict) else None
     if not isinstance(manifest, dict):
         _release_lock(lock_file)

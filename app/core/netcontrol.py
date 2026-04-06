@@ -789,6 +789,32 @@ def audio_volume_set(sink_name: str | None, volume_percent: int) -> dict:
     return payload
 
 
+def audio_sources_status() -> dict:
+    env = _runtime_env_for_user(getpass.getuser())
+    rc, out, err = _run_script("audio_source_ctl.py", ["status"], timeout=20, use_sudo=False, env=env)
+    if rc != 0:
+        raise NetControlError(code="audio_sources_failed", message="Failed to read audio sources", detail=err or out)
+    payload = _parse_json_output(out, code="audio_sources_invalid_json", message="Audio sources returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(code="audio_sources_failed", message="Failed to read audio sources", detail=str(payload.get("error") or err or out))
+    return payload
+
+
+def audio_source_volume_set(source_name: str, volume_percent: int) -> dict:
+    target = (source_name or "").strip()
+    if not target:
+        raise NetControlError(code="invalid_payload", message="source_name is required")
+    volume = max(0, min(150, int(volume_percent)))
+    env = _runtime_env_for_user(getpass.getuser())
+    rc, out, err = _run_script("audio_source_ctl.py", ["set", target, str(volume)], timeout=15, use_sudo=False, env=env)
+    if rc != 0:
+        raise NetControlError(code="audio_source_volume_failed", message="Failed to set source volume", detail=err or out)
+    payload = _parse_json_output(out, code="audio_source_volume_invalid_json", message="Audio source volume returned invalid JSON")
+    if not payload.get("ok", False):
+        raise NetControlError(code="audio_source_volume_failed", message="Failed to set source volume", detail=str(payload.get("error") or err or out))
+    return payload
+
+
 def set_lan_enabled(enabled: bool, ifname: str = "eth0") -> dict:
     iface = _resolve_lan_iface(ifname)
     if iface not in _allowed_lan_interfaces():

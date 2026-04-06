@@ -1257,6 +1257,75 @@
                     </div>
                   </div>
                 </div>
+
+                <div class="col-12">
+                  <div class="border rounded p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <div class="small text-uppercase text-secondary mb-0">Kanal-Lautstärke (Output)</div>
+                      <button id="btn-audio-mixer-refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                    </div>
+                    <div id="audio-channel-list" class="d-grid gap-2">
+                      <div class="small text-secondary">Keine Audio-Kanäle erkannt.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div class="border rounded p-3">
+                    <div class="small text-uppercase text-secondary mb-2">Mikrofon-Erkennung & Lautstärke</div>
+                    <div id="audio-mic-list" class="d-grid gap-2">
+                      <div class="small text-secondary">Keine Mikrofone erkannt.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div class="border rounded p-3">
+                    <div class="small text-uppercase text-secondary mb-2">TTS / Ducking Einstellungen</div>
+                    <div class="row g-3">
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label small mb-1" for="audio-tts-target-mode">TTS Ziel-Modus</label>
+                        <select id="audio-tts-target-mode" class="form-select form-select-sm">
+                          <option value="current">Aktueller Output</option>
+                          <option value="specific">Bestimmter Output</option>
+                          <option value="all">Alle verfügbaren Outputs</option>
+                        </select>
+                      </div>
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label small mb-1" for="audio-tts-target-output">TTS Ziel-Output</label>
+                        <select id="audio-tts-target-output" class="form-select form-select-sm">
+                          <option value="">Bitte wählen…</option>
+                        </select>
+                      </div>
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label small mb-1" for="audio-tts-volume">TTS Lautstärke <span id="audio-tts-volume-value">90</span>%</label>
+                        <input id="audio-tts-volume" type="range" min="0" max="150" step="1" value="90" class="form-range">
+                      </div>
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label small mb-1" for="audio-ducking-level">Ducking Level bei TTS <span id="audio-ducking-level-value">30</span>%</label>
+                        <input id="audio-ducking-level" type="range" min="0" max="100" step="1" value="30" class="form-range">
+                      </div>
+                      <div class="col-12 col-lg-3">
+                        <label class="form-label small mb-1" for="audio-ducking-enabled">Ducking aktiv</label>
+                        <select id="audio-ducking-enabled" class="form-select form-select-sm">
+                          <option value="1">Ja</option>
+                          <option value="0">Nein</option>
+                        </select>
+                      </div>
+                      <div class="col-12 col-lg-3">
+                        <label class="form-label small mb-1" for="audio-ducking-attack">Ducking Attack (ms)</label>
+                        <input id="audio-ducking-attack" type="number" min="0" max="10000" step="10" value="120" class="form-control form-control-sm">
+                      </div>
+                      <div class="col-12 col-lg-3">
+                        <label class="form-label small mb-1" for="audio-ducking-release">Ducking Release (ms)</label>
+                        <input id="audio-ducking-release" type="number" min="0" max="30000" step="10" value="450" class="form-control form-control-sm">
+                      </div>
+                      <div class="col-12 col-lg-3 d-flex align-items-end">
+                        <button id="btn-audio-ducking-save" class="btn btn-outline-primary btn-sm w-100">Einstellungen speichern</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

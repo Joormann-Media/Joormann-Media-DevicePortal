@@ -38,6 +38,11 @@
     modal: null,
   };
   let audioHubPollHandle = null;
+  const audioMixerState = {
+    lastPayload: null,
+    channelDebounce: new Map(),
+    micDebounce: new Map(),
+  };
   let btDeviceState = {
     devices: [],
     scanDevices: [],
@@ -4134,6 +4139,291 @@
     return payload;
   }
 
+  function setAudioRangeLabel(rangeId, labelId) {
+    const raw = Number(q(rangeId)?.value || 0);
+    const safe = Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0;
+    const el = q(labelId);
+    if (el) el.textContent = String(safe);
+  }
+
+  function updateAudioTtsTargetUi() {
+    const mode = String(q("audio-tts-target-mode")?.value || "current").trim().toLowerCase();
+    const targetSelect = q("audio-tts-target-output");
+    if (!targetSelect) return;
+    targetSelect.disabled = mode !== "specific";
+  }
+
+  function renderAudioMixer(payload) {
+    const root = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+    audioMixerState.lastPayload = root;
+    const outputs = (root.outputs && typeof root.outputs === "object") ? root.outputs : {};
+    const sources = (root.sources && typeof root.sources === "object") ? root.sources : {};
+    const settings = (root.settings && typeof root.settings === "object") ? root.settings : {};
+    const channelVolumes = (settings.channel_volumes && typeof settings.channel_volumes === "object")
+      ? settings.channel_volumes
+      : {};
+    const micVolumes = (settings.mic_volumes && typeof settings.mic_volumes === "object")
+      ? settings.mic_volumes
+      : {};
+
+    const ttsVolume = Number(settings.tts_volume_percent);
+    const ttsTargetMode = String(settings.tts_target_mode || "current").trim().toLowerCase();
+    const ttsTargetOutputId = String(settings.tts_target_output_id || "").trim();
+    const duckingLevel = Number(settings.ducking_level_percent);
+    const duckingEnabled = !!settings.ducking_enabled;
+    const duckingAttack = Number(settings.ducking_attack_ms);
+    const duckingRelease = Number(settings.ducking_release_ms);
+
+    if (q("audio-tts-volume")) q("audio-tts-volume").value = String(Number.isFinite(ttsVolume) ? Math.max(0, Math.min(150, Math.round(ttsVolume))) : 90);
+    if (q("audio-tts-target-mode")) q("audio-tts-target-mode").value = ["current", "specific", "all"].includes(ttsTargetMode) ? ttsTargetMode : "current";
+    if (q("audio-ducking-level")) q("audio-ducking-level").value = String(Number.isFinite(duckingLevel) ? Math.max(0, Math.min(100, Math.round(duckingLevel))) : 30);
+    if (q("audio-ducking-enabled")) q("audio-ducking-enabled").value = duckingEnabled ? "1" : "0";
+    if (q("audio-ducking-attack")) q("audio-ducking-attack").value = String(Number.isFinite(duckingAttack) ? Math.max(0, Math.min(10000, Math.round(duckingAttack))) : 120);
+    if (q("audio-ducking-release")) q("audio-ducking-release").value = String(Number.isFinite(duckingRelease) ? Math.max(0, Math.min(30000, Math.round(duckingRelease))) : 450);
+    setAudioRangeLabel("audio-tts-volume", "audio-tts-volume-value");
+    setAudioRangeLabel("audio-ducking-level", "audio-ducking-level-value");
+    const ttsTargetSelect = q("audio-tts-target-output");
+    if (ttsTargetSelect) {
+      ttsTargetSelect.innerHTML = "";
+      const availableOutputs = Array.isArray(outputs.available_outputs) ? outputs.available_outputs : [];
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Bitte wählen…";
+      ttsTargetSelect.appendChild(placeholder);
+      for (const item of availableOutputs) {
+        if (!item || typeof item !== "object") continue;
+        if (!item.available) continue;
+        const id = String(item.id || "").trim();
+        if (!id) continue;
+        const label = String(item.label || id);
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = label;
+        if (id === ttsTargetOutputId) {
+          opt.selected = true;
+        }
+        ttsTargetSelect.appendChild(opt);
+      }
+      if (ttsTargetOutputId && !Array.from(ttsTargetSelect.options).some((opt) => opt.value === ttsTargetOutputId)) {
+        const customOpt = document.createElement("option");
+        customOpt.value = ttsTargetOutputId;
+        customOpt.textContent = `${ttsTargetOutputId} (nicht verfügbar)`;
+        customOpt.selected = true;
+        ttsTargetSelect.appendChild(customOpt);
+      }
+    }
+    updateAudioTtsTargetUi();
+
+    const channelHost = q("audio-channel-list");
+    if (channelHost) {
+      channelHost.innerHTML = "";
+      const available = Array.isArray(outputs.available_outputs) ? outputs.available_outputs : [];
+      if (!available.length) {
+        channelHost.innerHTML = '<div class="small text-secondary">Keine Audio-Kanäle erkannt.</div>';
+      } else {
+        for (const item of available) {
+          if (!item || typeof item !== "object") continue;
+          const channelId = String(item.id || "").trim();
+          if (!channelId) continue;
+          const label = String(item.label || channelId);
+          const sinkName = String(item.sink_name || "");
+          const availableNow = !!item.available;
+          const volRaw = Number(item.volume_percent);
+          const fallbackRaw = Number(channelVolumes[channelId]);
+          const volume = Number.isFinite(volRaw)
+            ? Math.max(0, Math.min(150, Math.round(volRaw)))
+            : (Number.isFinite(fallbackRaw) ? Math.max(0, Math.min(150, Math.round(fallbackRaw))) : 65);
+
+          const wrap = document.createElement("div");
+          wrap.className = "border rounded p-2";
+          wrap.innerHTML = `
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div>
+                <div class="fw-semibold">${escapeHtml(label)}</div>
+                <div class="small text-secondary">${escapeHtml(channelId)}${sinkName ? ` · ${escapeHtml(sinkName)}` : ""}</div>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge text-bg-${availableNow ? "success" : "secondary"}">${availableNow ? "verfügbar" : "nicht verfügbar"}</span>
+                <span class="badge text-bg-light border"><span data-role="audio-channel-value">${volume}</span>%</span>
+              </div>
+            </div>
+          `;
+          const slider = document.createElement("input");
+          slider.type = "range";
+          slider.min = "0";
+          slider.max = "150";
+          slider.step = "1";
+          slider.value = String(volume);
+          slider.className = "form-range mb-0";
+          slider.disabled = !availableNow;
+          slider.dataset.channelId = channelId;
+          slider.addEventListener("input", () => {
+            const valueEl = wrap.querySelector('[data-role="audio-channel-value"]');
+            if (valueEl) valueEl.textContent = String(Math.max(0, Math.min(150, Math.round(Number(slider.value) || 0))));
+            queueAudioChannelVolume(channelId, Number(slider.value || 0));
+          });
+          slider.addEventListener("change", () => {
+            run(() => setAudioChannelVolume(channelId, Number(slider.value || 0), { notify: false, refresh: false }));
+          });
+          wrap.appendChild(slider);
+          channelHost.appendChild(wrap);
+        }
+      }
+    }
+
+    const micHost = q("audio-mic-list");
+    if (micHost) {
+      micHost.innerHTML = "";
+      const microphones = Array.isArray(sources.microphones)
+        ? sources.microphones
+        : (Array.isArray(sources.sources) ? sources.sources.filter((item) => !!item && !!item.is_microphone) : []);
+      if (!microphones.length) {
+        micHost.innerHTML = '<div class="small text-secondary">Keine Mikrofone erkannt.</div>';
+      } else {
+        for (const mic of microphones) {
+          if (!mic || typeof mic !== "object") continue;
+          const sourceName = String(mic.name || "").trim();
+          if (!sourceName) continue;
+          const label = String(mic.description || sourceName);
+          const isDefault = !!mic.is_default;
+          const rawVolume = Number(mic.volume_percent);
+          const fallbackVolume = Number(micVolumes[sourceName]);
+          const volume = Number.isFinite(rawVolume)
+            ? Math.max(0, Math.min(150, Math.round(rawVolume)))
+            : (Number.isFinite(fallbackVolume) ? Math.max(0, Math.min(150, Math.round(fallbackVolume))) : 70);
+
+          const wrap = document.createElement("div");
+          wrap.className = "border rounded p-2";
+          wrap.innerHTML = `
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div>
+                <div class="fw-semibold">${escapeHtml(label)}</div>
+                <div class="small text-secondary">${escapeHtml(sourceName)}</div>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                ${isDefault ? '<span class="badge text-bg-primary">default</span>' : ""}
+                <span class="badge text-bg-light border"><span data-role="audio-mic-value">${volume}</span>%</span>
+              </div>
+            </div>
+          `;
+          const slider = document.createElement("input");
+          slider.type = "range";
+          slider.min = "0";
+          slider.max = "150";
+          slider.step = "1";
+          slider.value = String(volume);
+          slider.className = "form-range mb-0";
+          slider.dataset.sourceName = sourceName;
+          slider.addEventListener("input", () => {
+            const valueEl = wrap.querySelector('[data-role="audio-mic-value"]');
+            if (valueEl) valueEl.textContent = String(Math.max(0, Math.min(150, Math.round(Number(slider.value) || 0))));
+            queueAudioMicVolume(sourceName, Number(slider.value || 0));
+          });
+          slider.addEventListener("change", () => {
+            run(() => setAudioMicVolume(sourceName, Number(slider.value || 0), { notify: false, refresh: false }));
+          });
+          wrap.appendChild(slider);
+          micHost.appendChild(wrap);
+        }
+      }
+    }
+  }
+
+  async function refreshAudioMixer() {
+    const payload = await fetchJson("/api/audio/mixer", { cache: "no-store" });
+    renderAudioMixer(payload);
+    return payload;
+  }
+
+  async function setAudioChannelVolume(channelId, volumePercent, options = {}) {
+    const id = String(channelId || "").trim();
+    if (!id) throw new Error("Kanal fehlt.");
+    const volume = Math.max(0, Math.min(150, Math.round(Number(volumePercent) || 0)));
+    await fetchJson("/api/audio/channel/volume", {
+      method: "POST",
+      body: { channel_id: id, volume_percent: volume },
+      timeoutMs: 12000,
+    });
+    if (options.refresh) {
+      await refreshAudioMixer();
+    }
+    if (options.notify) {
+      toast(`Kanal ${id}: ${volume}%`, "success");
+    }
+  }
+
+  function queueAudioChannelVolume(channelId, volumePercent) {
+    const id = String(channelId || "").trim();
+    if (!id) return;
+    const current = audioMixerState.channelDebounce.get(id);
+    if (current) {
+      window.clearTimeout(current);
+    }
+    const handle = window.setTimeout(() => {
+      audioMixerState.channelDebounce.delete(id);
+      setAudioChannelVolume(id, volumePercent, { notify: false, refresh: false }).catch(() => {});
+    }, 140);
+    audioMixerState.channelDebounce.set(id, handle);
+  }
+
+  async function setAudioMicVolume(sourceName, volumePercent, options = {}) {
+    const name = String(sourceName || "").trim();
+    if (!name) throw new Error("Mikrofon fehlt.");
+    const volume = Math.max(0, Math.min(150, Math.round(Number(volumePercent) || 0)));
+    await fetchJson("/api/audio/mic/volume", {
+      method: "POST",
+      body: { source_name: name, volume_percent: volume },
+      timeoutMs: 12000,
+    });
+    if (options.refresh) {
+      await refreshAudioMixer();
+    }
+    if (options.notify) {
+      toast(`Mikrofon ${name}: ${volume}%`, "success");
+    }
+  }
+
+  function queueAudioMicVolume(sourceName, volumePercent) {
+    const name = String(sourceName || "").trim();
+    if (!name) return;
+    const current = audioMixerState.micDebounce.get(name);
+    if (current) {
+      window.clearTimeout(current);
+    }
+    const handle = window.setTimeout(() => {
+      audioMixerState.micDebounce.delete(name);
+      setAudioMicVolume(name, volumePercent, { notify: false, refresh: false }).catch(() => {});
+    }, 140);
+    audioMixerState.micDebounce.set(name, handle);
+  }
+
+  async function saveAudioMixerSettings() {
+    const ttsVolume = Math.max(0, Math.min(150, Math.round(Number(q("audio-tts-volume")?.value || 90))));
+    const ttsTargetModeRaw = String(q("audio-tts-target-mode")?.value || "current").trim().toLowerCase();
+    const ttsTargetMode = ["current", "specific", "all"].includes(ttsTargetModeRaw) ? ttsTargetModeRaw : "current";
+    const ttsTargetOutputId = String(q("audio-tts-target-output")?.value || "").trim();
+    const duckingLevel = Math.max(0, Math.min(100, Math.round(Number(q("audio-ducking-level")?.value || 30))));
+    const duckingEnabled = String(q("audio-ducking-enabled")?.value || "1") === "1";
+    const duckingAttack = Math.max(0, Math.min(10000, Math.round(Number(q("audio-ducking-attack")?.value || 120))));
+    const duckingRelease = Math.max(0, Math.min(30000, Math.round(Number(q("audio-ducking-release")?.value || 450))));
+
+    await fetchJson("/api/audio/mixer/settings", {
+      method: "POST",
+      body: {
+        tts_volume_percent: ttsVolume,
+        tts_target_mode: ttsTargetMode,
+        tts_target_output_id: ttsTargetOutputId,
+        ducking_enabled: duckingEnabled,
+        ducking_level_percent: duckingLevel,
+        ducking_attack_ms: duckingAttack,
+        ducking_release_ms: duckingRelease,
+      },
+      timeoutMs: 12000,
+    });
+    toast("Audio Ducking/TTS gespeichert", "success");
+    await refreshAudioMixer();
+  }
+
   async function audioRadioPlay() {
     const url = String(q("audio-radio-url")?.value || "").trim();
     if (!url) throw new Error("Bitte Webradio-URL eingeben.");
@@ -5632,6 +5922,7 @@
       timeoutMs: 20000,
     });
     await refreshAudioOutputs();
+    await refreshAudioMixer();
     await refreshBluetoothDevices();
     toast(`Audio-Output gesetzt: ${selected}`, "success");
   }
@@ -6956,6 +7247,11 @@
     q("btn-audio-output-refresh").addEventListener("click", () => run(refreshAudioOutputs));
     q("btn-audio-output-set").addEventListener("click", () => run(() => setAudioOutput("")));
     q("btn-audio-status-refresh").addEventListener("click", () => run(refreshAudioHubStatus));
+    q("btn-audio-mixer-refresh").addEventListener("click", () => run(refreshAudioMixer));
+    q("btn-audio-ducking-save").addEventListener("click", () => run(saveAudioMixerSettings));
+    q("audio-tts-volume").addEventListener("input", () => setAudioRangeLabel("audio-tts-volume", "audio-tts-volume-value"));
+    q("audio-ducking-level").addEventListener("input", () => setAudioRangeLabel("audio-ducking-level", "audio-ducking-level-value"));
+    q("audio-tts-target-mode").addEventListener("change", updateAudioTtsTargetUi);
     q("btn-audio-radio-play").addEventListener("click", () => run(audioRadioPlay));
     q("btn-audio-radio-stop").addEventListener("click", () => run(audioRadioStop));
     q("btn-audio-tts-test").addEventListener("click", () => run(audioTtsTest));
@@ -7318,6 +7614,7 @@
     await runQuiet(refreshStreamAudioStatus, ["audio_control_unreachable", "connection refused"]);
     await run(refreshBluetoothDevices);
     await run(refreshAudioOutputs);
+    await runQuiet(refreshAudioMixer, ["audio_control_unreachable", "connection refused"]);
     await runQuiet(refreshAudioHubStatus, ["audio_control_unreachable", "connection refused"]);
     await run(loadPlayerRepoConfig);
     await run(refreshManagedRepos);

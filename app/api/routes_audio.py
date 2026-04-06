@@ -4,7 +4,14 @@ from flask import Blueprint, jsonify, request
 
 from app.core.config import ensure_config
 from app.core.jsonio import write_json
-from app.core.netcontrol import NetControlError, audio_output_set, audio_outputs_status, audio_volume_set
+from app.core.netcontrol import (
+    NetControlError,
+    audio_output_set,
+    audio_outputs_status,
+    audio_volume_set,
+    audio_sources_status,
+    audio_source_volume_set,
+)
 from app.core.paths import CONFIG_PATH
 from app.core.timeutil import utc_now
 from app.services.audio_service import collect_status
@@ -47,6 +54,73 @@ def api_audio_status():
     return _ok(data)
 
 
+@bp_audio.get("/api/audio/mixer")
+def api_audio_mixer():
+    cfg = ensure_config()
+    profile = _mixer_cfg(cfg)
+    try:
+        outputs = audio_outputs_status()
+        sources = audio_sources_status()
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+    return _ok({
+        "outputs": outputs,
+        "sources": sources,
+        "settings": {
+            "master_volume_percent": int(profile.get("master_volume_percent") or 65),
+            "tts_volume_percent": int(profile.get("tts_volume_percent") or 90),
+            "tts_target_mode": str(profile.get("tts_target_mode") or "current"),
+            "tts_target_output_id": str(profile.get("tts_target_output_id") or ""),
+            "ducking_enabled": bool(profile.get("ducking_enabled", True)),
+            "ducking_level_percent": int(profile.get("ducking_level_percent") or 30),
+            "ducking_attack_ms": int(profile.get("ducking_attack_ms") or 120),
+            "ducking_release_ms": int(profile.get("ducking_release_ms") or 450),
+            "channel_volumes": profile.get("channel_volumes") if isinstance(profile.get("channel_volumes"), dict) else {},
+            "mic_volumes": profile.get("mic_volumes") if isinstance(profile.get("mic_volumes"), dict) else {},
+            "updated_at": str(profile.get("updated_at") or ""),
+        },
+    })
+
+
+@bp_audio.post("/api/audio/mixer/settings")
+def api_audio_mixer_settings_save():
+    cfg = ensure_config()
+    profile = _mixer_cfg(cfg)
+    data = request.get_json(force=True, silent=True) or {}
+
+    def _clamp(name: str, default: int, min_value: int, max_value: int) -> int:
+        raw = data.get(name, profile.get(name, default))
+        try:
+            value = int(raw)
+        except Exception:
+            value = default
+        return max(min_value, min(max_value, value))
+
+    profile["master_volume_percent"] = _clamp("master_volume_percent", 65, 0, 150)
+    profile["tts_volume_percent"] = _clamp("tts_volume_percent", 90, 0, 150)
+    tts_target_mode = str(data.get("tts_target_mode", profile.get("tts_target_mode", "current")) or "current").strip().lower()
+    if tts_target_mode not in ("current", "specific", "all"):
+        tts_target_mode = "current"
+    profile["tts_target_mode"] = tts_target_mode
+    profile["tts_target_output_id"] = str(data.get("tts_target_output_id", profile.get("tts_target_output_id", "")) or "").strip()
+    profile["ducking_level_percent"] = _clamp("ducking_level_percent", 30, 0, 100)
+    profile["ducking_attack_ms"] = _clamp("ducking_attack_ms", 120, 0, 10000)
+    profile["ducking_release_ms"] = _clamp("ducking_release_ms", 450, 0, 30000)
+    if "ducking_enabled" in data:
+        profile["ducking_enabled"] = bool(data.get("ducking_enabled"))
+    else:
+        profile["ducking_enabled"] = bool(profile.get("ducking_enabled", True))
+    profile["updated_at"] = utc_now()
+
+    cfg["audio_mixer"] = profile
+    cfg["updated_at"] = utc_now()
+    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return _error("config_write_failed", "Could not persist audio mixer settings", status=500, detail=err)
+    return _ok({"settings": profile})
+
+
 def _outputs_to_sinks() -> dict:
     outputs = audio_outputs_status()
     sinks: list[dict] = []
@@ -72,6 +146,23 @@ def _outputs_to_sinks() -> dict:
     return {"ok": True, "default_sink": default_sink, "sinks": sinks, "outputs": outputs}
 
 
+def _resolve_sink_name_for_output_id(output_id: str) -> str:
+    outputs = audio_outputs_status()
+    available = outputs.get("available_outputs") if isinstance(outputs.get("available_outputs"), list) else []
+    target = str(output_id or "").strip()
+    if not target:
+        return ""
+    for item in available:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "").strip() != target:
+            continue
+        sink_name = str(item.get("sink_name") or "").strip()
+        if sink_name:
+            return sink_name
+    return ""
+
+
 def _resolve_output_id_for_sink(sink_name: str) -> str:
     outputs = audio_outputs_status()
     available = outputs.get("available_outputs") if isinstance(outputs.get("available_outputs"), list) else []
@@ -81,6 +172,15 @@ def _resolve_output_id_for_sink(sink_name: str) -> str:
         if str(item.get("sink_name") or "").strip() == sink_name:
             return str(item.get("id") or "")
     return ""
+
+
+def _mixer_cfg(cfg: dict) -> dict:
+    profile = cfg.get("audio_mixer") if isinstance(cfg.get("audio_mixer"), dict) else {}
+    if not isinstance(profile.get("channel_volumes"), dict):
+        profile["channel_volumes"] = {}
+    if not isinstance(profile.get("mic_volumes"), dict):
+        profile["mic_volumes"] = {}
+    return profile
 
 
 @bp_audio.get("/api/audio/bluetooth/scan")
@@ -355,6 +455,16 @@ def api_audio_volume():
     sink_name = str(data.get("sink_name") or data.get("name") or "").strip()
     try:
         payload = audio_volume_set(sink_name or None, volume)
+        cfg = ensure_config()
+        profile = _mixer_cfg(cfg)
+        if sink_name:
+            channel_volumes = profile.get("channel_volumes") if isinstance(profile.get("channel_volumes"), dict) else {}
+            channel_volumes[sink_name] = volume
+            profile["channel_volumes"] = channel_volumes
+            profile["updated_at"] = utc_now()
+            cfg["audio_mixer"] = profile
+            cfg["updated_at"] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
         return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
@@ -369,3 +479,64 @@ def api_audio_sink_volume():
 @bp_audio.post("/api/audio/default/volume")
 def api_audio_default_volume():
     return api_audio_volume()
+
+
+@bp_audio.post("/api/audio/channel/volume")
+def api_audio_channel_volume():
+    data = request.get_json(force=True, silent=True) or {}
+    channel_id = str(data.get("channel_id") or data.get("output_id") or "").strip()
+    raw_volume = data.get("volume_percent", data.get("volume", data.get("percent", 100)))
+    if not channel_id:
+        return _error("invalid_payload", "Field 'channel_id' is required", status=400)
+    try:
+        volume = int(raw_volume)
+    except Exception:
+        return _error("invalid_payload", "Field 'volume' must be numeric", status=400)
+    try:
+        sink_name = _resolve_sink_name_for_output_id(channel_id)
+        if not sink_name:
+            return _error("audio_channel_missing", f"No sink_name found for channel '{channel_id}'", status=404)
+        payload = audio_volume_set(sink_name, volume)
+        cfg = ensure_config()
+        profile = _mixer_cfg(cfg)
+        channel_volumes = profile.get("channel_volumes") if isinstance(profile.get("channel_volumes"), dict) else {}
+        channel_volumes[channel_id] = int(payload.get("volume_percent") or volume)
+        profile["channel_volumes"] = channel_volumes
+        profile["updated_at"] = utc_now()
+        cfg["audio_mixer"] = profile
+        cfg["updated_at"] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+        payload["channel_id"] = channel_id
+        payload["sink_name"] = sink_name
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_audio.post("/api/audio/mic/volume")
+def api_audio_mic_volume():
+    data = request.get_json(force=True, silent=True) or {}
+    source_name = str(data.get("source_name") or data.get("mic_id") or "").strip()
+    raw_volume = data.get("volume_percent", data.get("volume", data.get("percent", 100)))
+    if not source_name:
+        return _error("invalid_payload", "Field 'source_name' is required", status=400)
+    try:
+        volume = int(raw_volume)
+    except Exception:
+        return _error("invalid_payload", "Field 'volume' must be numeric", status=400)
+    try:
+        payload = audio_source_volume_set(source_name, volume)
+        cfg = ensure_config()
+        profile = _mixer_cfg(cfg)
+        mic_volumes = profile.get("mic_volumes") if isinstance(profile.get("mic_volumes"), dict) else {}
+        mic_volumes[source_name] = int(payload.get("volume_percent") or volume)
+        profile["mic_volumes"] = mic_volumes
+        profile["updated_at"] = utc_now()
+        cfg["audio_mixer"] = profile
+        cfg["updated_at"] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)

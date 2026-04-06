@@ -230,6 +230,9 @@ DNS_RAW="$(safe_cmd awk '/^nameserver / {print $2}' /etc/resolv.conf | paste -sd
 TAILSCALE_IP=""
 if [[ "$TAILSCALE_PRESENT" == "1" ]]; then
   TAILSCALE_IP="$(safe_cmd tailscale ip -4 | head -n1)"
+  if [[ -z "$TAILSCALE_IP" && "$(cmd_present sudo)" == "1" ]]; then
+    TAILSCALE_IP="$(safe_cmd sudo -n tailscale ip -4 | head -n1)"
+  fi
 fi
 
 export HOSTNAME_VAL LAN_IF WIFI_IF

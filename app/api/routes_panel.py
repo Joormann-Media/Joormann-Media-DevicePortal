@@ -256,6 +256,14 @@ def _tailscale_runtime_status(network_info: dict | None = None) -> dict:
         present = True
 
     tailscale_bin = shutil.which('tailscale')
+
+    def _extract_ipv4(text: str) -> str:
+        for line in (text or '').splitlines():
+            candidate = line.strip().split()[0] if line.strip() else ''
+            if candidate and re.fullmatch(r'(\d{1,3}\.){3}\d{1,3}', candidate):
+                return candidate
+        return ''
+
     if present and not ip and tailscale_bin:
         try:
             proc = subprocess.run(
@@ -265,13 +273,36 @@ def _tailscale_runtime_status(network_info: dict | None = None) -> dict:
                 text=True,
                 timeout=4,
             )
-            for line in (proc.stdout or '').splitlines():
-                candidate = line.strip()
-                if candidate and re.fullmatch(r'(\d{1,3}\.){3}\d{1,3}', candidate):
-                    ip = candidate
-                    break
+            ip = _extract_ipv4(proc.stdout or '')
         except Exception:
-            pass
+            ip = ''
+
+    if present and not ip and tailscale_bin:
+        try:
+            proc = subprocess.run(
+                [tailscale_bin, 'status'],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=4,
+            )
+            ip = _extract_ipv4(proc.stdout or '')
+        except Exception:
+            ip = ''
+
+    # Fallback for hosts where tailscale CLI requires elevated rights.
+    if present and not ip and tailscale_bin and shutil.which('sudo'):
+        try:
+            proc = subprocess.run(
+                ['sudo', '-n', tailscale_bin, 'ip', '-4'],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=4,
+            )
+            ip = _extract_ipv4(proc.stdout or '')
+        except Exception:
+            ip = ''
 
     return {
         **source,
