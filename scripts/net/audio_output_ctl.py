@@ -468,18 +468,21 @@ def main() -> int:
 
         base = _classify_outputs(default_sink, sinks)
         alsa_caps = _collect_alsa_caps()
-        if not sinks and bool(alsa_caps.get("ok")):
+        if bool(alsa_caps.get("ok")):
+            # Always merge ALSA capabilities for local outputs.
+            # On Raspberry Pi it's common to see only a dummy PipeWire sink (auto_null),
+            # while real HDMI/Klinke availability is only visible via ALSA.
             outputs = base.get("available_outputs") if isinstance(base.get("available_outputs"), list) else []
             for item in outputs:
                 if not isinstance(item, dict):
                     continue
                 item_id = str(item.get("id") or "")
                 if item_id == "local_hdmi":
-                    item["available"] = bool(alsa_caps.get("hdmi_available"))
+                    item["available"] = bool(item.get("available")) or bool(alsa_caps.get("hdmi_available"))
                     if item.get("sink_name") is None:
                         item["sink_name"] = ""
                 elif item_id == "local_speaker":
-                    item["available"] = bool(alsa_caps.get("speaker_available"))
+                    item["available"] = bool(item.get("available")) or bool(alsa_caps.get("speaker_available"))
                     if item.get("sink_name") is None:
                         item["sink_name"] = ""
             if not base.get("current_output") and str(alsa_caps.get("current_output") or "").strip():
