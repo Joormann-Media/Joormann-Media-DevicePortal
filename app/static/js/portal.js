@@ -5020,6 +5020,9 @@
       }
       healthEl.textContent = label;
     }
+    if (statusDashboardState.status) {
+      renderLlmManagerCard(statusDashboardState.status, info);
+    }
     return info;
   }
 
@@ -5058,7 +5061,7 @@
     }
     const healthEl = q("llm-manager-health");
     if (healthEl) {
-      const ollama = (llmInfo && typeof llmInfo === "object" && typeof llmInfo.ollama === "object") ? llmInfo.ollama : {};
+      const ollama = (info && typeof info === "object" && typeof info.ollama === "object") ? info.ollama : {};
       const ollamaOk = !!ollama.reachable;
       const runtimeOk = !!status.runtime_reachable;
       let label = (ollamaOk || runtimeOk || running) ? "Health: ok" : "Health: nein";
