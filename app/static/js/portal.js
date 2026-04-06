@@ -4679,10 +4679,14 @@
       const isRunning = !!status.service_running;
       const controlLabel = isRunning ? "Stop" : "Start";
       const controlAction = isRunning ? "stop" : "start";
-      const apiBaseRaw = String(item.api_base_url || "").trim();
-      const healthRaw = String(item.health_url || "").trim();
+      const endpoints = (item.endpoints && typeof item.endpoints === "object") ? item.endpoints : {};
+      const uiRaw = String(item.ui_url || item.web_url || endpoints.ui || "").trim();
+      const apiBaseRaw = String(item.api_base_url || endpoints.api_base || "").trim();
+      const healthRaw = String(item.health_url || endpoints.health || "").trim();
       let uiUrlRaw = "";
-      if (apiBaseRaw) {
+      if (uiRaw) {
+        uiUrlRaw = uiRaw;
+      } else if (apiBaseRaw) {
         uiUrlRaw = apiBaseRaw;
       } else if (healthRaw) {
         uiUrlRaw = healthRaw;
@@ -4928,8 +4932,10 @@
       ? (svc.runtime_reachable ? "ja (Health)" : "nein")
       : (svc.service_running ? "ja" : "nein"));
     put("managed-repo-details-service-autostart", target.use_service === false ? "-" : (svc.service_enabled ? "ja" : "nein"));
-    put("managed-repo-details-api-base", target.api_base_url || "-");
-    put("managed-repo-details-health-url", target.health_url || "-");
+    const endpoints = (target.endpoints && typeof target.endpoints === "object") ? target.endpoints : {};
+    put("managed-repo-details-api-base", target.api_base_url || endpoints.api_base || "-");
+    put("managed-repo-details-health-url", target.health_url || endpoints.health || "-");
+    put("managed-repo-details-ui-url", target.ui_url || target.web_url || endpoints.ui || "-");
     put("managed-repo-details-port", target.service_port ?? "-");
     put("managed-repo-details-hostname", target.hostname || "-");
     put("managed-repo-details-node-name", target.node_name || "-");

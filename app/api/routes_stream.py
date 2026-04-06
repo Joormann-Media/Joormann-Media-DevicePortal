@@ -871,8 +871,10 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     autostart_raw = source.get('autostart')
     api_base_url = str(source.get('api_base_url') or '').strip()
     health_url = str(source.get('health_url') or '').strip()
+    ui_url = str(source.get('ui_url') or source.get('web_url') or '').strip()
     hostname = str(source.get('hostname') or '').strip()
     node_name = str(source.get('node_name') or '').strip()
+    endpoints_raw = source.get('endpoints') if isinstance(source.get('endpoints'), dict) else {}
     source_name = str(source.get('source') or '').strip()
     first_seen_at = str(source.get('first_seen_at') or '').strip()
     last_seen_at = str(source.get('last_seen_at') or '').strip()
@@ -909,8 +911,10 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
         'autostart': autostart,
         'api_base_url': api_base_url,
         'health_url': health_url,
+        'ui_url': ui_url,
         'hostname': hostname,
         'node_name': node_name,
+        'endpoints': endpoints_raw,
         'service_port': service_port,
         'source': source_name,
         'first_seen_at': first_seen_at,
@@ -976,9 +980,11 @@ def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
     autostart = bool(payload.get('autostart', True))
     api_base_url = str(payload.get('api_base_url') or '').strip()
     health_url = str(payload.get('health_url') or '').strip()
+    ui_url = str(payload.get('ui_url') or payload.get('web_url') or '').strip()
     hostname = str(payload.get('hostname') or '').strip()
     instance_id = str(payload.get('instance_id') or '').strip()
     node_name = str(payload.get('node_name') or '').strip()
+    endpoints_raw = payload.get('endpoints') if isinstance(payload.get('endpoints'), dict) else {}
     tags = payload.get('tags') if isinstance(payload.get('tags'), list) else []
     capabilities = payload.get('capabilities') if isinstance(payload.get('capabilities'), list) else []
     try:
@@ -1001,8 +1007,10 @@ def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
         'autostart': autostart,
         'api_base_url': api_base_url,
         'health_url': health_url,
+        'ui_url': ui_url,
         'hostname': hostname,
         'node_name': node_name,
+        'endpoints': endpoints_raw,
         'remote_addr': remote_addr,
         'service_port': service_port,
         'tags': [str(item).strip() for item in tags if str(item).strip()],
@@ -1330,8 +1338,10 @@ def api_autodiscover_register():
             'autostart': bool(item.get('autostart', True)),
             'api_base_url': str(item.get('api_base_url') or '').strip(),
             'health_url': str(item.get('health_url') or '').strip(),
+            'ui_url': str(item.get('ui_url') or '').strip(),
             'hostname': str(item.get('hostname') or '').strip(),
             'node_name': str(item.get('node_name') or '').strip(),
+            'endpoints': item.get('endpoints') if isinstance(item.get('endpoints'), dict) else {},
             'service_port': item.get('service_port'),
             'source': 'autodiscover',
             'first_seen_at': str(item.get('first_seen_at') or item.get('updated_at') or ''),
@@ -1414,8 +1424,10 @@ def api_autodiscover_promote(service_id: str):
             'autostart': bool(target.get('autostart', True)),
             'api_base_url': str(target.get('api_base_url') or '').strip(),
             'health_url': str(target.get('health_url') or '').strip(),
+            'ui_url': str(target.get('ui_url') or '').strip(),
             'hostname': str(target.get('hostname') or '').strip(),
             'node_name': str(target.get('node_name') or '').strip(),
+            'endpoints': target.get('endpoints') if isinstance(target.get('endpoints'), dict) else {},
             'service_port': target.get('service_port'),
             'source': 'autodiscover',
             'first_seen_at': str(target.get('first_seen_at') or target.get('updated_at') or ''),
@@ -1521,8 +1533,10 @@ def api_stream_player_repos_set():
             'autostart': data.get('autostart', True),
             'api_base_url': str(data.get('api_base_url') or '').strip(),
             'health_url': str(data.get('health_url') or '').strip(),
+            'ui_url': str(data.get('ui_url') or '').strip(),
             'hostname': str(data.get('hostname') or '').strip(),
             'node_name': str(data.get('node_name') or '').strip(),
+            'endpoints': data.get('endpoints') if isinstance(data.get('endpoints'), dict) else {},
             'service_port': data.get('service_port'),
             'source': str(data.get('source') or '').strip(),
             'first_seen_at': str(data.get('first_seen_at') or '').strip(),
