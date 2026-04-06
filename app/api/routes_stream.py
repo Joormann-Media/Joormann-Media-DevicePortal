@@ -1591,6 +1591,13 @@ def api_stream_player_repos_install_update(repo_id: str):
     target = next((item for item in repos if str(item.get('id') or '').strip() == target_id), None)
     if not target:
         return jsonify(ok=False, error='repo_not_found', detail='Repo nicht gefunden.'), 404
+    if _is_remote_autodiscover_repo(target):
+        host = str(target.get('hostname') or target.get('node_name') or 'remote').strip()
+        return jsonify(
+            ok=False,
+            error='remote_repo_not_local',
+            detail=f'Repo läuft auf Host "{host}" (Autodiscover). Install/Update ist nur lokal auf diesem Portal-Host möglich.',
+        ), 409
 
     repo_link = str(target.get('repo_link') or '').strip()
     if not repo_link:
@@ -1652,6 +1659,13 @@ def api_stream_player_repos_service_autostart(repo_id: str):
     data = request.get_json(force=True, silent=True) or {}
     enabled = bool(data.get('enabled', True))
     target = repos[idx]
+    if _is_remote_autodiscover_repo(target):
+        host = str(target.get('hostname') or target.get('node_name') or 'remote').strip()
+        return jsonify(
+            ok=False,
+            error='remote_repo_not_local',
+            detail=f'Repo läuft auf Host "{host}" (Autodiscover). Autostart kann hier nicht lokal gesetzt werden.',
+        ), 409
     repo_link = str(target.get('repo_link') or '').strip()
     service_name = str(target.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
     target['service_name'] = service_name
@@ -1689,6 +1703,13 @@ def api_stream_player_repos_service_action(repo_id: str):
         return jsonify(ok=False, error='invalid_action', detail='Action must be start|stop|restart|status'), 400
 
     target = repos[idx]
+    if _is_remote_autodiscover_repo(target):
+        host = str(target.get('hostname') or target.get('node_name') or 'remote').strip()
+        return jsonify(
+            ok=False,
+            error='remote_repo_not_local',
+            detail=f'Repo läuft auf Host "{host}" (Autodiscover). Service-Aktionen sind hier nicht lokal möglich.',
+        ), 409
     use_service = bool(target.get('use_service', True))
     if not use_service:
         return jsonify(ok=False, error='service_mode_disabled', detail='Repo läuft ohne Service-Modus.'), 400
@@ -1729,6 +1750,13 @@ def api_stream_player_repos_uninstall(repo_id: str):
     data = request.get_json(force=True, silent=True) or {}
     remove_repo = bool(data.get('remove_repo', False))
     target = repos[idx]
+    if _is_remote_autodiscover_repo(target):
+        host = str(target.get('hostname') or target.get('node_name') or 'remote').strip()
+        return jsonify(
+            ok=False,
+            error='remote_repo_not_local',
+            detail=f'Repo läuft auf Host "{host}" (Autodiscover). Deinstallation muss auf diesem Host erfolgen.',
+        ), 409
     repo_link = str(target.get('repo_link') or '').strip()
     install_dir = str(target.get('install_dir') or '').strip()
     service_user = str(target.get('service_user') or '').strip()

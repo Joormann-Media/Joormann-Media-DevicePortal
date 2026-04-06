@@ -4678,6 +4678,29 @@
       const isRunning = !!status.service_running;
       const controlLabel = isRunning ? "Stop" : "Start";
       const controlAction = isRunning ? "stop" : "start";
+      const apiBaseRaw = String(item.api_base_url || "").trim();
+      const healthRaw = String(item.health_url || "").trim();
+      let uiUrlRaw = "";
+      if (apiBaseRaw) {
+        uiUrlRaw = apiBaseRaw;
+      } else if (healthRaw) {
+        uiUrlRaw = healthRaw;
+      }
+      if (uiUrlRaw) {
+        try {
+          const parsed = new URL(uiUrlRaw, window.location.origin);
+          if (parsed.pathname.endsWith("/health")) {
+            parsed.pathname = parsed.pathname.slice(0, -"/health".length) || "/";
+          }
+          uiUrlRaw = parsed.toString();
+        } catch (_) {
+          if (uiUrlRaw.endsWith("/health")) {
+            uiUrlRaw = uiUrlRaw.slice(0, -"/health".length) || "/";
+          }
+        }
+      }
+      const hasUiUrl = /^https?:\/\//i.test(uiUrlRaw);
+      const uiUrl = escapeHtml(uiUrlRaw || "");
       const linkHtml = repoLinkRaw
         ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
         : "-";
@@ -4714,6 +4737,7 @@
             </div>
           </div>
           <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-info btn-sm ${hasUiUrl ? "" : "disabled"}" ${hasUiUrl ? `href="${uiUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#" tabindex="-1" aria-disabled="true"'}>Öffnen</a>
             <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="load" data-id="${escapeHtml(repoId)}">Laden</button>
             <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
             <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="set_as_player" data-id="${escapeHtml(repoId)}">Als Stream-Player setzen</button>
