@@ -506,9 +506,8 @@ def api_audio_channel_volume():
         return _error("invalid_payload", "Field 'volume' must be numeric", status=400)
     try:
         sink_name = _resolve_sink_name_for_output_id(channel_id)
-        if not sink_name:
-            return _error("audio_channel_missing", f"No sink_name found for channel '{channel_id}'", status=404)
-        payload = audio_volume_set(sink_name, volume)
+        target = sink_name or channel_id
+        payload = audio_volume_set(target, volume)
         cfg = ensure_config()
         profile = _mixer_cfg(cfg)
         channel_volumes = profile.get("channel_volumes") if isinstance(profile.get("channel_volumes"), dict) else {}
@@ -520,6 +519,7 @@ def api_audio_channel_volume():
         write_json(CONFIG_PATH, cfg, mode=0o600)
         payload["channel_id"] = channel_id
         payload["sink_name"] = sink_name
+        payload["target"] = target
         return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400

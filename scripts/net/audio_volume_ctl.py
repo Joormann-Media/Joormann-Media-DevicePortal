@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -60,6 +61,113 @@ def _set_volume_wpctl(sink: str, volume: int) -> tuple[bool, str]:
     return True, target
 
 
+ALSA_CARD_LINE_RE = re.compile(r"^\s*(card|karte)\s+(\d+):", re.IGNORECASE)
+ALSA_CONTROL_NAME_RE = re.compile(r"'([^']+)'")
+
+
+def _alsa_cards() -> list[dict]:
+    if not _has("aplay"):
+        return []
+    code, out, _ = _run(["aplay", "-l"], timeout=8)
+    if code != 0:
+        return []
+    cards: list[dict] = []
+    for line in out.splitlines():
+        raw = line.strip()
+        m = ALSA_CARD_LINE_RE.match(raw)
+        if not m:
+            continue
+        card_id = int(m.group(2))
+        cards.append({"id": card_id, "raw": raw, "token": raw.lower()})
+    return cards
+
+
+def _alsa_simple_controls(card_id: int | None = None) -> list[str]:
+    args = ["amixer"]
+    if card_id is not None:
+        args.extend(["-c", str(card_id)])
+    args.append("scontrols")
+    code, out, _ = _run(args, timeout=8)
+    if code != 0:
+        return []
+    controls: list[str] = []
+    for line in out.splitlines():
+        m = ALSA_CONTROL_NAME_RE.search(line)
+        if m:
+            controls.append(m.group(1))
+    return controls
+
+
+def _alsa_set_control_volume(volume: int, card_id: int | None = None) -> tuple[bool, str]:
+    controls = _alsa_simple_controls(card_id)
+    preferred = ["PCM", "Master", "Speaker", "Headphone", "Line"]
+    ordered: list[str] = []
+    used = set()
+    for name in preferred:
+        for ctl in controls:
+            if ctl.lower() == name.lower() and ctl not in used:
+                ordered.append(ctl)
+                used.add(ctl)
+    for ctl in controls:
+        if ctl not in used:
+            ordered.append(ctl)
+            used.add(ctl)
+
+    for ctl in ordered:
+        args = ["amixer"]
+        if card_id is not None:
+            args.extend(["-c", str(card_id)])
+        args.extend(["-q", "sset", ctl, f"{volume}%"])
+        code, _, _ = _run(args, timeout=8)
+        if code == 0:
+            scope = f"card{card_id}" if card_id is not None else "default"
+            return True, f"{scope}:{ctl}"
+    return False, "no writable alsa control"
+
+
+def _set_volume_alsa_output(output_id: str, volume: int) -> tuple[bool, str]:
+    output = (output_id or "").strip().lower()
+    cards = _alsa_cards()
+    speaker_cards: list[int] = []
+    hdmi_cards: list[int] = []
+    for card in cards:
+        token = str(card.get("token") or "")
+        cid = int(card.get("id"))
+        if any(marker in token for marker in ("hdmi", "vc4hdmi", "displayport")):
+            hdmi_cards.append(cid)
+        if any(marker in token for marker in ("headphone", "analog", "speaker", "line out", "lineout", "bcm2835")):
+            speaker_cards.append(cid)
+
+    candidates: list[int] = []
+    if output == "local_hdmi":
+        candidates.extend(hdmi_cards)
+        candidates.extend(speaker_cards)
+    elif output == "local_speaker":
+        candidates.extend(speaker_cards)
+        candidates.extend(hdmi_cards)
+    else:
+        candidates.extend(speaker_cards)
+        candidates.extend(hdmi_cards)
+    # keep order unique
+    seen = set()
+    ordered = []
+    for c in candidates:
+        if c in seen:
+            continue
+        ordered.append(c)
+        seen.add(c)
+
+    for card_id in ordered:
+        ok, target = _alsa_set_control_volume(volume, card_id=card_id)
+        if ok:
+            return True, f"alsa:{output or 'default'}:{target}"
+
+    ok, target = _alsa_set_control_volume(volume, card_id=None)
+    if ok:
+        return True, f"alsa:{output or 'default'}:{target}"
+    return False, "alsa volume control failed"
+
+
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1] != "set":
         print(json.dumps({"ok": False, "error": "usage: audio_volume_ctl.py set [sink_name] <percent>"}))
@@ -80,14 +188,28 @@ def main() -> int:
 
     volume = max(0, min(150, volume))
 
-    if _has("pactl"):
+    sink_token = (sink or "").strip().lower()
+    # Direct ALSA channel handling for hosts without PipeWire sinks.
+    if sink_token in ("local_hdmi", "local_speaker"):
+        ok, target = _set_volume_alsa_output(sink_token, volume)
+        backend = "alsa"
+    elif _has("pactl"):
         ok, target = _set_volume_pactl(sink, volume)
         backend = "pactl"
+        if not ok and _has("amixer") and "no default sink" in (target or "").lower():
+            ok, target = _set_volume_alsa_output("", volume)
+            backend = "alsa"
     elif _has("wpctl"):
         ok, target = _set_volume_wpctl(sink, volume)
         backend = "wpctl"
+        if not ok and _has("amixer"):
+            ok, target = _set_volume_alsa_output("", volume)
+            backend = "alsa"
+    elif _has("amixer"):
+        ok, target = _set_volume_alsa_output(sink_token, volume)
+        backend = "alsa"
     else:
-        print(json.dumps({"ok": False, "error": "no pactl/wpctl available"}))
+        print(json.dumps({"ok": False, "error": "no pactl/wpctl/amixer available"}))
         return 3
 
     if not ok:

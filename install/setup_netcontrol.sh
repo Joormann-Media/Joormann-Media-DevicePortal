@@ -48,12 +48,11 @@ BASE_PKGS=(
   alsa-utils
   mpv
   espeak
-  libttspico-utils
 )
 
-# Distro-dependent audio plugin package names.
+# Distro-dependent optional package names.
 OPTIONAL_PKGS=()
-for candidate in libspa-0.2-modules libspa-0.2-alsa pipewire-audio-client-libraries; do
+for candidate in libspa-0.2-modules libspa-0.2-alsa pipewire-audio-client-libraries libttspico-utils; do
   if pkg_available "$candidate"; then
     OPTIONAL_PKGS+=("$candidate")
   fi
