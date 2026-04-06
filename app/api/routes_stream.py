@@ -1354,7 +1354,7 @@ def _llm_manager_api_base(repo: dict) -> str:
     return ""
 
 
-def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False) -> dict | None:
+def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False, retries: int = 1) -> dict | None:
     if not isinstance(cfg, dict):
         return None
     repos = cfg.get("managed_install_repos")
@@ -1368,12 +1368,25 @@ def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False) -> dict | N
     if not api_base:
         return None
 
-    try:
-        resp = requests.get(f"{api_base}/api/llm/summary", timeout=2.5)
-        if resp.status_code != 200:
-            return None
-        summary = resp.json() if resp.content else {}
-    except Exception:
+    summary = None
+    attempts = max(1, int(retries or 1))
+    for _ in range(attempts):
+        try:
+            resp = requests.get(f"{api_base}/api/llm/summary", timeout=2.5)
+            if resp.status_code != 200:
+                summary = None
+            else:
+                summary = resp.json() if resp.content else {}
+                break
+        except Exception:
+            summary = None
+        if attempts > 1:
+            try:
+                import time
+                time.sleep(0.6)
+            except Exception:
+                pass
+    if not isinstance(summary, dict):
         return None
 
     if not isinstance(summary, dict):
@@ -1716,16 +1729,28 @@ def api_llm_manager_report():
 def api_llm_manager_status():
     cfg = ensure_config()
     llm = cfg.get('llm_manager')
+    if isinstance(llm, dict):
+        models = llm.get("models") if isinstance(llm.get("models"), list) else []
+        if not models:
+            refreshed = refresh_llm_manager_from_runtime(cfg, force=True)
+            if isinstance(refreshed, dict):
+                llm = refreshed
     return jsonify(ok=True, data={'llm_manager': llm if isinstance(llm, dict) else {}})
 
 
 @bp_stream.post('/api/llm-manager/refresh')
 def api_llm_manager_refresh():
     cfg = ensure_config()
-    refreshed = refresh_llm_manager_from_runtime(cfg, force=True)
-    if not refreshed:
-        return jsonify(ok=False, error='llm_manager_unavailable', detail='LLM-Manager konnte nicht aktualisiert werden.'), 502
-    return jsonify(ok=True, data={'llm_manager': refreshed})
+    refreshed = refresh_llm_manager_from_runtime(cfg, force=True, retries=3)
+    if refreshed:
+        return jsonify(ok=True, data={'llm_manager': refreshed})
+    existing = cfg.get("llm_manager") if isinstance(cfg.get("llm_manager"), dict) else {}
+    return jsonify(
+        ok=True,
+        data={'llm_manager': existing},
+        warning="llm_manager_unavailable",
+        detail="LLM-Manager konnte nicht aktualisiert werden.",
+    )
 
 
 @bp_stream.post('/api/autodiscover/services/<service_id>/promote')

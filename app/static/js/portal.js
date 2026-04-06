@@ -5001,6 +5001,26 @@
     </table></div>`;
   }
 
+  async function refreshLlmManagerInfo() {
+    const payload = await fetchJson("/api/llm-manager/status", { cache: "no-store" });
+    const info = (payload && payload.data && typeof payload.data === "object")
+      ? (payload.data.llm_manager || {})
+      : {};
+    llmManagerState.info = info;
+    renderLlmManagerModels(info);
+    const healthEl = q("llm-manager-health");
+    if (healthEl) {
+      const ollama = (info && typeof info === "object" && typeof info.ollama === "object") ? info.ollama : {};
+      const ollamaOk = !!ollama.reachable;
+      let label = ollamaOk ? "Health: ok" : "Health: nein";
+      if (ollama && String(ollama.version || "").trim()) {
+        label += ` · Ollama: ${String(ollama.version).trim()}`;
+      }
+      healthEl.textContent = label;
+    }
+    return info;
+  }
+
   function renderLlmManagerCard(statusPayload = {}, llmInfo = null) {
     const card = q("llm-manager-card");
     if (!card) return;
@@ -5014,7 +5034,8 @@
       return;
     }
     const status = (repo.service_status && typeof repo.service_status === "object") ? repo.service_status : {};
-    const installed = !!(status.service_installed || status.service_running || _repoLooksInstalled(repo));
+    const running = !!(status.service_running || status.runtime_reachable);
+    const installed = !!(status.service_installed || running || _repoLooksInstalled(repo));
     if (!installed) {
       card.classList.add("d-none");
       return;
@@ -5025,14 +5046,19 @@
 
     const badgesHost = q("llm-manager-badges");
     if (badgesHost) {
-      badgesHost.innerHTML = buildServiceBadgesHtml(status, repo.autostart !== false, true, true, updateInfo);
+      const badgeStatus = { ...status, service_running: running };
+      if (running) {
+        badgeStatus.active_state = "active";
+        badgeStatus.substate = "running";
+      }
+      badgesHost.innerHTML = buildServiceBadgesHtml(badgeStatus, repo.autostart !== false, true, true, updateInfo);
     }
     const healthEl = q("llm-manager-health");
     if (healthEl) {
       const ollama = (llmInfo && typeof llmInfo === "object" && typeof llmInfo.ollama === "object") ? llmInfo.ollama : {};
       const ollamaOk = !!ollama.reachable;
       const runtimeOk = !!status.runtime_reachable;
-      let label = (ollamaOk || runtimeOk || status.service_running) ? "Health: ok" : "Health: nein";
+      let label = (ollamaOk || runtimeOk || running) ? "Health: ok" : "Health: nein";
       if (ollama && String(ollama.version || "").trim()) {
         label += ` · Ollama: ${String(ollama.version).trim()}`;
       }
@@ -5046,7 +5072,6 @@
 
     const toggleBtn = q("btn-llm-manager-toggle");
     if (toggleBtn) {
-      const running = !!status.service_running;
       toggleBtn.dataset.action = running ? "stop" : "start";
       toggleBtn.textContent = running ? "Stop" : "Start";
       toggleBtn.classList.remove("btn-outline-success", "btn-outline-warning");
@@ -5067,6 +5092,7 @@
       llmManagerState.didAutoRefresh = true;
       runQuiet(async () => {
         await fetchJson("/api/llm-manager/refresh", { method: "POST" });
+        await refreshLlmManagerInfo();
         await refreshStatus();
       }, ["login_required", "llm_manager_unavailable"]);
     }
@@ -7514,7 +7540,9 @@
     if (llmReportBtn) {
       llmReportBtn.addEventListener("click", () => run(async () => {
         await fetchJson("/api/llm-manager/refresh", { method: "POST" });
+        await refreshLlmManagerInfo();
         await refreshStatus();
+        toast("LLM-Manager aktualisiert", "success");
       }));
     }
     const llmToggleBtn = q("btn-llm-manager-toggle");
