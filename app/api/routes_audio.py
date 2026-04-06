@@ -469,14 +469,15 @@ def api_audio_volume():
         payload = audio_volume_set(sink_name or None, volume)
         cfg = ensure_config()
         profile = _mixer_cfg(cfg)
+        profile["master_volume_percent"] = int(payload.get("volume_percent") or volume)
         if sink_name:
             channel_volumes = profile.get("channel_volumes") if isinstance(profile.get("channel_volumes"), dict) else {}
             channel_volumes[sink_name] = volume
             profile["channel_volumes"] = channel_volumes
-            profile["updated_at"] = utc_now()
-            cfg["audio_mixer"] = profile
-            cfg["updated_at"] = utc_now()
-            write_json(CONFIG_PATH, cfg, mode=0o600)
+        profile["updated_at"] = utc_now()
+        cfg["audio_mixer"] = profile
+        cfg["updated_at"] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
         return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400

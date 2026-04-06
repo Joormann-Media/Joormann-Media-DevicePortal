@@ -1473,14 +1473,37 @@ def api_bluetooth_forget():
 def api_audio_outputs():
     cfg = ensure_config()
     profile = _get_audio_output_profile(cfg)
+    cache = profile.get("last_detected") if isinstance(profile.get("last_detected"), dict) else {}
     try:
         payload = audio_outputs_status()
+        available = payload.get("available_outputs") if isinstance(payload.get("available_outputs"), list) else []
+        has_available = any(bool(item.get("available")) for item in available if isinstance(item, dict))
+
+        if not has_available and isinstance(cache, dict):
+            cached_available = cache.get("available_outputs") if isinstance(cache.get("available_outputs"), list) else []
+            if cached_available:
+                payload["available_outputs"] = cached_available
+                if not str(payload.get("current_output") or "").strip():
+                    payload["current_output"] = str(cache.get("current_output") or profile.get("selected_output") or "").strip()
+                payload["warning"] = str(payload.get("warning") or "Using cached audio outputs (live detection empty).")
+        else:
+            profile["last_detected"] = {
+                "current_output": str(payload.get("current_output") or "").strip(),
+                "available_outputs": available,
+                "updated_at": utc_now(),
+            }
+            cfg["audio_output"] = profile
+            cfg["updated_at"] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+
+        if not str(payload.get("current_output") or "").strip():
+            payload["current_output"] = str(profile.get("selected_output") or "").strip()
         payload["saved"] = profile
         return _ok(payload)
     except NetControlError as exc:
         # Keep UI usable even when host audio backend probing fails.
         fallback = {
-            "current_output": "",
+            "current_output": str(profile.get("selected_output") or ""),
             "available_outputs": [
                 {
                     "id": "local_hdmi",
@@ -1500,6 +1523,12 @@ def api_audio_outputs():
             "saved": profile,
             "warning": f"{exc.code}: {exc.detail or exc.message}",
         }
+        if isinstance(cache, dict):
+            cached_available = cache.get("available_outputs") if isinstance(cache.get("available_outputs"), list) else []
+            if cached_available:
+                fallback["available_outputs"] = cached_available
+                fallback["current_output"] = str(cache.get("current_output") or fallback["current_output"] or "").strip()
+                fallback["warning"] = f"{fallback['warning']} (cached outputs applied)"
         return _ok(fallback)
 
 

@@ -427,7 +427,18 @@ def _select_output(target_output: str, available_outputs: list[dict], sinks: lis
     if not sink_name:
         alsa = alsa_caps if isinstance(alsa_caps, dict) else {}
         if wanted in ("local_hdmi", "local_speaker") and bool(alsa.get("ok")):
-            return _alsa_set_output(wanted, alsa)
+            # Raspberry Pi systems may expose HDMI/Klinke via ALSA cards but without
+            # a dedicated "output selector" control. In that case we treat selection
+            # as a logical profile switch and do not hard-fail.
+            if str(alsa.get("selector_numid") or "").strip():
+                return _alsa_set_output(wanted, alsa)
+            return {
+                "output": wanted,
+                "sink_name": "",
+                "backend": "alsa",
+                "selector_numid": "",
+                "note": "alsa_output_selector_missing",
+            }
         raise ValueError("sink mapping missing")
 
     if _has("pactl"):
