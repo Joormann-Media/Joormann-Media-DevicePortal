@@ -12,6 +12,7 @@ import sys
 MAC_FROM_BLUEZ_RE = re.compile(r"bluez_output\.([0-9A-Fa-f_]{17})")
 MAC_RE = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+ALSA_NUMID_RE = re.compile(r"numid=(\d+),")
 
 
 def _run(args: list[str], timeout: int = 12) -> tuple[int, str, str]:
@@ -326,7 +327,80 @@ def _find_bluetooth_sink(mac: str, sinks: list[dict]) -> str:
     return ""
 
 
-def _select_output(target_output: str, available_outputs: list[dict], sinks: list[dict]) -> dict:
+def _collect_alsa_caps() -> dict:
+    caps = {
+        "ok": False,
+        "hdmi_available": False,
+        "speaker_available": False,
+        "cards": [],
+        "selector_numid": None,
+        "current_output": "",
+    }
+    if not _has("aplay"):
+        return caps
+    code, out, _ = _run(["aplay", "-l"], timeout=8)
+    if code != 0:
+        return caps
+    caps["ok"] = True
+    rows: list[dict] = []
+    for line in out.splitlines():
+        raw = line.strip()
+        if not raw.startswith("card "):
+            continue
+        # Example: card 1: NVidia [HDA NVidia], device 3: HDMI 0 [Panasonic-TV]
+        rows.append({"raw": raw})
+        token = raw.lower()
+        if "hdmi" in token or "displayport" in token or "vc4hdmi" in token:
+            caps["hdmi_available"] = True
+        if any(marker in token for marker in ("headphone", "headphones", "analog", "speaker", "line out", "lineout", "mailbox")):
+            caps["speaker_available"] = True
+    caps["cards"] = rows
+
+    if _has("amixer"):
+        # Try to detect Raspberry Pi output selector (legacy control).
+        code_ctrls, ctrls_out, _ = _run(["amixer", "controls"], timeout=8)
+        if code_ctrls == 0:
+            selector = None
+            for line in ctrls_out.splitlines():
+                low = line.lower()
+                if "name='3d control - output'" in low or "name='output'" in low:
+                    match = ALSA_NUMID_RE.search(line)
+                    if match:
+                        selector = match.group(1)
+                        break
+            if selector:
+                caps["selector_numid"] = selector
+                code_get, get_out, _ = _run(["amixer", "cget", f"numid={selector}"], timeout=8)
+                if code_get == 0:
+                    m = re.search(r"values=(\d+)", get_out)
+                    if m:
+                        value = int(m.group(1))
+                        # Raspberry Pi mapping: 1=analog, 2=hdmi
+                        if value == 2:
+                            caps["current_output"] = "local_hdmi"
+                        elif value == 1:
+                            caps["current_output"] = "local_speaker"
+    return caps
+
+
+def _alsa_set_output(output_id: str, caps: dict) -> dict:
+    wanted = (output_id or "").strip()
+    selector = str(caps.get("selector_numid") or "").strip()
+    if not _has("amixer") or not selector:
+        raise RuntimeError("ALSA output selector not available")
+    if wanted == "local_hdmi":
+        value = "2"
+    elif wanted == "local_speaker":
+        value = "1"
+    else:
+        raise RuntimeError(f"unsupported ALSA output target: {wanted}")
+    code, out, err = _run(["amixer", "-q", "cset", f"numid={selector}", value], timeout=8)
+    if code != 0:
+        raise RuntimeError(err or out or "amixer cset failed")
+    return {"output": wanted, "sink_name": "", "backend": "alsa", "selector_numid": selector}
+
+
+def _select_output(target_output: str, available_outputs: list[dict], sinks: list[dict], alsa_caps: dict | None = None) -> dict:
     wanted = (target_output or "").strip()
     if not wanted:
         raise ValueError("output is required")
@@ -350,6 +424,9 @@ def _select_output(target_output: str, available_outputs: list[dict], sinks: lis
         mac = wanted.split(":", 1)[1].strip().upper()
         sink_name = _find_bluetooth_sink(mac, sinks)
     if not sink_name:
+        alsa = alsa_caps if isinstance(alsa_caps, dict) else {}
+        if wanted in ("local_hdmi", "local_speaker") and bool(alsa.get("ok")):
+            return _alsa_set_output(wanted, alsa)
         raise ValueError("sink mapping missing")
 
     if _has("pactl"):
@@ -390,13 +467,33 @@ def main() -> int:
             backend = "wpctl" if sinks else "none"
 
         base = _classify_outputs(default_sink, sinks)
+        alsa_caps = _collect_alsa_caps()
+        if not sinks and bool(alsa_caps.get("ok")):
+            outputs = base.get("available_outputs") if isinstance(base.get("available_outputs"), list) else []
+            for item in outputs:
+                if not isinstance(item, dict):
+                    continue
+                item_id = str(item.get("id") or "")
+                if item_id == "local_hdmi":
+                    item["available"] = bool(alsa_caps.get("hdmi_available"))
+                    if item.get("sink_name") is None:
+                        item["sink_name"] = ""
+                elif item_id == "local_speaker":
+                    item["available"] = bool(alsa_caps.get("speaker_available"))
+                    if item.get("sink_name") is None:
+                        item["sink_name"] = ""
+            if not base.get("current_output") and str(alsa_caps.get("current_output") or "").strip():
+                base["current_output"] = str(alsa_caps.get("current_output") or "").strip()
 
         if mode == "status":
             payload = {"ok": True, "backend": backend, **base}
             payload["diagnostics"] = {
                 "has_pactl": has_pactl,
                 "has_wpctl": has_wpctl,
+                "has_aplay": _has("aplay"),
+                "has_amixer": _has("amixer"),
                 "sink_count": len(sinks),
+                "alsa": alsa_caps,
             }
             if backend == "none":
                 payload["warning"] = "Kein Audio-Backend gefunden (pactl/wpctl fehlen)."
@@ -406,7 +503,7 @@ def main() -> int:
         if mode == "set":
             if len(sys.argv) < 3:
                 raise ValueError("target output required")
-            result = _select_output(sys.argv[2], base.get("available_outputs", []), sinks)
+            result = _select_output(sys.argv[2], base.get("available_outputs", []), sinks, alsa_caps=alsa_caps)
             if _has("pactl"):
                 default_sink, sinks = _collect_sinks_pactl()
             else:

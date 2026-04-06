@@ -338,6 +338,24 @@ _user_proc_stop() {
   pkill -u "${user}" -f 'raspotify|librespot' >/dev/null 2>&1 || true
 }
 
+_proc_stop_global() {
+  # Best effort: kill lingering connect daemons even if they were started outside systemd.
+  pkill -f '(^|/)raspotify(\s|$)|(^|/)librespot(\s|$)' >/dev/null 2>&1 || true
+}
+
+_apply_action_all_candidates() {
+  local action="$1"
+  local scope_user="${SERVICE_USER:-}"
+  local candidate=""
+
+  for candidate in ${CANDIDATES_RAW}; do
+    systemctl "${action}" "${candidate}" >/dev/null 2>&1 || true
+    if [[ -n "${scope_user}" ]]; then
+      _systemctl_user "${scope_user}" "${action}" "${candidate}" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 _user_proc_start() {
   local user="$1"
   if [[ -z "${user}" ]]; then
@@ -655,10 +673,12 @@ case "${ACTION}" in
             sudo -n -u "${SERVICE_USER}" rm -f "${marker}"
           fi
           _user_proc_stop "${SERVICE_USER}"
+          _proc_stop_global
         elif [[ "${ACTION}" == "start" ]]; then
           _user_proc_start "${SERVICE_USER}"
         elif [[ "${ACTION}" == "stop" ]]; then
           _user_proc_stop "${SERVICE_USER}"
+          _proc_stop_global
         elif [[ "${ACTION}" == "restart" ]]; then
           _user_proc_stop "${SERVICE_USER}"
           _user_proc_start "${SERVICE_USER}"
@@ -671,6 +691,14 @@ case "${ACTION}" in
       emit "service_name" "${chosen_service}"
       emit "service_scope" "${chosen_scope}"
       exit 5
+    fi
+    if [[ "${ACTION}" == "stop" || "${ACTION}" == "disable" ]]; then
+      # Ensure no stale Spotify Connect instances survive in any scope.
+      _apply_action_all_candidates "${ACTION}"
+      if [[ -n "${SERVICE_USER}" ]]; then
+        _user_proc_stop "${SERVICE_USER}"
+      fi
+      _proc_stop_global
     fi
     build_status "${chosen_service}" "${chosen_scope}"
     ;;
