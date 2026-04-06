@@ -82,6 +82,24 @@ install -m 0755 "$SRC_DIR/bluetooth_audio.py" "$DST_DIR/bluetooth_audio.py"
 install -m 0755 "$SRC_DIR/audio_output_ctl.py" "$DST_DIR/audio_output_ctl.py"
 install -m 0755 "$SRC_DIR/audio_volume_ctl.py" "$DST_DIR/audio_volume_ctl.py"
 install -m 0755 "$SRC_DIR/audio_source_ctl.py" "$DST_DIR/audio_source_ctl.py"
+
+# Locale-safe ALSA parser guard:
+# Some hosts (e.g. German locale) print "Karte" in `aplay -l` output.
+# Ensure deployed script accepts both "card" and "karte" even if an older file is present.
+python3 - "$DST_DIR/audio_output_ctl.py" <<'PY'
+from pathlib import Path
+import sys
+
+p = Path(sys.argv[1])
+s = p.read_text(encoding="utf-8", errors="ignore")
+if 'ALSA_CARD_LINE_RE' not in s:
+    s = s.replace(
+        'ALSA_NUMID_RE = re.compile(r"numid=(\\d+),")',
+        'ALSA_NUMID_RE = re.compile(r"numid=(\\d+),")\nALSA_CARD_LINE_RE = re.compile(r"^\\s*(card|karte)\\s+\\d+:", re.IGNORECASE)',
+    )
+s = s.replace('if not raw.startswith("card "):', 'if not ALSA_CARD_LINE_RE.match(raw):')
+p.write_text(s, encoding="utf-8")
+PY
 install -m 0750 "$SRC_DIR/lan_toggle.sh" "$DST_DIR/lan_toggle.sh"
 install -m 0750 "$SRC_DIR/wps_start.sh" "$DST_DIR/wps_start.sh"
 install -m 0750 "$SRC_DIR/ap_enable.sh" "$DST_DIR/ap_enable.sh"

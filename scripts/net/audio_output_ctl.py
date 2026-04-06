@@ -13,6 +13,7 @@ MAC_FROM_BLUEZ_RE = re.compile(r"bluez_output\.([0-9A-Fa-f_]{17})")
 MAC_RE = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 ALSA_NUMID_RE = re.compile(r"numid=(\d+),")
+ALSA_CARD_LINE_RE = re.compile(r"^\s*(card|karte)\s+\d+:", re.IGNORECASE)
 
 
 def _run(args: list[str], timeout: int = 12) -> tuple[int, str, str]:
@@ -345,7 +346,7 @@ def _collect_alsa_caps() -> dict:
     rows: list[dict] = []
     for line in out.splitlines():
         raw = line.strip()
-        if not raw.startswith("card "):
+        if not ALSA_CARD_LINE_RE.match(raw):
             continue
         # Example: card 1: NVidia [HDA NVidia], device 3: HDMI 0 [Panasonic-TV]
         rows.append({"raw": raw})
