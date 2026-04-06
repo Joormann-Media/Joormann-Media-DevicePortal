@@ -656,6 +656,7 @@
     if (Array.isArray(managedInstallRepos) && managedInstallRepos.length) {
       renderManagedRepos(managedInstallRepos);
     }
+    renderHeroUpdateBadge((statusDashboardState.status || {}).app_update || {}, repoUpdatesState);
   }
 
   function resolveRepoUpdateInfo(source = {}) {
@@ -668,6 +669,66 @@
       return repoUpdatesIndex.get(repoOnlyKey);
     }
     return null;
+  }
+
+  function countVisibleRepoUpdates() {
+    let count = 0;
+    const summary = currentSystemUpdateSummary && typeof currentSystemUpdateSummary === "object" ? currentSystemUpdateSummary : {};
+    const portal = (summary.portal && typeof summary.portal === "object") ? summary.portal : null;
+    const player = (summary.player && typeof summary.player === "object") ? summary.player : null;
+    if (portal) {
+      const info = resolveRepoUpdateInfo({
+        repo_link: portal.repo,
+        install_dir: portal.install_dir,
+        service_name: portal.service_name,
+      });
+      if (info && info.available) count += 1;
+    }
+    if (player) {
+      const info = resolveRepoUpdateInfo({
+        repo_link: player.repo,
+        install_dir: player.install_dir,
+        service_name: player.service_name,
+      });
+      if (info && info.available) count += 1;
+    }
+    for (const item of (Array.isArray(managedInstallRepos) ? managedInstallRepos : [])) {
+      const info = resolveRepoUpdateInfo(item);
+      if (info && info.available) count += 1;
+    }
+    return count;
+  }
+
+  function renderHeroUpdateBadge(statusUpdate = {}, repoUpdates = {}) {
+    const updateBadge = q("hero-update");
+    if (!updateBadge) return;
+    updateBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
+
+    const visibleCount = countVisibleRepoUpdates();
+    if (visibleCount > 0) {
+      updateBadge.classList.add("text-bg-warning");
+      updateBadge.textContent = `Updates verfügbar (${visibleCount})`;
+      return;
+    }
+
+    if (repoUpdates && Array.isArray(repoUpdates.items)) {
+      updateBadge.classList.add("text-bg-success");
+      updateBadge.textContent = "Keine Updates";
+      return;
+    }
+
+    const localVersion = updateLocalVersion(statusUpdate);
+    if (statusUpdate.available) {
+      updateBadge.classList.add("text-bg-warning");
+      const shortRemote = updateRemoteShort(statusUpdate);
+      updateBadge.textContent = `Update verfügbar (${localVersion} -> ${shortRemote})`;
+    } else if (statusUpdate.error) {
+      updateBadge.classList.add("text-bg-secondary");
+      updateBadge.textContent = "Update-Check nicht verfügbar";
+    } else {
+      updateBadge.classList.add("text-bg-success");
+      updateBadge.textContent = `Up to date (${localVersion})`;
+    }
   }
 
   function getResolvedAdminBaseUrl() {
@@ -1642,31 +1703,7 @@
 
     setStatusBadge(linked, online);
     renderHeroPanelFlags(cfg);
-    const updateBadge = q("hero-update");
-    if (updateBadge) {
-      updateBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
-      if (repoUpdates && Array.isArray(repoUpdates.items)) {
-        const count = Number(repoUpdates.update_count || 0);
-        if (count > 0) {
-          updateBadge.classList.add("text-bg-warning");
-          updateBadge.textContent = `Updates verfügbar (${count})`;
-        } else {
-          updateBadge.classList.add("text-bg-success");
-          updateBadge.textContent = "Keine Updates";
-        }
-      } else if (update.available) {
-        updateBadge.classList.add("text-bg-warning");
-        const localVersion = updateLocalVersion(update);
-        const shortRemote = updateRemoteShort(update);
-        updateBadge.textContent = `Update verfügbar (${localVersion} -> ${shortRemote})`;
-      } else if (update.error) {
-        updateBadge.classList.add("text-bg-secondary");
-        updateBadge.textContent = "Update-Check nicht verfügbar";
-      } else {
-        updateBadge.classList.add("text-bg-success");
-        updateBadge.textContent = `Up to date (${localVersion})`;
-      }
-    }
+    renderHeroUpdateBadge(update, repoUpdates);
     q("status-hostname").textContent = state.hostname || "-";
     q("system-hostname-current").textContent = state.hostname || "-";
     q("status-ip").textContent = state.ip || "-";
@@ -4860,6 +4897,7 @@
     renderServiceBadges("system-player-status-badges", playerStatus, true, true, true, playerUpdate);
     syncSystemRepoUpdateButtons(portalUpdate, playerUpdate);
     syncSystemUpdateToggleButtons(summary);
+    renderHeroUpdateBadge((statusDashboardState.status || {}).app_update || {}, repoUpdatesState);
   }
 
   function isServiceActive(status = {}) {
@@ -5256,6 +5294,7 @@
     host.innerHTML = cards;
     recomputeStreamFeatureState();
     applyStreamFeatureVisibility();
+    renderHeroUpdateBadge((statusDashboardState.status || {}).app_update || {}, repoUpdatesState);
   }
 
   function renderManagedReposFromCache() {
