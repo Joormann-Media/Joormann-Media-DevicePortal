@@ -5094,16 +5094,53 @@
   }
 
   function getManagedRepoFormValues() {
+    const id = String(q("extra-repo-id")?.value || "").trim();
+    const repoLink = String(q("extra-repo-link")?.value || "").trim();
+    const serviceUser = String(q("extra-repo-service-user")?.value || "").trim();
+    const installInput = String(q("extra-repo-install-dir")?.value || "").trim();
+    const installDerived = deriveManagedRepoDefaultInstallDir(repoLink, serviceUser);
+    const installDir = installInput || installDerived;
     return {
-      id: String(q("extra-repo-id")?.value || "").trim(),
+      id,
       name: String(q("extra-repo-name")?.value || "").trim(),
-      repo_link: String(q("extra-repo-link")?.value || "").trim(),
-      install_dir: String(q("extra-repo-install-dir")?.value || "").trim(),
+      repo_link: repoLink,
+      install_dir: installDir,
       service_name: String(q("extra-repo-service-name")?.value || "").trim(),
-      service_user: String(q("extra-repo-service-user")?.value || "").trim(),
+      service_user: serviceUser,
       use_service: !!q("extra-repo-use-service")?.checked,
       autostart: !!q("extra-repo-autostart")?.checked,
     };
+  }
+
+  function deriveRepoNameFromLink(repoLink) {
+    const raw = String(repoLink || "").trim().replace(/\/+$/, "");
+    if (!raw) return "";
+    const parts = raw.split("/");
+    let tail = String(parts[parts.length - 1] || "").trim();
+    if (tail.endsWith(".git")) tail = tail.slice(0, -4);
+    return tail;
+  }
+
+  function deriveManagedRepoDefaultInstallDir(repoLink, serviceUser) {
+    const link = String(repoLink || "").trim();
+    if (!/^(https?:\/\/|git@|ssh:\/\/)/i.test(link)) return "";
+    const repoName = deriveRepoNameFromLink(link);
+    if (!repoName) return "";
+    const user = String(serviceUser || "").trim() || String(q("stream-player-service-user")?.value || "").trim() || "djanebmb";
+    return `/home/${user}/projects/${repoName}`;
+  }
+
+  function syncManagedRepoDerivedInstallDir() {
+    const id = String(q("extra-repo-id")?.value || "").trim();
+    if (id) return;
+    const installEl = q("extra-repo-install-dir");
+    if (!installEl) return;
+    const current = String(installEl.value || "").trim();
+    if (current) return;
+    const repoLink = String(q("extra-repo-link")?.value || "").trim();
+    const serviceUser = String(q("extra-repo-service-user")?.value || "").trim();
+    const derived = deriveManagedRepoDefaultInstallDir(repoLink, serviceUser);
+    if (derived) installEl.value = derived;
   }
 
   function setManagedRepoFormValues(item = {}) {
@@ -7276,6 +7313,16 @@
     const extraRepoSaveBtn = q("btn-extra-repo-save");
     if (extraRepoSaveBtn) {
       extraRepoSaveBtn.addEventListener("click", () => run(saveManagedRepo));
+    }
+    const extraRepoLinkInput = q("extra-repo-link");
+    if (extraRepoLinkInput) {
+      extraRepoLinkInput.addEventListener("change", syncManagedRepoDerivedInstallDir);
+      extraRepoLinkInput.addEventListener("blur", syncManagedRepoDerivedInstallDir);
+    }
+    const extraRepoUserInput = q("extra-repo-service-user");
+    if (extraRepoUserInput) {
+      extraRepoUserInput.addEventListener("change", syncManagedRepoDerivedInstallDir);
+      extraRepoUserInput.addEventListener("blur", syncManagedRepoDerivedInstallDir);
     }
     const extraRepoRefreshBtn = q("btn-extra-repo-refresh");
     if (extraRepoRefreshBtn) {

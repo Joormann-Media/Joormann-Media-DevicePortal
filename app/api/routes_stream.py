@@ -6,6 +6,7 @@ import os
 import shutil
 import fcntl
 import socket
+import subprocess
 from datetime import datetime
 from ipaddress import ip_address
 from pathlib import Path
@@ -948,6 +949,70 @@ def _repo_default_service_name(repo_link: str) -> str:
     return f'{slug}.service'
 
 
+def _is_repo_url(value: str) -> bool:
+    raw = str(value or '').strip().lower()
+    return raw.startswith('http://') or raw.startswith('https://') or raw.startswith('git@') or raw.startswith('ssh://')
+
+
+def _normalize_repo_link(value: str) -> str:
+    raw = str(value or '').strip().lower()
+    if not raw:
+        return ''
+    if raw.endswith('/'):
+        raw = raw.rstrip('/')
+    if raw.endswith('.git'):
+        raw = raw[:-4]
+    if raw.startswith('git@github.com:'):
+        raw = raw.replace('git@github.com:', 'https://github.com/', 1)
+    return raw
+
+
+def _suggest_install_dir(repo_link: str, service_user: str) -> str:
+    link = str(repo_link or '').strip()
+    if not _is_repo_url(link):
+        return ''
+    user = str(service_user or '').strip() or os.getenv('USER', '').strip() or 'djanebmb'
+    repo_name = _repo_default_name(link)
+    return str((Path(f'/home/{user}') / 'projects' / repo_name).resolve())
+
+
+def _repo_origin_for_dir(install_dir: str) -> str:
+    path = Path(str(install_dir or '').strip()).expanduser()
+    if not path.exists() or not (path / '.git').exists():
+        return ''
+    try:
+        proc = subprocess.run(
+            ['git', '-C', str(path), 'remote', 'get-url', 'origin'],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=4,
+        )
+        if proc.returncode != 0:
+            return ''
+        return str(proc.stdout or '').strip()
+    except Exception:
+        return ''
+
+
+def _install_dir_mismatch_reason(repo_link: str, install_dir: str) -> tuple[str, str]:
+    path = Path(str(install_dir or '').strip()).expanduser()
+    if not str(install_dir or '').strip():
+        return '', ''
+    if not path.exists():
+        return '', ''
+    if not _is_repo_url(repo_link):
+        return '', ''
+    origin = _repo_origin_for_dir(str(path))
+    if not origin:
+        if (path / '.git').exists():
+            return 'install_dir_origin_missing', ''
+        return 'install_dir_not_git', ''
+    if _normalize_repo_link(origin) != _normalize_repo_link(repo_link):
+        return 'install_dir_repo_mismatch', origin
+    return '', origin
+
+
 def _sanitize_managed_repo_entry(item: dict) -> dict:
     source = item if isinstance(item, dict) else {}
     repo_id = str(source.get('id') or '').strip()
@@ -1639,14 +1704,18 @@ def api_stream_player_repos_set():
 
     target_id = str(data.get('id') or '').strip()
     repos = _managed_repos_from_config(cfg)
+    service_user_input = str(data.get('service_user') or '').strip()
+    service_user_effective = service_user_input or str(cfg.get('player_service_user') or '').strip() or os.getenv('USER', '').strip()
+    install_dir_input = str(data.get('install_dir') or '').strip()
+    install_dir_effective = install_dir_input or _suggest_install_dir(repo_link, service_user_effective)
     item = _sanitize_managed_repo_entry(
         {
             'id': target_id,
             'name': str(data.get('name') or '').strip(),
             'repo_link': repo_link,
             'service_name': str(data.get('service_name') or '').strip(),
-            'service_user': str(data.get('service_user') or '').strip(),
-            'install_dir': str(data.get('install_dir') or '').strip(),
+            'service_user': service_user_input,
+            'install_dir': install_dir_effective,
             'use_service': data.get('use_service', True),
             'autostart': data.get('autostart', True),
             'api_base_url': str(data.get('api_base_url') or '').strip(),
@@ -1740,12 +1809,29 @@ def api_stream_player_repos_install_update(repo_id: str):
     install_dir = str(target.get('install_dir') or '').strip()
     use_service = bool(target.get('use_service', True))
     autostart = bool(target.get('autostart', True))
+    effective_install_dir = install_dir or _suggest_install_dir(repo_link, service_user)
+    install_dir_adjusted_from = ''
+    install_dir_adjust_reason = ''
+    mismatch_reason, mismatch_origin = _install_dir_mismatch_reason(repo_link, effective_install_dir)
+    if mismatch_reason:
+        suggested = _suggest_install_dir(repo_link, service_user)
+        if suggested and _normalize_repo_link(_repo_origin_for_dir(suggested) or repo_link) == _normalize_repo_link(repo_link):
+            install_dir_adjusted_from = effective_install_dir
+            install_dir_adjust_reason = mismatch_reason
+            effective_install_dir = suggested
+        else:
+            detail = (
+                f'Installationspfad "{effective_install_dir}" passt nicht zum Repo "{repo_link}". '
+                f'Gefundenes Origin: "{mismatch_origin or "-"}".'
+            )
+            return jsonify(ok=False, error=mismatch_reason, detail=detail), 409
+
     try:
         payload = player_update(
             repo_link,
             service_user=service_user,
             service_name=service_name,
-            install_dir=install_dir,
+            install_dir=effective_install_dir,
             use_service=use_service,
             autostart=autostart,
         )
@@ -1756,7 +1842,7 @@ def api_stream_player_repos_install_update(repo_id: str):
     effective_service_name = str(payload.get('service_name') or service_name).strip() or service_name
     target['service_name'] = effective_service_name
     target['service_user'] = str(payload.get('service_user') or service_user).strip() or service_user
-    target['install_dir'] = str(payload.get('install_dir') or install_dir).strip() or install_dir
+    target['install_dir'] = str(payload.get('install_dir') or effective_install_dir or payload.get('repo_dir') or install_dir).strip() or install_dir
     target['use_service'] = bool(payload.get('use_service') if payload.get('use_service') is not None else use_service)
     target['autostart'] = bool(payload.get('autostart') if payload.get('autostart') is not None else autostart)
     target['updated_at'] = utc_now()
@@ -1773,6 +1859,11 @@ def api_stream_player_repos_install_update(repo_id: str):
     updated_out['service_status_checked_at'] = utc_now()
     payload_out = dict(payload)
     payload_out['service_name'] = effective_service_name
+    payload_out['install_dir'] = target.get('install_dir') or payload_out.get('install_dir') or ''
+    if install_dir_adjusted_from:
+        payload_out['install_dir_adjusted'] = True
+        payload_out['install_dir_adjusted_from'] = install_dir_adjusted_from
+        payload_out['install_dir_adjust_reason'] = install_dir_adjust_reason
     payload_out['repo'] = updated_out
     return jsonify(ok=True, data=payload_out)
 
@@ -1924,12 +2015,25 @@ def api_stream_player_install_update():
     if not repo_link:
         return jsonify(ok=False, error='player_repo_missing', detail='Bitte Player-Repo-Link oder lokalen Pfad setzen.'), 400
 
+    effective_install_dir = install_dir or _suggest_install_dir(repo_link, service_user)
+    mismatch_reason, mismatch_origin = _install_dir_mismatch_reason(repo_link, effective_install_dir)
+    if mismatch_reason:
+        suggested = _suggest_install_dir(repo_link, service_user)
+        if suggested:
+            effective_install_dir = suggested
+        else:
+            detail = (
+                f'Installationspfad "{effective_install_dir}" passt nicht zum Repo "{repo_link}". '
+                f'Gefundenes Origin: "{mismatch_origin or "-"}".'
+            )
+            return jsonify(ok=False, error=mismatch_reason, detail=detail), 409
+
     try:
         payload = player_update(
             repo_link,
             service_user=service_user,
             service_name=service_name,
-            install_dir=install_dir,
+            install_dir=effective_install_dir,
             use_service=use_service,
             autostart=autostart,
         )
