@@ -4928,13 +4928,13 @@
   function buildServiceBadgesHtml(status = {}, configAutostart = null, includeServiceBadge = false, serviceEnabled = true, updateInfo = null) {
     const installed = !!status.service_installed;
     const running = !!status.active || String(status.active_state || "").toLowerCase() === "activating";
-    const systemAutostart = !!status.service_enabled;
-    const configAutostartText = configAutostart === null ? "-" : (configAutostart ? "aktiv" : "aus");
+    const autostartInstalled = installed;
+    const autostartActive = autostartInstalled ? !!status.service_enabled : false;
     const badges = [
       `<span class="badge text-bg-light border">Installiert: ${installed ? "ja" : "nein"}</span>`,
       `<span class="badge text-bg-light border">Läuft: ${running ? "ja" : "nein"}</span>`,
-      `<span class="badge text-bg-light border">Autostart (Config): ${configAutostartText}</span>`,
-      `<span class="badge text-bg-light border">Autostart (System): ${systemAutostart ? "ja" : "nein"}</span>`,
+      `<span class="badge text-bg-light border">Autostart installiert: ${autostartInstalled ? "ja" : "nein"}</span>`,
+      `<span class="badge text-bg-light border">Autostart aktiv: ${autostartInstalled ? (autostartActive ? "ja" : "nein") : "-"}</span>`,
     ];
     if (includeServiceBadge) {
       badges.unshift(`<span class="badge text-bg-light border">Service: ${serviceEnabled ? "ja" : "nein"}</span>`);
@@ -5250,7 +5250,10 @@
       const serviceRunning = status.use_service === false
         ? (status.runtime_reachable ? "ja" : "nein")
         : (status.service_running ? "ja" : "nein");
-      const serviceAutostart = status.use_service === false ? "-" : (status.service_enabled ? "ja" : "nein");
+      const autostartInstalled = status.use_service === false ? "-" : (status.service_installed ? "ja" : "nein");
+      const serviceAutostart = status.use_service === false
+        ? "-"
+        : (status.service_installed ? (status.service_enabled ? "ja" : "nein") : "-");
       const canControlService = useService;
       const isRunning = !!status.service_running;
       const controlLabel = isRunning ? "Stop" : "Start";
@@ -5309,8 +5312,8 @@
               <span class="badge text-bg-light border">Service: ${useService ? "ja" : "nein"}</span>
               <span class="badge text-bg-light border">Installiert: ${serviceInstalled}</span>
               <span class="badge text-bg-light border">Läuft: ${serviceRunning}</span>
-              <span class="badge text-bg-light border">Autostart (Config): ${autostart ? "aktiv" : "aus"}</span>
-              <span class="badge text-bg-light border">Autostart (System): ${serviceAutostart}</span>
+              <span class="badge text-bg-light border">Autostart installiert: ${autostartInstalled}</span>
+              <span class="badge text-bg-light border">Autostart aktiv: ${serviceAutostart}</span>
               ${updateBadgeHtml}
             </div>
           </div>
