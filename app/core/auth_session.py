@@ -18,13 +18,14 @@ def is_authenticated() -> bool:
     return bool(data.get("authenticated")) and bool(str(data.get("username") or "").strip())
 
 
-def login_user(*, username: str, mode: str, display_name: str = "", user_id: int | None = None) -> dict:
+def login_user(*, username: str, mode: str, display_name: str = "", user_id: int | None = None, dev_mode: bool = False) -> dict:
     payload = {
         "authenticated": True,
         "username": username.strip(),
         "display_name": (display_name or "").strip(),
         "mode": (mode or "local_system").strip() or "local_system",
         "user_id": int(user_id) if isinstance(user_id, int) and user_id > 0 else None,
+        "dev_mode": bool(dev_mode),
         "logged_in_at": utc_now(),
     }
     session[SESSION_KEY] = payload

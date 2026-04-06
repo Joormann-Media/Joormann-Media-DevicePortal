@@ -378,6 +378,7 @@ def login_submit():
                 mode="panel_remote",
                 display_name=str(result.get("display_name") or username),
                 user_id=int(result.get("user_id") or 0) or None,
+                dev_mode=dev_mode,
             )
         else:
             result = authenticate_local_user(username=username, password=password)
@@ -386,6 +387,7 @@ def login_submit():
                 mode="local_system",
                 display_name=str(result.get("display_name") or username),
                 user_id=int(result.get("uid") or 0) or None,
+                dev_mode=dev_mode,
             )
     except (LocalAuthError, PanelAuthError) as exc:
         return render_template(
@@ -473,6 +475,7 @@ def login_submit_2fa():
         mode="panel_remote",
         display_name=str(pending_2fa.get("display_name") or pending_2fa.get("username") or ""),
         user_id=int(pending_2fa.get("user_id") or 0) or None,
+        dev_mode=dev_mode,
     )
     clear_pending_panel_2fa()
     return redirect(next_url)

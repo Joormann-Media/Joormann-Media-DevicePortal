@@ -4640,6 +4640,7 @@
   function renderManagedRepos(items = []) {
     const host = q("extra-repos-list");
     if (!host) return;
+    const devUiMode = String(document.body?.dataset?.devMode || "").trim() === "1";
     const list = (Array.isArray(items) ? items : []).slice().sort((a, b) => {
       const sa = (a && a.service_status && typeof a.service_status === "object") ? a.service_status : {};
       const sb = (b && b.service_status && typeof b.service_status === "object") ? b.service_status : {};
@@ -4701,6 +4702,9 @@
       }
       const hasUiUrl = /^https?:\/\//i.test(uiUrlRaw);
       const uiUrl = escapeHtml(uiUrlRaw || "");
+      const openButtonHtml = devUiMode
+        ? `<a class="btn btn-outline-info btn-sm ${hasUiUrl ? "" : "disabled"}" ${hasUiUrl ? `href="${uiUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#" tabindex="-1" aria-disabled="true"'}>Öffnen</a>`
+        : "";
       const linkHtml = repoLinkRaw
         ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
         : "-";
@@ -4737,7 +4741,7 @@
             </div>
           </div>
           <div class="d-flex flex-wrap gap-2">
-            <a class="btn btn-outline-info btn-sm ${hasUiUrl ? "" : "disabled"}" ${hasUiUrl ? `href="${uiUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#" tabindex="-1" aria-disabled="true"'}>Öffnen</a>
+            ${openButtonHtml}
             <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="load" data-id="${escapeHtml(repoId)}">Laden</button>
             <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
             <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="set_as_player" data-id="${escapeHtml(repoId)}">Als Stream-Player setzen</button>
