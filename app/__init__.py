@@ -39,7 +39,7 @@ def _is_local_unauth_stream_sync() -> bool:
 
 
 def _is_local_unauth_llm_report() -> bool:
-    if request.method != "POST" or request.path != "/api/llm-manager/report":
+    if request.method != "POST" or request.path not in {"/api/llm-manager/report", "/api/llm-manager/refresh"}:
         return False
     remote = (request.remote_addr or "").strip()
     if not remote:

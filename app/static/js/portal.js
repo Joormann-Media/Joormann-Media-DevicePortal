@@ -16,7 +16,7 @@
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
   let currentSystemUpdateSummary = null;
-  let llmManagerState = { info: null, repo: null, update: null };
+  let llmManagerState = { info: null, repo: null, update: null, didAutoRefresh: false };
   let managedInstallRepos = [];
   let autodiscoverServices = [];
   let repoUpdatesState = { has_updates: false, update_count: 0, checked_at: "", items: [] };
@@ -5061,6 +5061,15 @@
     }
 
     renderLlmManagerModels(llmInfo || {});
+
+    const models = Array.isArray(llmInfo?.models) ? llmInfo.models : [];
+    if (!models.length && !llmManagerState.didAutoRefresh) {
+      llmManagerState.didAutoRefresh = true;
+      runQuiet(async () => {
+        await fetchJson("/api/llm-manager/refresh", { method: "POST" });
+        await refreshStatus();
+      }, ["login_required", "llm_manager_unavailable"]);
+    }
   }
 
   function syncSystemRepoUpdateButtons(portalUpdateInfo, playerUpdateInfo) {
