@@ -148,7 +148,7 @@
   };
   const UPDATE_CACHE_KEY = "deviceportal.portal_update_status.v1";
   const UPDATE_RESULT_FLASH_KEY = "deviceportal.portal_update_result_flash.v1";
-  const MANAGED_REPOS_CACHE_KEY = "deviceportal.managed_repos_cache.v1";
+  const MANAGED_REPOS_CACHE_KEY = "deviceportal.managed_repos_cache.v2";
   const SYSTEM_UPDATE_SUMMARY_CACHE_KEY = "deviceportal.system_update_summary.v1";
   const STORAGE_FM_UPLOAD_MAX_FILE_BYTES = 512 * 1024 * 1024;
 
@@ -7854,7 +7854,12 @@
     try {
       await fn();
     } catch (err) {
-      toast(err.message || String(err), "danger");
+      const message = err && err.message ? String(err.message) : String(err);
+      const lowered = message.toLowerCase();
+      if (lowered.includes("repo_not_found") || lowered.includes("repo nicht gefunden")) {
+        await runQuiet(() => refreshManagedRepos(true));
+      }
+      toast(message, "danger");
     }
   }
 
@@ -7889,7 +7894,7 @@
     setupSessionCloseLogout();
     bindButtons();
     applyStreamFeatureVisibility();
-    renderManagedReposFromCache();
+    // Do not render stale managed-repo cache before first server sync.
     try {
       const raw = window.localStorage.getItem(SYSTEM_UPDATE_SUMMARY_CACHE_KEY);
       if (raw) {
