@@ -5546,6 +5546,9 @@
     const payload = await fetchJson(`/api/stream/player/repos${suffix}`, { timeoutMs: 10000 });
     const repos = (((payload || {}).data || {}).repos) || [];
     renderManagedRepos(repos);
+    if (statusDashboardState.status) {
+      renderLlmManagerCard(statusDashboardState.status, llmManagerState.info || {});
+    }
   }
 
   async function saveManagedRepo() {

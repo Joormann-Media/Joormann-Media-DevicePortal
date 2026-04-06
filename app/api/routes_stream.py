@@ -1354,6 +1354,40 @@ def _llm_manager_api_base(repo: dict) -> str:
     return ""
 
 
+def _llm_manager_candidate_bases(repo: dict) -> list[str]:
+    candidates: list[str] = []
+    api_base = _llm_manager_api_base(repo)
+    if api_base:
+        candidates.append(api_base)
+    health = str(repo.get("health_url") or "").strip()
+    if health.endswith("/health"):
+        candidates.append(health[:-7].rstrip("/"))
+    port = repo.get("service_port")
+    if port:
+        candidates.append(f"http://127.0.0.1:{port}")
+        candidates.append(f"http://localhost:{port}")
+    if api_base:
+        try:
+            parsed = urlparse(api_base)
+            if parsed.port:
+                candidates.append(f"http://127.0.0.1:{parsed.port}")
+                candidates.append(f"http://localhost:{parsed.port}")
+        except Exception:
+            pass
+    # dedupe, preserve order
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in candidates:
+        if not item:
+            continue
+        normalized = item.rstrip("/")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    return out
+
+
 def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False, retries: int = 1) -> dict | None:
     if not isinstance(cfg, dict):
         return None
@@ -1364,43 +1398,49 @@ def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False, retries: in
         return None
     if not _llm_manager_repo_installed(repo):
         return None
-    api_base = _llm_manager_api_base(repo)
-    if not api_base:
+    candidates = _llm_manager_candidate_bases(repo)
+    if not candidates:
         return None
 
     summary = None
+    chosen_base = ""
     attempts = max(1, int(retries or 1))
-    for _ in range(attempts):
-        try:
-            resp = requests.get(f"{api_base}/api/llm/summary", timeout=2.5)
-            if resp.status_code != 200:
-                summary = None
-            else:
-                summary = resp.json() if resp.content else {}
-                break
-        except Exception:
-            summary = None
-        if attempts > 1:
+    for base in candidates:
+        for _ in range(attempts):
             try:
-                import time
-                time.sleep(0.6)
+                resp = requests.get(f"{base}/api/llm/summary", timeout=2.5)
+                if resp.status_code != 200:
+                    summary = None
+                else:
+                    summary = resp.json() if resp.content else {}
+                    chosen_base = base
+                    break
             except Exception:
-                pass
+                summary = None
+            if attempts > 1:
+                try:
+                    import time
+                    time.sleep(0.6)
+                except Exception:
+                    pass
+        if isinstance(summary, dict):
+            break
     if not isinstance(summary, dict):
         return None
 
     if not isinstance(summary, dict):
         return None
 
+    api_base_url = chosen_base.rstrip("/")
     payload = {
         "source": "llm-lab-runtime",
         "repo_link": str(repo.get("repo_link") or "").strip(),
         "install_dir": str(repo.get("install_dir") or "").strip(),
         "service_name": str(repo.get("service_name") or "").strip(),
         "service_user": str(repo.get("service_user") or "").strip(),
-        "api_base_url": api_base,
-        "health_url": str(repo.get("health_url") or "").strip(),
-        "ui_url": str(repo.get("ui_url") or "").strip(),
+        "api_base_url": api_base_url,
+        "health_url": f"{api_base_url}/health" if api_base_url else str(repo.get("health_url") or "").strip(),
+        "ui_url": f"{api_base_url}/" if api_base_url else str(repo.get("ui_url") or "").strip(),
         "ollama": summary.get("ollama") if isinstance(summary.get("ollama"), dict) else {},
         "default_model": summary.get("default_model", ""),
         "models": summary.get("models") if isinstance(summary.get("models"), list) else [],
