@@ -4206,13 +4206,13 @@
       ttsTargetSelect.appendChild(placeholder);
       for (const item of availableOutputs) {
         if (!item || typeof item !== "object") continue;
-        if (!item.available) continue;
         const id = String(item.id || "").trim();
         if (!id) continue;
         const label = String(item.label || id);
         const opt = document.createElement("option");
         opt.value = id;
-        opt.textContent = label;
+        const isAvailable = !!item.available;
+        opt.textContent = isAvailable ? label : `${label} (derzeit nicht verfügbar)`;
         if (id === ttsTargetOutputId) {
           opt.selected = true;
         }

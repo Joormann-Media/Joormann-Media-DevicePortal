@@ -58,11 +58,39 @@ def api_audio_status():
 def api_audio_mixer():
     cfg = ensure_config()
     profile = _mixer_cfg(cfg)
+    output_profile = cfg.get("audio_output") if isinstance(cfg.get("audio_output"), dict) else {}
+    output_cache = output_profile.get("last_detected") if isinstance(output_profile.get("last_detected"), dict) else {}
     outputs = {}
     sources = {"ok": False, "backend": "", "default_source": "", "sources": [], "microphones": []}
     warnings: list[dict] = []
     try:
         outputs = audio_outputs_status()
+        available = outputs.get("available_outputs") if isinstance(outputs.get("available_outputs"), list) else []
+        has_available = any(bool(item.get("available")) for item in available if isinstance(item, dict))
+        if not has_available and isinstance(output_cache, dict):
+            cached_available = output_cache.get("available_outputs") if isinstance(output_cache.get("available_outputs"), list) else []
+            if cached_available:
+                outputs["available_outputs"] = cached_available
+                if not str(outputs.get("current_output") or "").strip():
+                    outputs["current_output"] = str(output_cache.get("current_output") or output_profile.get("selected_output") or "").strip()
+                warnings.append({
+                    "scope": "audio_outputs",
+                    "code": "using_cached_outputs",
+                    "message": "Live-Erkennung leer, verwende gecachte Audio-Outputs.",
+                    "detail": "",
+                })
+        else:
+            output_profile["last_detected"] = {
+                "current_output": str(outputs.get("current_output") or "").strip(),
+                "available_outputs": available,
+                "updated_at": utc_now(),
+            }
+            cfg["audio_output"] = output_profile
+            cfg["updated_at"] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+
+        if not str(outputs.get("current_output") or "").strip():
+            outputs["current_output"] = str(output_profile.get("selected_output") or "").strip()
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)

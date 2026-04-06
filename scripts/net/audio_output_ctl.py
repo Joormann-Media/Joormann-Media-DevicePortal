@@ -14,6 +14,8 @@ MAC_RE = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 ALSA_NUMID_RE = re.compile(r"numid=(\d+),")
 ALSA_CARD_LINE_RE = re.compile(r"^\s*(card|karte)\s+\d+:", re.IGNORECASE)
+ALSA_CARD_ID_RE = re.compile(r"^\s*(card|karte)\s+(\d+):", re.IGNORECASE)
+ALSA_PERCENT_RE = re.compile(r"\[(\d{1,3})%\]")
 
 
 def _run(args: list[str], timeout: int = 12) -> tuple[int, str, str]:
@@ -334,6 +336,8 @@ def _collect_alsa_caps() -> dict:
         "hdmi_available": False,
         "speaker_available": False,
         "cards": [],
+        "speaker_volume_percent": None,
+        "hdmi_volume_percent": None,
         "selector_numid": None,
         "current_output": "",
     }
@@ -344,6 +348,8 @@ def _collect_alsa_caps() -> dict:
         return caps
     caps["ok"] = True
     rows: list[dict] = []
+    speaker_cards: list[int] = []
+    hdmi_cards: list[int] = []
     for line in out.splitlines():
         raw = line.strip()
         if not ALSA_CARD_LINE_RE.match(raw):
@@ -351,13 +357,53 @@ def _collect_alsa_caps() -> dict:
         # Example: card 1: NVidia [HDA NVidia], device 3: HDMI 0 [Panasonic-TV]
         rows.append({"raw": raw})
         token = raw.lower()
+        m_id = ALSA_CARD_ID_RE.match(raw)
+        card_id = int(m_id.group(2)) if m_id else None
         if "hdmi" in token or "displayport" in token or "vc4hdmi" in token:
             caps["hdmi_available"] = True
+            if card_id is not None and card_id not in hdmi_cards:
+                hdmi_cards.append(card_id)
         if any(marker in token for marker in ("headphone", "headphones", "analog", "speaker", "line out", "lineout", "mailbox")):
             caps["speaker_available"] = True
+            if card_id is not None and card_id not in speaker_cards:
+                speaker_cards.append(card_id)
     caps["cards"] = rows
 
     if _has("amixer"):
+        def _volume_for_card(card_id: int | None) -> int | None:
+            args = ["amixer"]
+            if card_id is not None:
+                args.extend(["-c", str(card_id)])
+            args.extend(["sget", "PCM"])
+            code_get, out_get, _ = _run(args, timeout=8)
+            if code_get != 0:
+                # fallback
+                args2 = ["amixer"]
+                if card_id is not None:
+                    args2.extend(["-c", str(card_id)])
+                args2.extend(["sget", "Master"])
+                code_get, out_get, _ = _run(args2, timeout=8)
+                if code_get != 0:
+                    return None
+            m = ALSA_PERCENT_RE.search(out_get)
+            if not m:
+                return None
+            try:
+                return max(0, min(150, int(m.group(1))))
+            except Exception:
+                return None
+
+        for cid in speaker_cards:
+            vol = _volume_for_card(cid)
+            if vol is not None:
+                caps["speaker_volume_percent"] = vol
+                break
+        for cid in hdmi_cards:
+            vol = _volume_for_card(cid)
+            if vol is not None:
+                caps["hdmi_volume_percent"] = vol
+                break
+
         # Try to detect Raspberry Pi output selector (legacy control).
         code_ctrls, ctrls_out, _ = _run(["amixer", "controls"], timeout=8)
         if code_ctrls == 0:
@@ -491,10 +537,14 @@ def main() -> int:
                 item_id = str(item.get("id") or "")
                 if item_id == "local_hdmi":
                     item["available"] = bool(item.get("available")) or bool(alsa_caps.get("hdmi_available"))
+                    if item.get("volume_percent") is None and alsa_caps.get("hdmi_volume_percent") is not None:
+                        item["volume_percent"] = int(alsa_caps.get("hdmi_volume_percent"))
                     if item.get("sink_name") is None:
                         item["sink_name"] = ""
                 elif item_id == "local_speaker":
                     item["available"] = bool(item.get("available")) or bool(alsa_caps.get("speaker_available"))
+                    if item.get("volume_percent") is None and alsa_caps.get("speaker_volume_percent") is not None:
+                        item["volume_percent"] = int(alsa_caps.get("speaker_volume_percent"))
                     if item.get("sink_name") is None:
                         item["sink_name"] = ""
             if not base.get("current_output") and str(alsa_caps.get("current_output") or "").strip():
