@@ -2146,10 +2146,12 @@
     const warmupData = consumeWarmupData(["sections", "legacy", "status"]);
     if (warmupData && typeof warmupData === "object") {
       renderStatus(warmupData);
+      runQuiet(refreshLlmManagerInfo, ["login_required", "llm_manager_unavailable"]);
       return warmupData;
     }
     const data = await fetchJson("/api/status", { cache: "no-store" });
     renderStatus(data);
+    runQuiet(refreshLlmManagerInfo, ["login_required", "llm_manager_unavailable"]);
     return data;
   }
 
@@ -5042,7 +5044,8 @@
     }
     card.classList.remove("d-none");
     const updateInfo = resolveRepoUpdateInfo(repo);
-    llmManagerState = { info: llmInfo, repo, update: updateInfo };
+    const info = (llmInfo && typeof llmInfo === "object") ? llmInfo : (llmManagerState.info || {});
+    llmManagerState = { ...llmManagerState, info, repo, update: updateInfo };
 
     const badgesHost = q("llm-manager-badges");
     if (badgesHost) {
@@ -5085,9 +5088,9 @@
       autostartBtn.textContent = enabled ? "Autostart deaktivieren" : "Autostart aktivieren";
     }
 
-    renderLlmManagerModels(llmInfo || {});
+    renderLlmManagerModels(info || {});
 
-    const models = Array.isArray(llmInfo?.models) ? llmInfo.models : [];
+    const models = Array.isArray(info?.models) ? info.models : [];
     if (!models.length && !llmManagerState.didAutoRefresh) {
       llmManagerState.didAutoRefresh = true;
       runQuiet(async () => {
