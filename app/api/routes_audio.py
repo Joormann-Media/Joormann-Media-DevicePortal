@@ -58,15 +58,27 @@ def api_audio_status():
 def api_audio_mixer():
     cfg = ensure_config()
     profile = _mixer_cfg(cfg)
+    outputs = {}
+    sources = {"ok": False, "backend": "", "default_source": "", "sources": [], "microphones": []}
+    warnings: list[dict] = []
     try:
         outputs = audio_outputs_status()
-        sources = audio_sources_status()
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
+    try:
+        sources = audio_sources_status()
+    except NetControlError as exc:
+        warnings.append({
+            "scope": "audio_sources",
+            "code": exc.code,
+            "message": exc.message,
+            "detail": exc.detail,
+        })
     return _ok({
         "outputs": outputs,
         "sources": sources,
+        "warnings": warnings,
         "settings": {
             "master_volume_percent": int(profile.get("master_volume_percent") or 65),
             "tts_volume_percent": int(profile.get("tts_volume_percent") or 90),

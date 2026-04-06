@@ -4153,6 +4153,20 @@
     targetSelect.disabled = mode !== "specific";
   }
 
+  function currentSinkNameFromMixer() {
+    const root = (audioMixerState.lastPayload && typeof audioMixerState.lastPayload === "object") ? audioMixerState.lastPayload : {};
+    const outputs = (root.outputs && typeof root.outputs === "object") ? root.outputs : {};
+    const currentOutput = String(outputs.current_output || "").trim();
+    const available = Array.isArray(outputs.available_outputs) ? outputs.available_outputs : [];
+    for (const item of available) {
+      if (!item || typeof item !== "object") continue;
+      if (String(item.id || "").trim() !== currentOutput) continue;
+      const sinkName = String(item.sink_name || "").trim();
+      if (sinkName) return sinkName;
+    }
+    return "";
+  }
+
   function renderAudioMixer(payload) {
     const root = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
     audioMixerState.lastPayload = root;
@@ -4213,6 +4227,31 @@
       }
     }
     updateAudioTtsTargetUi();
+
+    const masterSlider = q("stream-audio-volume");
+    const masterValueEl = q("stream-audio-volume-value");
+    const currentOutput = String(outputs.current_output || "").trim();
+    const availableOutputs = Array.isArray(outputs.available_outputs) ? outputs.available_outputs : [];
+    let currentOutputVolume = null;
+    for (const item of availableOutputs) {
+      if (!item || typeof item !== "object") continue;
+      if (String(item.id || "").trim() !== currentOutput) continue;
+      const v = Number(item.volume_percent);
+      if (Number.isFinite(v)) {
+        currentOutputVolume = Math.max(0, Math.min(100, Math.round(v)));
+      }
+      break;
+    }
+    const configuredMaster = Number(settings.master_volume_percent);
+    const masterVolume = Number.isFinite(currentOutputVolume)
+      ? currentOutputVolume
+      : (Number.isFinite(configuredMaster) ? Math.max(0, Math.min(100, Math.round(configuredMaster))) : 65);
+    if (masterSlider) masterSlider.value = String(masterVolume);
+    if (masterValueEl) masterValueEl.textContent = String(masterVolume);
+    streamAudioMuted = masterVolume === 0;
+    if (masterVolume > 0) streamAudioLastNonZeroVolume = masterVolume;
+    const muteBtn = q("btn-stream-audio-mute");
+    if (muteBtn) muteBtn.textContent = streamAudioMuted ? "Ton an" : "Stumm";
 
     const channelHost = q("audio-channel-list");
     if (channelHost) {
@@ -4652,7 +4691,15 @@
     const volume = Number(raw);
     if (!Number.isFinite(volume)) throw new Error("Lautstärke muss eine Zahl sein.");
     const clamped = Math.max(0, Math.min(100, Math.round(volume)));
-    await fetchJson("/api/stream/player/audio/volume", { method: "POST", body: { volume: clamped } });
+    const sinkName = currentSinkNameFromMixer();
+    await fetchJson("/api/audio/volume", {
+      method: "POST",
+      body: {
+        volume_percent: clamped,
+        sink_name: sinkName || "",
+      },
+      timeoutMs: 12000,
+    });
     const valueEl = q("stream-audio-volume-value");
     if (valueEl) valueEl.textContent = String(clamped);
     if (clamped > 0) {
@@ -4664,7 +4711,8 @@
       muteBtn.textContent = streamAudioMuted ? "Ton an" : "Stumm";
     }
     if (refresh) {
-      await refreshStreamAudioStatus();
+      await refreshAudioMixer();
+      await refreshAudioHubStatus();
     }
     if (notify) {
       toast("Lautstärke gesetzt", "success");
