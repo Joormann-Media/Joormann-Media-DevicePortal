@@ -5,6 +5,7 @@ import hashlib
 import os
 import shutil
 import fcntl
+import socket
 from datetime import datetime
 from ipaddress import ip_address
 from pathlib import Path
@@ -1011,6 +1012,88 @@ def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
     }
 
 
+def _autodiscover_seed_service_status(item: dict) -> dict:
+    payload = item if isinstance(item, dict) else {}
+    use_service = bool(payload.get('use_service', True))
+    api_base_url = str(payload.get('api_base_url') or '').strip().rstrip('/')
+    health_url = str(payload.get('health_url') or '').strip()
+    runtime_url = health_url or (f'{api_base_url}/health' if api_base_url else '')
+    runtime_reachable_hint = bool(runtime_url)
+    if not use_service:
+        return {
+            'checked': True,
+            'use_service': False,
+            'service_name': str(payload.get('service_name') or '').strip(),
+            'service_installed': False,
+            'service_enabled': False,
+            'service_enabled_state': 'disabled',
+            'service_running': runtime_reachable_hint,
+            'active_state': 'inactive',
+            'substate': 'not-applicable',
+            'runtime_reachable': runtime_reachable_hint,
+            'runtime_url': runtime_url,
+            'source': 'autodiscover-seed',
+        }
+    service_name = str(payload.get('service_name') or '').strip()
+    return {
+        'checked': True,
+        'use_service': True,
+        'service_name': service_name,
+        'service_installed': True,
+        'service_enabled': bool(payload.get('autostart', True)),
+        'service_enabled_state': 'enabled' if bool(payload.get('autostart', True)) else 'disabled',
+        'service_running': runtime_reachable_hint,
+        'active_state': 'active' if runtime_reachable_hint else 'unknown',
+        'substate': 'running' if runtime_reachable_hint else 'unknown',
+        'runtime_reachable': runtime_reachable_hint,
+        'runtime_url': runtime_url,
+        'source': 'autodiscover-seed',
+    }
+
+
+def _current_host_aliases() -> set[str]:
+    aliases: set[str] = set()
+    for value in (socket.gethostname(), os.getenv('HOSTNAME', '')):
+        raw = str(value or '').strip().lower()
+        if not raw:
+            continue
+        aliases.add(raw)
+        aliases.add(raw.split('.')[0])
+    aliases.update({'localhost', '127.0.0.1', '::1'})
+    return aliases
+
+
+def _host_from_url(raw_url: str) -> str:
+    value = str(raw_url or '').strip()
+    if not value:
+        return ''
+    try:
+        return str(urlparse(value).hostname or '').strip().lower()
+    except Exception:
+        return ''
+
+
+def _is_remote_autodiscover_repo(repo: dict) -> bool:
+    source = str((repo or {}).get('source') or '').strip().lower()
+    if source != 'autodiscover':
+        return False
+    local_aliases = _current_host_aliases()
+    candidates = {
+        str((repo or {}).get('hostname') or '').strip().lower(),
+        str((repo or {}).get('node_name') or '').strip().lower(),
+        _host_from_url(str((repo or {}).get('api_base_url') or '')),
+        _host_from_url(str((repo or {}).get('health_url') or '')),
+    }
+    candidates = {item for item in candidates if item}
+    if not candidates:
+        return False
+    for item in candidates:
+        short = item.split('.')[0]
+        if item in local_aliases or short in local_aliases:
+            return False
+    return True
+
+
 def _path_browser_allowed_roots(cfg: dict) -> list[Path]:
     candidates: list[Path] = []
     service_user = str(cfg.get('player_service_user') or '').strip()
@@ -1107,9 +1190,31 @@ def _managed_repo_service_status(repo: dict) -> dict:
         return {'reachable': False, 'url': checked[0] if checked else '', 'checked_urls': checked}
 
     runtime = _probe_runtime_health(repo)
+    remote_autodiscover = _is_remote_autodiscover_repo(repo)
     use_service = bool(repo.get('use_service', True))
     repo_link = str(repo.get('repo_link') or '').strip()
     service_name = str(repo.get('service_name') or '').strip() or _repo_default_service_name(repo_link)
+    cached = repo.get('service_status') if isinstance(repo.get('service_status'), dict) else {}
+    if remote_autodiscover:
+        runtime_reachable = bool(runtime.get('reachable'))
+        running = runtime_reachable
+        installed = bool(cached.get('service_installed')) or runtime_reachable or bool(repo.get('api_base_url') or repo.get('health_url'))
+        enabled = bool(repo.get('autostart', True))
+        return {
+            'checked': True,
+            'use_service': use_service,
+            'remote': True,
+            'service_name': service_name,
+            'service_installed': installed,
+            'service_enabled': enabled,
+            'service_enabled_state': 'enabled' if enabled else 'disabled',
+            'service_running': running,
+            'active_state': 'active' if running else 'inactive',
+            'substate': 'running' if running else 'dead',
+            'runtime_reachable': runtime_reachable,
+            'runtime_url': str(runtime.get('url') or ''),
+            'source': 'autodiscover-remote',
+        }
     if not use_service:
         return {
             'checked': True,
@@ -1170,7 +1275,9 @@ def api_stream_player_repos_get():
     repos = _managed_repos_from_config(cfg)
     changed = False
     for item in repos:
-        if live:
+        status = item.get('service_status') if isinstance(item.get('service_status'), dict) else {}
+        needs_status_refresh = live or not status
+        if needs_status_refresh:
             item['service_status'] = _managed_repo_service_status(item)
             item['service_status_checked_at'] = utc_now()
             changed = True
@@ -1231,6 +1338,8 @@ def api_autodiscover_register():
             'last_seen_at': str(item.get('last_seen_at') or item.get('updated_at') or ''),
             'tags': item.get('tags') if isinstance(item.get('tags'), list) else [],
             'capabilities': item.get('capabilities') if isinstance(item.get('capabilities'), list) else [],
+            'service_status': _autodiscover_seed_service_status(item),
+            'service_status_checked_at': utc_now(),
         }
     )
     existing_repo_idx = next(
@@ -1313,6 +1422,8 @@ def api_autodiscover_promote(service_id: str):
             'last_seen_at': str(target.get('last_seen_at') or target.get('updated_at') or ''),
             'tags': target.get('tags') if isinstance(target.get('tags'), list) else [],
             'capabilities': target.get('capabilities') if isinstance(target.get('capabilities'), list) else [],
+            'service_status': _autodiscover_seed_service_status(target),
+            'service_status_checked_at': utc_now(),
         }
     )
 
