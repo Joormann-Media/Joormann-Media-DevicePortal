@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from flask import Blueprint, jsonify
 
@@ -18,6 +19,8 @@ from app.core.systeminfo import format_uptime_human, parse_cpu_temp_c, parse_loa
 
 bp_status = Blueprint('status', __name__)
 _RUNTIME_SNAPSHOT_CACHE: dict[str, object] = {}
+_REPO_UPDATES_CACHE: dict[str, object] = {"data": None, "updated_at": None}
+_REPO_UPDATES_TTL = timedelta(minutes=2)
 
 
 def _mask_secret(value: str, keep: int = 6) -> str:
@@ -31,7 +34,130 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _collect_status_payload() -> dict:
+def _normalize_repo_link(value: str) -> str:
+    out = str(value or "").strip().lower()
+    if out.endswith("/"):
+        out = out.rstrip("/")
+    if out.endswith(".git"):
+        out = out[:-4]
+    return out
+
+
+def _repo_update_key(repo_link: str, install_dir: str, service_name: str) -> str:
+    link = _normalize_repo_link(repo_link)
+    install = str(install_dir or "").strip().lower()
+    service = str(service_name or "").strip().lower()
+    if install:
+        return f"install:{install}"
+    if link:
+        return f"repo:{link}"
+    return f"service:{service}"
+
+
+def _collect_repo_updates(cfg: dict, force: bool = False) -> dict:
+    now = datetime.now(timezone.utc)
+    cached_data = _REPO_UPDATES_CACHE.get("data")
+    cached_at = _REPO_UPDATES_CACHE.get("updated_at")
+    if (
+        not force
+        and isinstance(cached_data, dict)
+        and isinstance(cached_at, datetime)
+        and (now - cached_at) < _REPO_UPDATES_TTL
+    ):
+        return cached_data
+
+    items: list[dict] = []
+    repo_root = Path(__file__).resolve().parents[2]
+
+    portal_update = get_update_info()
+    portal_local = str(portal_update.get("local_version") or "").strip() or str(portal_update.get("local_commit") or "").strip()[:12]
+    items.append({
+        "id": "fixed:device-portal",
+        "key": _repo_update_key("device-portal", str(repo_root), "device-portal.service"),
+        "name": "Device-Portal",
+        "kind": "fixed",
+        "repo_link": str(repo_root),
+        "install_dir": str(repo_root),
+        "service_name": "device-portal.service",
+        "available": bool(portal_update.get("available")),
+        "error": str(portal_update.get("error") or "").strip(),
+        "local_version": portal_local,
+        "local_commit": str(portal_update.get("local_commit") or "").strip(),
+        "remote_commit": str(portal_update.get("remote_commit") or "").strip(),
+        "local_branch": str(portal_update.get("local_branch") or "").strip(),
+        "checked": True,
+    })
+
+    player_repo_path = routes_panel._resolve_player_repo_path(cfg)
+    player_repo_link = str(cfg.get("player_repo_link") or cfg.get("player_repo_dir") or "").strip()
+    player_service_name = str(cfg.get("player_service_name") or "").strip() or "joormann-media-jarvis-displayplayer.service"
+    player_update = get_repo_update_info(player_repo_path)
+    player_local = str(player_update.get("local_version") or "").strip() or str(player_update.get("local_commit") or "").strip()[:12]
+    items.append({
+        "id": "fixed:display-player",
+        "key": _repo_update_key(player_repo_link, player_repo_path, player_service_name),
+        "name": "Joormann-Media-Jarvis-DisplayPlayer",
+        "kind": "fixed",
+        "repo_link": player_repo_link,
+        "install_dir": str(player_repo_path or "").strip(),
+        "service_name": player_service_name,
+        "available": bool(player_update.get("available")),
+        "error": str(player_update.get("error") or "").strip(),
+        "local_version": player_local,
+        "local_commit": str(player_update.get("local_commit") or "").strip(),
+        "remote_commit": str(player_update.get("remote_commit") or "").strip(),
+        "local_branch": str(player_update.get("local_branch") or "").strip(),
+        "checked": True,
+    })
+
+    managed_raw = cfg.get("managed_install_repos")
+    managed_repos = managed_raw if isinstance(managed_raw, list) else []
+    seen_keys: set[str] = set()
+    for raw in managed_repos:
+        if not isinstance(raw, dict):
+            continue
+        repo_link = str(raw.get("repo_link") or raw.get("repo_dir") or "").strip()
+        install_dir = str(raw.get("install_dir") or "").strip()
+        service_name = str(raw.get("service_name") or "").strip()
+        name = str(raw.get("name") or "").strip() or "Repo"
+        if not repo_link and not install_dir:
+            continue
+        key = _repo_update_key(repo_link, install_dir, service_name)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        update = get_repo_update_info(install_dir)
+        local = str(update.get("local_version") or "").strip() or str(update.get("local_commit") or "").strip()[:12]
+        items.append({
+            "id": str(raw.get("id") or key),
+            "key": key,
+            "name": name,
+            "kind": "managed",
+            "repo_link": repo_link,
+            "install_dir": install_dir,
+            "service_name": service_name,
+            "available": bool(update.get("available")),
+            "error": str(update.get("error") or "").strip(),
+            "local_version": local,
+            "local_commit": str(update.get("local_commit") or "").strip(),
+            "remote_commit": str(update.get("remote_commit") or "").strip(),
+            "local_branch": str(update.get("local_branch") or "").strip(),
+            "checked": True,
+        })
+
+    update_count = sum(1 for item in items if bool(item.get("available")))
+    summary = {
+        "checked_at": _iso_now(),
+        "has_updates": update_count > 0,
+        "update_count": update_count,
+        "items": items,
+    }
+    _REPO_UPDATES_CACHE["data"] = summary
+    _REPO_UPDATES_CACHE["updated_at"] = now
+    return summary
+
+
+def _collect_status_payload(force_repo_updates: bool = False) -> dict:
     cfg = ensure_config()
     dev = ensure_device()
     fp = ensure_fingerprint()
@@ -42,6 +168,7 @@ def _collect_status_payload() -> dict:
     dev_view['auth_key'] = _mask_secret(dev_view.get('auth_key', ''))
     player_repo_path = routes_panel._resolve_player_repo_path(cfg)
     player_update = get_repo_update_info(player_repo_path)
+    repo_updates = _collect_repo_updates(cfg, force=force_repo_updates)
 
     return {
         "config": cfg,
@@ -59,13 +186,14 @@ def _collect_status_payload() -> dict:
         },
         "app_update": get_update_info(),
         "player_update": player_update,
+        "repo_updates": repo_updates,
         "state": state,
     }
 
 
 def _build_runtime_viewmodel() -> dict:
     legacy: dict[str, object] = {}
-    legacy["status"] = _collect_status_payload()
+    legacy["status"] = _collect_status_payload(force_repo_updates=True)
     try:
         legacy["network"] = get_network_info()
     except NetControlError as exc:

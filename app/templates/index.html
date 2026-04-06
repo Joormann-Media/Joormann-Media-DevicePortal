@@ -896,7 +896,7 @@
                         <div id="stream-storage-target" class="small text-secondary">-</div>
                         <div id="stream-sync-error" class="small text-danger mt-2 d-none"></div>
                         <div class="small text-secondary mt-2">
-                          Player-Update wurde in <strong>System -> Sync &amp; Update</strong> zusammengeführt.
+                          Service-Steuerung und Updates für den Stream-Player erfolgen in <strong>System -> Sync &amp; Update</strong>.
                         </div>
                       </div>
                     </div>
@@ -916,11 +916,11 @@
                           <div class="row g-2">
                             <div class="col-12">
                               <label for="stream-player-repo-dir-quick" class="form-label form-label-sm mb-1">Player Repo Link (URL oder lokaler Pfad)</label>
-                              <input id="stream-player-repo-dir-quick" type="text" class="form-control form-control-sm" placeholder="/home/djanebmb/projects/Joormann-Media-DevicePlayer">
+                              <input id="stream-player-repo-dir-quick" type="text" class="form-control form-control-sm" placeholder="/home/djanebmb/projects/Joormann-Media-Jarvis-DisplayPlayer">
                             </div>
                             <div class="col-12 col-lg-7">
                               <label for="stream-player-service-name-quick" class="form-label form-label-sm mb-1">Service</label>
-                              <input id="stream-player-service-name-quick" type="text" class="form-control form-control-sm" value="joormann-media-deviceplayer.service">
+                              <input id="stream-player-service-name-quick" type="text" class="form-control form-control-sm" value="joormann-media-jarvis-displayplayer.service">
                             </div>
                             <div class="col-12 col-lg-5">
                               <label for="stream-player-service-user-quick" class="form-label form-label-sm mb-1">User</label>
@@ -1628,79 +1628,41 @@
             <div class="row g-3">
               <div class="col-12">
                 <div class="portal-card p-4">
-                  <h3 class="h6">Portal Update</h3>
-                  <p class="text-secondary mb-3">Führt `git pull --ff-only`, `install/setup_netcontrol.sh` und einen Service-Neustart aus.</p>
-                  <div id="system-portal-status-badges" class="d-flex flex-wrap gap-1 mb-2"></div>
-                  <div class="row g-2 mb-3">
-                    <div class="col-12">
-                      <label class="form-label form-label-sm mb-1">Repo</label>
-                      <div id="system-portal-repo" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
+                  <section class="mb-3">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <h3 class="h6 mb-2">Device-Portal</h3>
+                      </div>
+                      <div id="system-portal-status-badges" class="d-flex flex-wrap gap-1 small"></div>
                     </div>
-                    <div class="col-12">
-                      <label class="form-label form-label-sm mb-1">Installationspfad</label>
-                      <div id="system-portal-install-dir" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-system-portal-details" class="btn btn-outline-dark btn-sm">Details</button>
+                      <button id="btn-system-portal-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
+                      <button id="btn-system-update-portal" class="btn btn-outline-primary btn-sm">Update starten</button>
+                      <button id="btn-system-install-portal-service" class="btn btn-outline-secondary btn-sm">Service installieren / umschalten</button>
+                      <button id="btn-system-portal-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
+                      <button id="btn-system-portal-restart-now" class="btn btn-outline-secondary btn-sm">Restart</button>
                     </div>
-                    <div class="col-12 col-lg-8">
-                      <label class="form-label form-label-sm mb-1">Service</label>
-                      <div id="system-portal-service-name" class="form-control form-control-sm bg-body-tertiary">device-portal.service</div>
-                    </div>
-                    <div class="col-12 col-lg-4">
-                      <label class="form-label form-label-sm mb-1">User</label>
-                      <div id="system-portal-service-user" class="form-control form-control-sm bg-body-tertiary">-</div>
-                    </div>
-                  </div>
-                  <div class="d-flex flex-wrap gap-2">
-                    <button id="btn-system-update-portal" class="btn btn-outline-primary btn-sm">Update starten</button>
-                    <button id="btn-system-install-portal-service" class="btn btn-outline-secondary btn-sm">Service installieren / umschalten</button>
-                    <button id="btn-system-portal-restart-now" class="btn btn-outline-secondary btn-sm">Portal Restart</button>
-                  </div>
+                  </section>
                   <hr class="my-3">
-                  <h3 class="h6 mb-2">Player Update</h3>
-                  <div class="small text-secondary mb-2">Player Repo konfigurieren und Install/Update direkt ausführen.</div>
-                  <div id="system-player-status-badges" class="d-flex flex-wrap gap-1 mb-2"></div>
-                  <div class="row g-2 mb-2">
-                    <div class="col-12 col-lg-7">
-                      <label for="stream-player-repo-dir" class="form-label form-label-sm mb-1">Player Repo Link (URL oder lokaler Pfad)</label>
-                      <input id="stream-player-repo-dir" type="text" class="form-control form-control-sm" placeholder="https://github.com/.../Joormann-Media-DevicePlayer.git">
+                  <section class="mb-3">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <h3 class="h6 mb-2">Joormann-Media-Jarvis-DisplayPlayer</h3>
+                      </div>
+                      <div id="system-player-status-badges" class="d-flex flex-wrap gap-1 small"></div>
                     </div>
-                    <div class="col-12 col-lg-3">
-                      <label for="stream-player-service-name" class="form-label form-label-sm mb-1">Service</label>
-                      <input id="stream-player-service-name" type="text" class="form-control form-control-sm" value="joormann-media-deviceplayer.service">
+                    <div class="d-flex flex-wrap gap-2 mb-0">
+                      <button id="btn-system-player-details" class="btn btn-outline-dark btn-sm">Details</button>
+                      <button id="btn-system-player-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
+                      <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Install/Update</button>
+                      <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
+                      <button id="btn-system-player-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
+                      <button id="btn-system-player-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
                     </div>
-                    <div class="col-12 col-lg-2">
-                      <label for="stream-player-service-user" class="form-label form-label-sm mb-1">User</label>
-                      <input id="stream-player-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
-                    </div>
-                  </div>
-                  <div class="row g-2 mb-2">
-                    <div class="col-12 col-lg-7">
-                      <label class="form-label form-label-sm mb-1">Repo</label>
-                      <div id="system-player-repo" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
-                    </div>
-                    <div class="col-12 col-lg-5">
-                      <label class="form-label form-label-sm mb-1">Installationspfad</label>
-                      <div id="system-player-install-dir" class="form-control form-control-sm text-break bg-body-tertiary">-</div>
-                    </div>
-                    <div class="col-12 col-lg-8">
-                      <label class="form-label form-label-sm mb-1">Service</label>
-                      <div id="system-player-service-name-view" class="form-control form-control-sm bg-body-tertiary">-</div>
-                    </div>
-                    <div class="col-12 col-lg-4">
-                      <label class="form-label form-label-sm mb-1">User</label>
-                      <div id="system-player-service-user-view" class="form-control form-control-sm bg-body-tertiary">-</div>
-                    </div>
-                  </div>
-                  <div class="d-flex flex-wrap gap-2 mb-0">
-                    <button id="btn-stream-player-repo-save" class="btn btn-outline-secondary btn-sm">Repo speichern</button>
-                    <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Player Install/Update</button>
-                    <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
-                    <button id="btn-system-player-start" class="btn btn-outline-success btn-sm">Start</button>
-                    <button id="btn-system-player-stop" class="btn btn-outline-warning btn-sm">Stop</button>
-                    <button id="btn-system-player-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
-                    <button id="btn-system-player-status" class="btn btn-outline-secondary btn-sm">Status</button>
-                  </div>
+                  </section>
                   <hr class="my-3">
-                  <div id="extra-repos-list" class="small text-secondary mb-3">Keine zusätzlichen Repos hinterlegt.</div>
+                  <div id="extra-repos-list" class="small mb-3">Keine zusätzlichen Repos hinterlegt.</div>
                   <h4 class="h6 mb-2">Repo hinzufügen / bearbeiten</h4>
                   <input id="extra-repo-id" type="hidden" value="">
                   <div class="row g-2 mb-2">
@@ -2196,6 +2158,33 @@
             <dt>Last Seen</dt><dd id="managed-repo-details-last-seen">-</dd>
           </dl>
           <pre id="managed-repo-details-json" class="code-block mb-0" style="max-height: 260px; overflow:auto;">-</pre>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="systemUpdateDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-info-circle"></i>
+            <span id="system-update-details-title">Update Details</span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="system-update-details-badges" class="d-flex flex-wrap gap-1 mb-3"></div>
+          <dl class="portal-kv mb-3">
+            <dt>Repo</dt><dd id="system-update-details-repo">-</dd>
+            <dt>Installationspfad</dt><dd id="system-update-details-install-dir">-</dd>
+            <dt>Service</dt><dd id="system-update-details-service">-</dd>
+            <dt>User</dt><dd id="system-update-details-user">-</dd>
+          </dl>
+          <pre id="system-update-details-json" class="code-block mb-0" style="max-height: 260px; overflow:auto;">-</pre>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>

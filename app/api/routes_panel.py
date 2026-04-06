@@ -1074,7 +1074,7 @@ def _collect_runtime_snapshots(cfg: dict, dev: dict, fp: dict, host: str, ip: st
         'storage_target': stream_storage_target,
     }
 
-    player_service_name = str(cfg.get('player_service_name') or 'joormann-media-deviceplayer.service').strip() or 'joormann-media-deviceplayer.service'
+    player_service_name = str(cfg.get('player_service_name') or 'joormann-media-jarvis-displayplayer.service').strip() or 'joormann-media-jarvis-displayplayer.service'
     player_status = _safe_call({}, lambda: player_service_action('status', player_service_name))
     stream_player = {
         'service_name': player_service_name,

@@ -29,7 +29,7 @@ from app.core.timeutil import utc_now
 bp_stream = Blueprint('stream', __name__)
 
 
-STREAM_SERVICE_NAME = os.getenv('DEVICE_PLAYER_SERVICE_NAME', 'joormann-media-deviceplayer.service')
+STREAM_SERVICE_NAME = os.getenv('DEVICE_PLAYER_SERVICE_NAME', 'joormann-media-jarvis-displayplayer.service')
 PLAYER_SOURCE_PATH = Path(DATA_DIR) / 'player-source.json'
 PLAYER_CONTROL_DEFAULT_HOST = os.getenv('DEVICEPLAYER_CONTROL_API_HOST', '127.0.0.1').strip() or '127.0.0.1'
 try:
@@ -44,6 +44,12 @@ def _selected_stream_slug(cfg: dict) -> str:
 
 def _selected_stream_name(cfg: dict) -> str:
     return str(cfg.get('selected_stream_name') or '').strip()
+
+
+def _resolved_player_service_name(cfg: dict | None = None) -> str:
+    if not isinstance(cfg, dict):
+        cfg = ensure_config()
+    return str(cfg.get('player_service_name') or STREAM_SERVICE_NAME).strip() or STREAM_SERVICE_NAME
 
 
 def _player_control_base_url() -> str:
@@ -461,7 +467,7 @@ def api_stream_overview():
 
     player = {}
     try:
-        player = player_service_action('status', STREAM_SERVICE_NAME)
+        player = player_service_action('status', _resolved_player_service_name(cfg))
     except Exception as exc:
         player = {'ok': False, 'error': str(exc)}
 
@@ -794,8 +800,9 @@ def api_stream_sync():
 
 @bp_stream.get('/api/stream/player/status')
 def api_stream_player_status():
+    cfg = ensure_config()
     try:
-        payload = player_service_action('status', STREAM_SERVICE_NAME)
+        payload = player_service_action('status', _resolved_player_service_name(cfg))
         return jsonify(ok=True, player=payload)
     except NetControlError as exc:
         status = 500 if exc.code in ('execution_failed', 'script_missing') else 400
@@ -804,11 +811,12 @@ def api_stream_player_status():
 
 @bp_stream.post('/api/stream/player/<action>')
 def api_stream_player_action(action: str):
+    cfg = ensure_config()
     action = str(action or '').strip().lower()
     if action not in {'start', 'stop', 'restart'}:
         return jsonify(ok=False, error='invalid_action', detail='Action muss start|stop|restart sein.'), 400
     try:
-        payload = player_service_action(action, STREAM_SERVICE_NAME)
+        payload = player_service_action(action, _resolved_player_service_name(cfg))
         return jsonify(ok=True, player=payload)
     except NetControlError as exc:
         status = 500 if exc.code in ('execution_failed', 'script_missing') else 400
@@ -1020,9 +1028,23 @@ def _managed_repos_from_config(cfg: dict) -> list[dict]:
     if not isinstance(raw, list):
         return []
 
+    player_repo_link = str(cfg.get('player_repo_link') or cfg.get('player_repo_dir') or '').strip()
+    player_install_dir = str(cfg.get('player_install_dir') or '').strip()
+    player_service_name = str(cfg.get('player_service_name') or '').strip()
+
     repos: list[dict] = []
     for item in raw:
         sanitized = _sanitize_managed_repo_entry(item if isinstance(item, dict) else {})
+        if player_service_name and _repo_matches(
+            str(sanitized.get('repo_link') or ''),
+            str(sanitized.get('install_dir') or ''),
+            player_repo_link,
+            player_install_dir,
+        ):
+            if str(sanitized.get('service_name') or '').strip() != player_service_name:
+                sanitized['service_name'] = player_service_name
+                sanitized['service_status'] = {}
+                sanitized['service_status_checked_at'] = ''
         if sanitized.get('repo_link'):
             repos.append(sanitized)
     return repos
@@ -1035,8 +1057,16 @@ def _repo_identity_key(repo_link: str, install_dir: str = '') -> str:
 
 
 def _repo_matches(repo_link_a: str, install_dir_a: str, repo_link_b: str, install_dir_b: str) -> bool:
-    link_a = str(repo_link_a or '').strip().lower()
-    link_b = str(repo_link_b or '').strip().lower()
+    def _norm_repo_link(value: str) -> str:
+        out = str(value or '').strip().lower()
+        if out.endswith('/'):
+            out = out.rstrip('/')
+        if out.endswith('.git'):
+            out = out[:-4]
+        return out
+
+    link_a = _norm_repo_link(repo_link_a)
+    link_b = _norm_repo_link(repo_link_b)
     if not link_a or not link_b or link_a != link_b:
         return False
     dir_a = str(install_dir_a or '').strip().lower()
@@ -1327,7 +1357,8 @@ def _managed_repo_service_status(repo: dict) -> dict:
     try:
         payload = player_service_action('status', service_name)
         service_installed = bool(payload.get('service_installed'))
-        service_running = bool(payload.get('active'))
+        active_state = str(payload.get('active_state') or '').strip().lower()
+        service_running = bool(payload.get('active')) or active_state in {'active', 'activating'}
         return {
             'checked': True,
             'use_service': True,

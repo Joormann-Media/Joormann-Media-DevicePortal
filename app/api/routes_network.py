@@ -318,7 +318,7 @@ def _prepare_client_uplink_switch(ifname: str = "wlan0", reason: str = "") -> di
 
 def _sync_player_with_ap_mode(ap_enabled: bool, source: str = "") -> dict:
     cfg = ensure_config()
-    service_name = str(cfg.get("player_service_name") or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
+    service_name = str(cfg.get("player_service_name") or "joormann-media-jarvis-displayplayer.service").strip() or "joormann-media-jarvis-displayplayer.service"
     action = "stop" if ap_enabled else "start"
     result = {"ok": False, "action": action, "service_name": service_name, "source": source, "error": ""}
     try:
@@ -2999,6 +2999,21 @@ def api_system_service_status():
     service_name = str(request.args.get("service_name") or "").strip() or "device-portal.service"
     try:
         payload = player_service_action("status", service_name=service_name)
+        return _ok(payload)
+    except NetControlError as exc:
+        status = 500 if exc.code in ("execution_failed", "script_missing") else 400
+        return _error(exc.code, exc.message, status=status, detail=exc.detail)
+
+
+@bp_network.post("/api/system/service/action")
+def api_system_service_action():
+    data = request.get_json(force=True, silent=True) or {}
+    service_name = str(data.get("service_name") or "").strip() or "device-portal.service"
+    action = str(data.get("action") or "").strip().lower()
+    if action not in {"start", "stop", "restart", "status"}:
+        return _error("invalid_action", "Ungültige Service-Aktion.", status=400)
+    try:
+        payload = player_service_action(action, service_name=service_name)
         return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("execution_failed", "script_missing") else 400

@@ -489,7 +489,7 @@ def _run_admin_actions(cfg: dict, actions: list[dict], triggered_by: str) -> lis
                 result.update(ok=True, message="Portal-Neustart angefordert.", data=payload or {})
 
             elif action in {"player.restart", "player_restart"}:
-                payload = player_service_action("restart", "joormann-media-deviceplayer.service")
+                payload = player_service_action("restart", "joormann-media-jarvis-displayplayer.service")
                 result.update(ok=True, message="Player-Neustart angefordert.", data=payload or {})
 
             elif action in {"system.portal_update", "portal.update", "portal_update"}:
@@ -509,7 +509,7 @@ def _run_admin_actions(cfg: dict, actions: list[dict], triggered_by: str) -> lis
                     or cfg.get("player_repo_dir")
                     or ""
                 ).strip()
-                service_name = str(params.get("player_service_name") or cfg.get("player_service_name") or "joormann-media-deviceplayer.service").strip() or "joormann-media-deviceplayer.service"
+                service_name = str(params.get("player_service_name") or cfg.get("player_service_name") or "joormann-media-jarvis-displayplayer.service").strip() or "joormann-media-jarvis-displayplayer.service"
                 service_user = str(params.get("player_service_user") or cfg.get("player_service_user") or "").strip()
                 if not repo_link:
                     raise RuntimeError("player_repo_missing")

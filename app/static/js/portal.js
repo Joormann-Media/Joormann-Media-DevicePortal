@@ -15,8 +15,11 @@
   let streamAudioVolumeDebounceHandle = null;
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
+  let currentSystemUpdateSummary = null;
   let managedInstallRepos = [];
   let autodiscoverServices = [];
+  let repoUpdatesState = { has_updates: false, update_count: 0, checked_at: "", items: [] };
+  let repoUpdatesIndex = new Map();
   const streamFeatureState = {
     hasAudioPlayer: false,
     hasDisplayPlayer: false,
@@ -31,6 +34,7 @@
     roots: [],
     modal: null,
   };
+  const DEFAULT_PLAYER_SERVICE_NAME = "joormann-media-jarvis-displayplayer.service";
   const streamAudioBrowserState = {
     currentPath: "",
     parentPath: "",
@@ -613,6 +617,57 @@
   function playerRemoteShort(update) {
     const shortCommit = String((update || {}).remote_commit || "").trim().slice(0, 7);
     return shortCommit || "-";
+  }
+
+  function normalizeRepoLink(value) {
+    let out = String(value || "").trim().toLowerCase();
+    if (out.endsWith("/")) out = out.slice(0, -1);
+    if (out.endsWith(".git")) out = out.slice(0, -4);
+    return out;
+  }
+
+  function buildRepoUpdateKey(repoLink, installDir, serviceName = "") {
+    const install = String(installDir || "").trim().toLowerCase();
+    if (install) return `install:${install}`;
+    const repo = normalizeRepoLink(repoLink);
+    if (repo) return `repo:${repo}`;
+    return `service:${String(serviceName || "").trim().toLowerCase()}`;
+  }
+
+  function setRepoUpdatesState(payload = {}) {
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    repoUpdatesState = {
+      has_updates: !!payload.has_updates,
+      update_count: Number(payload.update_count || 0),
+      checked_at: String(payload.checked_at || ""),
+      items,
+    };
+    repoUpdatesIndex = new Map();
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const key = String(item.key || "").trim();
+      const fallbackKey = buildRepoUpdateKey(item.repo_link, item.install_dir, item.service_name);
+      if (key) repoUpdatesIndex.set(key, item);
+      if (fallbackKey) repoUpdatesIndex.set(fallbackKey, item);
+    }
+    if (currentSystemUpdateSummary && typeof currentSystemUpdateSummary === "object") {
+      renderSystemUpdateSummary(currentSystemUpdateSummary);
+    }
+    if (Array.isArray(managedInstallRepos) && managedInstallRepos.length) {
+      renderManagedRepos(managedInstallRepos);
+    }
+  }
+
+  function resolveRepoUpdateInfo(source = {}) {
+    const key = buildRepoUpdateKey(source.repo_link, source.install_dir, source.service_name);
+    if (key && repoUpdatesIndex.has(key)) {
+      return repoUpdatesIndex.get(key);
+    }
+    const repoOnlyKey = buildRepoUpdateKey(source.repo_link, "", source.service_name);
+    if (repoOnlyKey && repoUpdatesIndex.has(repoOnlyKey)) {
+      return repoUpdatesIndex.get(repoOnlyKey);
+    }
+    return null;
   }
 
   function getResolvedAdminBaseUrl() {
@@ -1581,16 +1636,27 @@
     const online = !!state.hostname;
     const update = data.app_update || {};
     const playerUpdate = data.player_update || {};
+    const repoUpdates = (data.repo_updates && typeof data.repo_updates === "object") ? data.repo_updates : {};
     statusDashboardState.status = data;
+    setRepoUpdatesState(repoUpdates);
 
     setStatusBadge(linked, online);
     renderHeroPanelFlags(cfg);
     const updateBadge = q("hero-update");
     if (updateBadge) {
       updateBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
-      const localVersion = updateLocalVersion(update);
-      if (update.available) {
+      if (repoUpdates && Array.isArray(repoUpdates.items)) {
+        const count = Number(repoUpdates.update_count || 0);
+        if (count > 0) {
+          updateBadge.classList.add("text-bg-warning");
+          updateBadge.textContent = `Updates verfügbar (${count})`;
+        } else {
+          updateBadge.classList.add("text-bg-success");
+          updateBadge.textContent = "Keine Updates";
+        }
+      } else if (update.available) {
         updateBadge.classList.add("text-bg-warning");
+        const localVersion = updateLocalVersion(update);
         const shortRemote = updateRemoteShort(update);
         updateBadge.textContent = `Update verfügbar (${localVersion} -> ${shortRemote})`;
       } else if (update.error) {
@@ -3922,17 +3988,18 @@
       syncErrorEl.textContent = "";
     }
 
+    const playerRunning = isServiceActive(player);
     const playerStatusEl = q("stream-player-status");
     if (playerStatusEl) {
       if (player && player.error) {
         playerStatusEl.textContent = `Status: Fehler (${player.error})`;
       } else if (player && typeof player.active !== "undefined") {
-        playerStatusEl.textContent = `Status: ${player.active ? "aktiv" : "inaktiv"} (${player.substate || "-"})`;
+        playerStatusEl.textContent = `Status: ${playerRunning ? "aktiv" : "inaktiv"} (${player.substate || "-"})`;
       } else {
         playerStatusEl.textContent = "Status: -";
       }
     }
-    streamFeatureState.playerInstalled = !!(player.service_installed || player.active);
+    streamFeatureState.playerInstalled = !!(player.service_installed || playerRunning);
     applyStreamFeatureVisibility();
 
     if (spotifyConnect && typeof spotifyConnect === "object") {
@@ -4033,13 +4100,14 @@
   async function refreshPlayerStatus() {
     const payload = await fetchJson("/api/stream/player/status");
     const player = payload.player || {};
-    streamFeatureState.playerInstalled = !!(player.service_installed || player.active);
+    const playerRunning = isServiceActive(player);
+    streamFeatureState.playerInstalled = !!(player.service_installed || playerRunning);
     const playerStatusEl = q("stream-player-status");
     if (playerStatusEl) {
       if (player && player.error) {
         playerStatusEl.textContent = `Status: Fehler (${player.error})`;
       } else if (typeof player.active !== "undefined") {
-        playerStatusEl.textContent = `Status: ${player.active ? "aktiv" : "inaktiv"} (${player.substate || "-"})`;
+        playerStatusEl.textContent = `Status: ${playerRunning ? "aktiv" : "inaktiv"} (${player.substate || "-"})`;
       } else {
         playerStatusEl.textContent = "Status: -";
       }
@@ -4754,73 +4822,160 @@
     const payload = await fetchJson("/api/stream/player/repo", { timeoutMs: 10000 });
     const cfg = payload.config || {};
     const repoValue = String(cfg.player_repo_link || cfg.player_repo_dir || "");
-    const serviceNameValue = String(cfg.player_service_name || "joormann-media-deviceplayer.service");
+    const serviceNameValue = String(cfg.player_service_name || DEFAULT_PLAYER_SERVICE_NAME);
     const serviceUserValue = String(cfg.player_service_user || "");
-    q("stream-player-repo-dir").value = repoValue;
-    q("stream-player-service-name").value = serviceNameValue;
-    q("stream-player-service-user").value = serviceUserValue;
+    const repoMain = q("stream-player-repo-dir");
+    const nameMain = q("stream-player-service-name");
+    const userMain = q("stream-player-service-user");
+    if (repoMain) repoMain.value = repoValue;
+    if (nameMain) nameMain.value = serviceNameValue;
+    if (userMain) userMain.value = serviceUserValue;
     const repoQuick = q("stream-player-repo-dir-quick");
     const nameQuick = q("stream-player-service-name-quick");
     const userQuick = q("stream-player-service-user-quick");
     if (repoQuick) repoQuick.value = repoValue;
     if (nameQuick) nameQuick.value = serviceNameValue;
     if (userQuick) userQuick.value = serviceUserValue;
-    const repoView = q("system-player-repo");
-    const installView = q("system-player-install-dir");
-    const serviceView = q("system-player-service-name-view");
-    const userView = q("system-player-service-user-view");
-    if (repoView) repoView.textContent = repoValue || "-";
-    if (installView) installView.textContent = String(cfg.player_install_dir || "-");
-    if (serviceView) serviceView.textContent = serviceNameValue || "-";
-    if (userView) userView.textContent = serviceUserValue || "-";
     await refreshSystemUpdateSummaries();
   }
 
   function renderSystemUpdateSummary(summary = {}) {
+    currentSystemUpdateSummary = summary && typeof summary === "object" ? summary : null;
     const portal = (summary.portal && typeof summary.portal === "object") ? summary.portal : {};
     const player = (summary.player && typeof summary.player === "object") ? summary.player : {};
     const portalStatus = (portal.status && typeof portal.status === "object") ? portal.status : {};
     const playerStatus = (player.status && typeof player.status === "object") ? player.status : {};
+    const portalUpdate = resolveRepoUpdateInfo({
+      repo_link: portal.repo,
+      install_dir: portal.install_dir,
+      service_name: portal.service_name,
+    });
+    const playerUpdate = resolveRepoUpdateInfo({
+      repo_link: player.repo,
+      install_dir: player.install_dir,
+      service_name: player.service_name,
+    });
 
-    const portalRepoEl = q("system-portal-repo");
-    const portalInstallEl = q("system-portal-install-dir");
-    const portalServiceUserEl = q("system-portal-service-user");
-    if (portalRepoEl) portalRepoEl.textContent = String(portal.repo || "-");
-    if (portalInstallEl) portalInstallEl.textContent = String(portal.install_dir || "-");
-    if (portalServiceUserEl) portalServiceUserEl.textContent = String(portal.service_user || "-");
-
-    const playerRepoEl = q("system-player-repo");
-    const playerInstallEl = q("system-player-install-dir");
-    const playerServiceNameEl = q("system-player-service-name-view");
-    const playerServiceUserEl = q("system-player-service-user-view");
-    if (playerRepoEl) playerRepoEl.textContent = String(player.repo || "-");
-    if (playerInstallEl) playerInstallEl.textContent = String(player.install_dir || "-");
-    if (playerServiceNameEl) playerServiceNameEl.textContent = String(player.service_name || "-");
-    if (playerServiceUserEl) playerServiceUserEl.textContent = String(player.service_user || "-");
-
-    renderServiceBadges("system-portal-status-badges", portalStatus, true);
-    renderServiceBadges("system-player-status-badges", playerStatus, true);
+    renderServiceBadges("system-portal-status-badges", portalStatus, true, true, true, portalUpdate);
+    renderServiceBadges("system-player-status-badges", playerStatus, true, true, true, playerUpdate);
+    syncSystemRepoUpdateButtons(portalUpdate, playerUpdate);
+    syncSystemUpdateToggleButtons(summary);
   }
 
-  function renderServiceBadges(hostId, status = {}, configAutostart = null) {
-    const host = q(hostId);
-    if (!host) return;
+  function isServiceActive(status = {}) {
+    if (!status || typeof status !== "object") return false;
+    if (status.active === true || status.service_running === true) return true;
+    const activeState = String(status.active_state || "").trim().toLowerCase();
+    return activeState === "active" || activeState === "activating";
+  }
+
+  function syncToggleButtonState(buttonId, running) {
+    const btn = q(buttonId);
+    if (!btn) return;
+    btn.dataset.action = running ? "stop" : "start";
+    btn.textContent = running ? "Stop" : "Start";
+    btn.classList.remove("btn-outline-success", "btn-outline-warning");
+    btn.classList.add(running ? "btn-outline-warning" : "btn-outline-success");
+  }
+
+  function syncSystemUpdateToggleButtons(summary = {}) {
+    const portal = (summary.portal && typeof summary.portal === "object") ? summary.portal : {};
+    const player = (summary.player && typeof summary.player === "object") ? summary.player : {};
+    const portalStatus = (portal.status && typeof portal.status === "object") ? portal.status : {};
+    const playerStatus = (player.status && typeof player.status === "object") ? player.status : {};
+    syncToggleButtonState("btn-system-portal-toggle", isServiceActive(portalStatus));
+    syncToggleButtonState("btn-system-player-toggle", isServiceActive(playerStatus));
+  }
+
+  function buildServiceBadgesHtml(status = {}, configAutostart = null, includeServiceBadge = false, serviceEnabled = true, updateInfo = null) {
     const installed = !!status.service_installed;
     const running = !!status.active || String(status.active_state || "").toLowerCase() === "activating";
     const systemAutostart = !!status.service_enabled;
     const configAutostartText = configAutostart === null ? "-" : (configAutostart ? "aktiv" : "aus");
-    host.innerHTML = [
+    const badges = [
       `<span class="badge text-bg-light border">Installiert: ${installed ? "ja" : "nein"}</span>`,
       `<span class="badge text-bg-light border">Läuft: ${running ? "ja" : "nein"}</span>`,
       `<span class="badge text-bg-light border">Autostart (Config): ${configAutostartText}</span>`,
       `<span class="badge text-bg-light border">Autostart (System): ${systemAutostart ? "ja" : "nein"}</span>`,
-    ].join("");
+    ];
+    if (includeServiceBadge) {
+      badges.unshift(`<span class="badge text-bg-light border">Service: ${serviceEnabled ? "ja" : "nein"}</span>`);
+    }
+    if (updateInfo && typeof updateInfo === "object") {
+      if (updateInfo.available) {
+        badges.push('<span class="badge text-bg-warning border">Update: verfügbar</span>');
+      } else if (String(updateInfo.error || "").trim()) {
+        badges.push('<span class="badge text-bg-secondary border">Update: unbekannt</span>');
+      } else {
+        badges.push('<span class="badge text-bg-success border">Update: aktuell</span>');
+      }
+    }
+    return badges.join("");
+  }
+
+  function renderServiceBadges(hostId, status = {}, configAutostart = null, includeServiceBadge = false, serviceEnabled = true, updateInfo = null) {
+    const host = q(hostId);
+    if (!host) return;
+    host.innerHTML = buildServiceBadgesHtml(status, configAutostart, includeServiceBadge, serviceEnabled, updateInfo);
+  }
+
+  function syncSystemRepoUpdateButtons(portalUpdateInfo, playerUpdateInfo) {
+    const portalBtn = q("btn-system-portal-update");
+    if (portalBtn) {
+      portalBtn.classList.toggle("d-none", !portalUpdateInfo || !portalUpdateInfo.available);
+    }
+    const playerBtn = q("btn-system-player-update");
+    if (playerBtn) {
+      playerBtn.classList.toggle("d-none", !playerUpdateInfo || !playerUpdateInfo.available);
+    }
+  }
+
+  function showSystemUpdateDetails(kind) {
+    const summary = currentSystemUpdateSummary && typeof currentSystemUpdateSummary === "object" ? currentSystemUpdateSummary : {};
+    const key = String(kind || "").trim().toLowerCase() === "player" ? "player" : "portal";
+    const entity = (summary[key] && typeof summary[key] === "object") ? summary[key] : {};
+    const status = (entity.status && typeof entity.status === "object") ? entity.status : {};
+    const configAutostart = typeof entity.autostart === "boolean" ? entity.autostart : true;
+
+    const setText = (id, value) => {
+      const el = q(id);
+      if (el) el.textContent = String(value || "-");
+    };
+    setText(
+      "system-update-details-title",
+      key === "player" ? "Joormann-Media-Jarvis-DisplayPlayer Details" : "Device-Portal Details",
+    );
+    setText("system-update-details-repo", entity.repo || "-");
+    setText("system-update-details-install-dir", entity.install_dir || "-");
+    const fallbackServiceName = key === "player"
+      ? String(q("stream-player-service-name")?.value || q("stream-player-service-name-quick")?.value || "").trim()
+      : "device-portal.service";
+    setText("system-update-details-service", entity.service_name || fallbackServiceName || "-");
+    setText("system-update-details-user", entity.service_user || "-");
+
+    const badgesHost = q("system-update-details-badges");
+    if (badgesHost) {
+      const updateInfo = resolveRepoUpdateInfo({
+        repo_link: entity.repo,
+        install_dir: entity.install_dir,
+        service_name: entity.service_name,
+      });
+      badgesHost.innerHTML = buildServiceBadgesHtml(status, configAutostart, true, true, updateInfo);
+    }
+    const raw = q("system-update-details-json");
+    if (raw) {
+      raw.textContent = JSON.stringify(entity, null, 2);
+    }
+    const modalEl = q("systemUpdateDetailsModal");
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
   }
 
   async function refreshSystemUpdateSummaries() {
     const playerCfgResp = await fetchJson("/api/stream/player/repo", { timeoutMs: 10000 });
     const playerCfg = playerCfgResp.config || {};
-    const playerServiceName = String(playerCfg.player_service_name || "joormann-media-deviceplayer.service").trim() || "joormann-media-deviceplayer.service";
+    const playerServiceName = String(playerCfg.player_service_name || DEFAULT_PLAYER_SERVICE_NAME).trim() || DEFAULT_PLAYER_SERVICE_NAME;
     const portalStatusResp = await fetchJson("/api/system/service/status?service_name=device-portal.service", { timeoutMs: 10000 });
     const playerStatusResp = await fetchJson(`/api/system/service/status?service_name=${encodeURIComponent(playerServiceName)}`, { timeoutMs: 10000 });
     const portalSummaryResp = await fetchJson("/api/system/portal/summary", { timeoutMs: 10000 });
@@ -4830,6 +4985,7 @@
       portal: {
         repo: String(portalSummary.repo_origin || portalSummary.repo_dir || "-"),
         install_dir: String(portalSummary.install_dir || portalSummary.repo_dir || "-"),
+        service_name: "device-portal.service",
         service_user: String(portalSummary.service_user || "-"),
         status: (portalStatusResp && portalStatusResp.data) || {},
       },
@@ -4882,7 +5038,7 @@
     const userQuick = String(q("stream-player-service-user-quick")?.value || "").trim();
     return {
       player_repo_link: repoMain || repoQuick,
-      player_service_name: (nameMain || nameQuick || "joormann-media-deviceplayer.service").trim(),
+      player_service_name: (nameMain || nameQuick || DEFAULT_PLAYER_SERVICE_NAME).trim(),
       player_service_user: (userMain || userQuick || "").trim(),
     };
   }
@@ -5009,14 +5165,12 @@
     const cards = list.map((item, idx) => {
       const repoId = String(item.id || "");
       const name = escapeHtml(String(item.name || "-"));
-      const repoLinkRaw = String(item.repo_link || "");
-      const repoLink = escapeHtml(repoLinkRaw || "-");
-      const installDir = escapeHtml(String(item.install_dir || "-"));
-      const service = escapeHtml(String(item.service_name || "-"));
-      const user = escapeHtml(String(item.service_user || "-"));
       const useService = item.use_service !== false;
       const autostart = item.autostart !== false;
+      const updateInfo = resolveRepoUpdateInfo(item);
+      const hasRepoUpdate = !!(updateInfo && updateInfo.available);
       const status = (item.service_status && typeof item.service_status === "object") ? item.service_status : {};
+      const isInstalled = !!(status.service_installed || status.service_running);
       const serviceInstalled = status.use_service === false ? "-" : (status.service_installed ? "ja" : "nein");
       const serviceRunning = status.use_service === false
         ? (status.runtime_reachable ? "ja" : "nein")
@@ -5056,9 +5210,20 @@
       const openButtonHtml = devUiMode
         ? `<a class="btn btn-outline-info btn-sm ${hasUiUrl ? "" : "disabled"}" ${hasUiUrl ? `href="${uiUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#" tabindex="-1" aria-disabled="true"'}>Öffnen</a>`
         : "";
-      const linkHtml = repoLinkRaw
-        ? `<a href="${escapeHtml(repoLinkRaw)}" target="_blank" rel="noopener noreferrer">${repoLink}</a>`
-        : "-";
+      const installOrUninstallButtonHtml = isInstalled
+        ? `<button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>`
+        : `<button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="install_update" data-id="${escapeHtml(repoId)}">Install</button>`;
+      const updateButtonHtml = (isInstalled && hasRepoUpdate)
+        ? `<button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="update" data-id="${escapeHtml(repoId)}">Update</button>`
+        : "";
+      const autostartButtonLabel = autostart ? "Autostart deaktivieren" : "Autostart aktivieren";
+      const updateBadgeHtml = updateInfo
+        ? (hasRepoUpdate
+          ? '<span class="badge text-bg-warning border">Update: verfügbar</span>'
+          : (String(updateInfo.error || "").trim()
+            ? '<span class="badge text-bg-secondary border">Update: unbekannt</span>'
+            : '<span class="badge text-bg-success border">Update: aktuell</span>'))
+        : "";
       return `
         <section class="mb-3">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
@@ -5071,36 +5236,17 @@
               <span class="badge text-bg-light border">Läuft: ${serviceRunning}</span>
               <span class="badge text-bg-light border">Autostart (Config): ${autostart ? "aktiv" : "aus"}</span>
               <span class="badge text-bg-light border">Autostart (System): ${serviceAutostart}</span>
-            </div>
-          </div>
-          <div class="row g-2 mb-3">
-            <div class="col-12 col-lg-6">
-              <label class="form-label form-label-sm mb-1">Repo</label>
-              <div class="form-control form-control-sm text-break bg-body-tertiary">${linkHtml}</div>
-            </div>
-            <div class="col-12 col-lg-6">
-              <label class="form-label form-label-sm mb-1">Installationspfad</label>
-              <div class="form-control form-control-sm text-break bg-body-tertiary">${installDir}</div>
-            </div>
-            <div class="col-12 col-lg-4">
-              <label class="form-label form-label-sm mb-1">Service</label>
-              <div class="form-control form-control-sm bg-body-tertiary">${service}</div>
-            </div>
-            <div class="col-12 col-lg-2">
-              <label class="form-label form-label-sm mb-1">User</label>
-              <div class="form-control form-control-sm bg-body-tertiary">${user}</div>
+              ${updateBadgeHtml}
             </div>
           </div>
           <div class="d-flex flex-wrap gap-2">
             ${openButtonHtml}
-            <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="load" data-id="${escapeHtml(repoId)}">Laden</button>
             <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
-            <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="set_as_player" data-id="${escapeHtml(repoId)}">Als Stream-Player setzen</button>
-            <button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="install_update" data-id="${escapeHtml(repoId)}">Install/Update</button>
+            ${updateButtonHtml}
+            ${installOrUninstallButtonHtml}
             <button class="btn btn-outline-success btn-sm js-extra-repo-action" data-action="service_action" data-service-action="${controlAction}" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>${controlLabel}</button>
             <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="service_action" data-service-action="restart" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>Restart</button>
-            <button class="btn btn-outline-warning btn-sm js-extra-repo-action" data-action="toggle_autostart" data-enabled="${autostart ? "0" : "1"}" data-id="${escapeHtml(repoId)}">${autostart ? "Autostart aus" : "Autostart an"}</button>
-            <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>
+            <button class="btn btn-outline-warning btn-sm js-extra-repo-action" data-action="toggle_autostart" data-enabled="${autostart ? "0" : "1"}" data-id="${escapeHtml(repoId)}">${autostartButtonLabel}</button>
             <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="delete" data-id="${escapeHtml(repoId)}">Löschen</button>
           </div>
           ${idx < list.length - 1 ? '<hr class="my-3">' : ''}
@@ -5169,7 +5315,7 @@
     toast("Autodiscover-Service übernommen", "success");
   }
 
-  async function refreshManagedRepos(live = false) {
+  async function refreshManagedRepos(live = true) {
     const suffix = live ? "?live=1" : "";
     const payload = await fetchJson(`/api/stream/player/repos${suffix}`, { timeoutMs: 10000 });
     const repos = (((payload || {}).data || {}).repos) || [];
@@ -5242,7 +5388,7 @@
     if (!repoLink) {
       throw new Error("Repo-Link fehlt.");
     }
-    const serviceName = String(target.service_name || "").trim() || "joormann-media-deviceplayer.service";
+    const serviceName = String(target.service_name || "").trim() || DEFAULT_PLAYER_SERVICE_NAME;
     const serviceUser = String(target.service_user || "").trim();
     const installDir = String(target.install_dir || "").trim();
     await fetchJson("/api/stream/player/repo", {
@@ -5575,6 +5721,20 @@
     await refreshPlayerStatus();
     await refreshSystemUpdateSummaries();
     toast(`Player ${action}`, "success");
+  }
+
+  async function portalServiceAction(action) {
+    const safeAction = String(action || "").trim().toLowerCase();
+    if (!["start", "stop"].includes(safeAction)) {
+      throw new Error("Ungültige Portal-Service-Aktion.");
+    }
+    await fetchJson("/api/system/service/action", {
+      method: "POST",
+      body: { service_name: "device-portal.service", action: safeAction },
+      timeoutMs: 12000,
+    });
+    await refreshSystemUpdateSummaries();
+    toast(`Portal ${safeAction}`, "success");
   }
 
   async function installPlayerService() {
@@ -6988,6 +7148,7 @@
       const refreshUpdateTabData = () => {
         runQuiet(refreshManagedRepos);
         runQuiet(refreshAutodiscoverServices);
+        runQuiet(refreshStatus);
       };
       updateSubTab.addEventListener("click", refreshUpdateTabData);
       updateSubTab.addEventListener("shown.bs.tab", refreshUpdateTabData);
@@ -7063,9 +7224,16 @@
     if (streamAudioFilesLoadBtn) {
       streamAudioFilesLoadBtn.addEventListener("click", () => run(() => refreshStreamAudioFiles()));
     }
-    q("btn-stream-player-repo-save").addEventListener("click", () => run(savePlayerRepoConfig));
+    const streamPlayerRepoSaveBtn = q("btn-stream-player-repo-save");
+    if (streamPlayerRepoSaveBtn) {
+      streamPlayerRepoSaveBtn.addEventListener("click", () => run(savePlayerRepoConfig));
+    }
     q("btn-stream-player-install-update").addEventListener("click", () => run(startStreamPlayerInstallUpdate));
     q("btn-stream-player-update-status").addEventListener("click", () => run(() => pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId)));
+    const btnSystemPlayerUpdate = q("btn-system-player-update");
+    if (btnSystemPlayerUpdate) {
+      btnSystemPlayerUpdate.addEventListener("click", () => run(startStreamPlayerInstallUpdate));
+    }
     const extraRepoSaveBtn = q("btn-extra-repo-save");
     if (extraRepoSaveBtn) {
       extraRepoSaveBtn.addEventListener("click", () => run(saveManagedRepo));
@@ -7087,28 +7255,22 @@
         const repoId = String(btn.dataset.id || "").trim();
         if (!action || !repoId) return;
         run(async () => {
-          if (action === "load") {
-            const target = getManagedRepoById(repoId);
-            if (target) {
-              setManagedRepoFormValues(target);
-              toast("Repo in Formular geladen", "success");
-            }
-            return;
-          }
           if (action === "delete") {
             await deleteManagedRepo(repoId);
             return;
           }
+          if (action === "update") {
+            await startManagedRepoInstallUpdate(repoId);
+            await refreshStatus();
+            return;
+          }
           if (action === "install_update") {
             await startManagedRepoInstallUpdate(repoId);
+            await refreshStatus();
             return;
           }
           if (action === "details") {
             showManagedRepoDetails(repoId);
-            return;
-          }
-          if (action === "set_as_player") {
-            await setManagedRepoAsPlayer(repoId);
             return;
           }
           if (action === "toggle_autostart") {
@@ -7445,26 +7607,34 @@
       await refreshApClients();
     }));
     q("btn-system-update-portal").addEventListener("click", () => run(updatePortal));
+    const btnSystemPortalUpdate = q("btn-system-portal-update");
+    if (btnSystemPortalUpdate) {
+      btnSystemPortalUpdate.addEventListener("click", () => run(updatePortal));
+    }
     q("btn-system-install-portal-service").addEventListener("click", () => run(installPortalService));
+    const btnSystemPortalDetails = q("btn-system-portal-details");
+    if (btnSystemPortalDetails) {
+      btnSystemPortalDetails.addEventListener("click", () => showSystemUpdateDetails("portal"));
+    }
     const btnPortalRestartNow = q("btn-system-portal-restart-now");
     if (btnPortalRestartNow) {
       btnPortalRestartNow.addEventListener("click", () => run(restartPortalServiceNow));
     }
-    const btnSystemPlayerStart = q("btn-system-player-start");
-    if (btnSystemPlayerStart) {
-      btnSystemPlayerStart.addEventListener("click", () => run(() => playerAction("start")));
+    const btnSystemPortalToggle = q("btn-system-portal-toggle");
+    if (btnSystemPortalToggle) {
+      btnSystemPortalToggle.addEventListener("click", () => run(() => portalServiceAction(btnSystemPortalToggle.dataset.action || "start")));
     }
-    const btnSystemPlayerStop = q("btn-system-player-stop");
-    if (btnSystemPlayerStop) {
-      btnSystemPlayerStop.addEventListener("click", () => run(() => playerAction("stop")));
+    const btnSystemPlayerToggle = q("btn-system-player-toggle");
+    if (btnSystemPlayerToggle) {
+      btnSystemPlayerToggle.addEventListener("click", () => run(() => playerAction(btnSystemPlayerToggle.dataset.action || "start")));
     }
     const btnSystemPlayerRestart = q("btn-system-player-restart");
     if (btnSystemPlayerRestart) {
       btnSystemPlayerRestart.addEventListener("click", () => run(() => playerAction("restart")));
     }
-    const btnSystemPlayerStatus = q("btn-system-player-status");
-    if (btnSystemPlayerStatus) {
-      btnSystemPlayerStatus.addEventListener("click", () => run(refreshPlayerStatus));
+    const btnSystemPlayerDetails = q("btn-system-player-details");
+    if (btnSystemPlayerDetails) {
+      btnSystemPlayerDetails.addEventListener("click", () => showSystemUpdateDetails("player"));
     }
     q("btn-status-shutdown").addEventListener("click", () => run(() => requestSystemPower("shutdown")));
     q("btn-status-reboot").addEventListener("click", () => run(() => requestSystemPower("reboot")));
