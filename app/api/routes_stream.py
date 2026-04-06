@@ -1320,6 +1320,87 @@ def _sanitize_llm_manager_payload(payload: dict) -> dict:
     }
 
 
+def _llm_manager_repo_match(repo: dict) -> bool:
+    if not isinstance(repo, dict):
+        return False
+    name = str(repo.get("name") or "").strip().lower()
+    link = str(repo.get("repo_link") or repo.get("repo_dir") or "").strip().lower()
+    service = str(repo.get("service_name") or "").strip().lower()
+    return "llm-lab" in name or "jarvis-llm-lab" in link or "llm-lab" in service
+
+
+def _llm_manager_repo_installed(repo: dict) -> bool:
+    if not isinstance(repo, dict):
+        return False
+    status = repo.get("service_status") if isinstance(repo.get("service_status"), dict) else {}
+    if status.get("service_installed") or status.get("service_running"):
+        return True
+    install_dir = str(repo.get("install_dir") or "").strip()
+    if install_dir:
+        try:
+            return Path(install_dir).exists()
+        except Exception:
+            return False
+    return False
+
+
+def _llm_manager_api_base(repo: dict) -> str:
+    api_base = str(repo.get("api_base_url") or "").strip().rstrip("/")
+    if api_base:
+        return api_base
+    health = str(repo.get("health_url") or "").strip()
+    if health.endswith("/health"):
+        return health[:-7].rstrip("/")
+    return ""
+
+
+def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False) -> dict | None:
+    if not isinstance(cfg, dict):
+        return None
+    repos = cfg.get("managed_install_repos")
+    repos_list = repos if isinstance(repos, list) else []
+    repo = next((item for item in repos_list if _llm_manager_repo_match(item)), None)
+    if not repo or not isinstance(repo, dict):
+        return None
+    if not _llm_manager_repo_installed(repo):
+        return None
+    api_base = _llm_manager_api_base(repo)
+    if not api_base:
+        return None
+
+    try:
+        resp = requests.get(f"{api_base}/api/llm/summary", timeout=2.5)
+        if resp.status_code != 200:
+            return None
+        summary = resp.json() if resp.content else {}
+    except Exception:
+        return None
+
+    if not isinstance(summary, dict):
+        return None
+
+    payload = {
+        "source": "llm-lab-runtime",
+        "repo_link": str(repo.get("repo_link") or "").strip(),
+        "install_dir": str(repo.get("install_dir") or "").strip(),
+        "service_name": str(repo.get("service_name") or "").strip(),
+        "service_user": str(repo.get("service_user") or "").strip(),
+        "api_base_url": api_base,
+        "health_url": str(repo.get("health_url") or "").strip(),
+        "ui_url": str(repo.get("ui_url") or "").strip(),
+        "ollama": summary.get("ollama") if isinstance(summary.get("ollama"), dict) else {},
+        "default_model": summary.get("default_model", ""),
+        "models": summary.get("models") if isinstance(summary.get("models"), list) else [],
+    }
+    sanitized = _sanitize_llm_manager_payload(payload)
+    cfg["llm_manager"] = sanitized
+    cfg["updated_at"] = utc_now()
+    ok, _ = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return None
+    return sanitized
+
+
 def _path_browser_allowed_roots(cfg: dict) -> list[Path]:
     candidates: list[Path] = []
     service_user = str(cfg.get('player_service_user') or '').strip()
@@ -1636,6 +1717,15 @@ def api_llm_manager_status():
     cfg = ensure_config()
     llm = cfg.get('llm_manager')
     return jsonify(ok=True, data={'llm_manager': llm if isinstance(llm, dict) else {}})
+
+
+@bp_stream.post('/api/llm-manager/refresh')
+def api_llm_manager_refresh():
+    cfg = ensure_config()
+    refreshed = refresh_llm_manager_from_runtime(cfg, force=True)
+    if not refreshed:
+        return jsonify(ok=False, error='llm_manager_unavailable', detail='LLM-Manager konnte nicht aktualisiert werden.'), 502
+    return jsonify(ok=True, data={'llm_manager': refreshed})
 
 
 @bp_stream.post('/api/autodiscover/services/<service_id>/promote')

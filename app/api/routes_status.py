@@ -6,6 +6,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify
 
 from app.api import routes_panel
+from app.api.routes_stream import refresh_llm_manager_from_runtime
 from app.core.config import ensure_config
 from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
@@ -219,6 +220,11 @@ def _build_runtime_viewmodel() -> dict:
         legacy["system_update_summary"] = cached_summary if isinstance(cached_summary, dict) else {}
     except Exception:
         legacy["system_update_summary"] = {}
+    try:
+        cfg = ensure_config()
+        refresh_llm_manager_from_runtime(cfg, force=True)
+    except Exception:
+        pass
     try:
         cfg = ensure_config()
         llm_manager = cfg.get("llm_manager")

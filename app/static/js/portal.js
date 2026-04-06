@@ -5005,14 +5005,16 @@
     const card = q("llm-manager-card");
     if (!card) return;
     const cfg = statusPayload && typeof statusPayload === "object" ? (statusPayload.config || {}) : {};
-    const repos = Array.isArray(cfg.managed_install_repos) ? cfg.managed_install_repos : [];
+    const repos = (Array.isArray(managedInstallRepos) && managedInstallRepos.length)
+      ? managedInstallRepos
+      : (Array.isArray(cfg.managed_install_repos) ? cfg.managed_install_repos : []);
     const repo = findLlmManagerRepo(repos);
     if (!repo || typeof repo !== "object") {
       card.classList.add("d-none");
       return;
     }
     const status = (repo.service_status && typeof repo.service_status === "object") ? repo.service_status : {};
-    const installed = !!(status.service_installed || status.service_running);
+    const installed = !!(status.service_installed || status.service_running || _repoLooksInstalled(repo));
     if (!installed) {
       card.classList.add("d-none");
       return;
@@ -7499,6 +7501,13 @@
         await refreshStatus();
       }));
     }
+    const llmReportBtn = q("btn-llm-manager-report");
+    if (llmReportBtn) {
+      llmReportBtn.addEventListener("click", () => run(async () => {
+        await fetchJson("/api/llm-manager/refresh", { method: "POST" });
+        await refreshStatus();
+      }));
+    }
     const llmToggleBtn = q("btn-llm-manager-toggle");
     if (llmToggleBtn) {
       llmToggleBtn.addEventListener("click", () => run(async () => {
@@ -7507,6 +7516,11 @@
         if (!repoId) throw new Error("LLM-Manager Repo nicht gefunden.");
         if (!action) throw new Error("Ungültige Action.");
         await controlManagedRepoService(repoId, action);
+        if (action === "start") {
+          await new Promise((resolve) => window.setTimeout(resolve, 1200));
+          await fetchJson("/api/llm-manager/refresh", { method: "POST" });
+          await refreshStatus();
+        }
       }));
     }
     const llmRestartBtn = q("btn-llm-manager-restart");
@@ -7515,6 +7529,9 @@
         const repoId = String(llmManagerState?.repo?.id || "").trim();
         if (!repoId) throw new Error("LLM-Manager Repo nicht gefunden.");
         await controlManagedRepoService(repoId, "restart");
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        await fetchJson("/api/llm-manager/refresh", { method: "POST" });
+        await refreshStatus();
       }));
     }
     const llmAutostartBtn = q("btn-llm-manager-autostart");
