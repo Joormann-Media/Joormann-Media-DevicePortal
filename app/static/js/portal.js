@@ -707,6 +707,15 @@
     updateBadge.classList.remove("text-bg-danger", "text-bg-secondary", "text-bg-warning", "text-bg-success");
 
     const visibleCount = countVisibleRepoUpdates();
+    const tabBadge = q("system-update-tab-badge");
+    if (tabBadge) {
+      if (visibleCount > 0) {
+        tabBadge.textContent = String(visibleCount);
+        tabBadge.classList.remove("d-none");
+      } else {
+        tabBadge.classList.add("d-none");
+      }
+    }
     if (visibleCount > 0) {
       updateBadge.classList.add("text-bg-warning");
       updateBadge.textContent = `Updates verfügbar (${visibleCount})`;
@@ -5476,11 +5485,21 @@
             ? '<span class="badge text-bg-secondary border">Update: unbekannt</span>'
             : '<span class="badge text-bg-success border">Update: aktuell</span>'))
         : "";
+      const checkboxHtml = hasRepoUpdate
+        ? `<div class="form-check d-inline-flex align-items-center m-0">
+             <input class="form-check-input js-repo-update-check me-1" type="checkbox"
+               id="repo-upd-chk-${escapeHtml(repoId)}" data-id="${escapeHtml(repoId)}">
+             <label class="form-check-label small text-warning fw-semibold" for="repo-upd-chk-${escapeHtml(repoId)}">
+               auswählen
+             </label>
+           </div>`
+        : "";
       return `
         <section class="mb-3">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-            <div>
-              <h3 class="h6 mb-2">${name}</h3>
+            <div class="d-flex align-items-center gap-2">
+              ${checkboxHtml}
+              <h3 class="h6 mb-0">${name}</h3>
             </div>
             <div class="d-flex flex-wrap gap-1">
               <span class="badge text-bg-light border">Service: ${useService ? "ja" : "nein"}</span>
@@ -5509,6 +5528,58 @@
     recomputeStreamFeatureState();
     applyStreamFeatureVisibility();
     renderHeroUpdateBadge((statusDashboardState.status || {}).app_update || {}, repoUpdatesState);
+    updateBulkUpdateToolbar();
+  }
+
+  function updateBulkUpdateToolbar() {
+    const toolbar = q("bulk-update-toolbar");
+    const countEl = q("bulk-update-selection-count");
+    const countBtnEl = q("bulk-update-repo-count");
+    const btn = q("btn-bulk-update-repos");
+    const selectAll = q("bulk-select-all-updates");
+    const hasUpdates = managedInstallRepos.some((r) => {
+      const ui = resolveRepoUpdateInfo(r);
+      return ui && ui.available;
+    });
+    if (toolbar) {
+      if (hasUpdates) {
+        toolbar.classList.remove("d-none");
+        toolbar.classList.add("d-flex");
+      } else {
+        toolbar.classList.add("d-none");
+        toolbar.classList.remove("d-flex");
+      }
+    }
+    const allChecks = document.querySelectorAll(".js-repo-update-check:not(:disabled)");
+    const checkedChecks = document.querySelectorAll(".js-repo-update-check:checked");
+    const selectedCount = checkedChecks.length;
+    if (countEl) countEl.textContent = `${selectedCount} ausgewählt`;
+    if (countBtnEl) countBtnEl.textContent = String(selectedCount);
+    if (btn) btn.disabled = selectedCount === 0;
+    if (selectAll && allChecks.length > 0) {
+      selectAll.indeterminate = selectedCount > 0 && selectedCount < allChecks.length;
+      selectAll.checked = selectedCount === allChecks.length;
+    }
+  }
+
+  async function bulkUpdateSelectedRepos() {
+    const checks = document.querySelectorAll(".js-repo-update-check:checked");
+    const ids = Array.from(checks).map((c) => String(c.dataset.id || "").trim()).filter(Boolean);
+    if (!ids.length) return;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await startManagedRepoInstallUpdate(id);
+      } catch (e) {
+        failed += 1;
+        const target = getManagedRepoById(id);
+        toast(`Update fehlgeschlagen: ${String((target && target.name) || id)}`, "danger");
+      }
+    }
+    await refreshStatus();
+    if (failed === 0) {
+      toast(`${ids.length} Repo(s) erfolgreich aktualisiert`, "success");
+    }
   }
 
   function renderManagedReposFromCache() {
@@ -7380,18 +7451,12 @@
   }
 
   function openUpdateTab() {
-    const systemTab = q("system-tab");
-    const systemSubUpdateTab = q("system-sub-update-tab");
-    const updatePane = q("system-sub-update");
-    if (systemTab && window.bootstrap && window.bootstrap.Tab) {
-      window.bootstrap.Tab.getOrCreateInstance(systemTab).show();
-    } else if (systemTab) {
-      systemTab.click();
-    }
-    if (systemSubUpdateTab && window.bootstrap && window.bootstrap.Tab) {
-      window.bootstrap.Tab.getOrCreateInstance(systemSubUpdateTab).show();
-    } else if (systemSubUpdateTab) {
-      systemSubUpdateTab.click();
+    const systemUpdateTab = q("system-update-tab");
+    const updatePane = q("system-update-pane");
+    if (systemUpdateTab && window.bootstrap && window.bootstrap.Tab) {
+      window.bootstrap.Tab.getOrCreateInstance(systemUpdateTab).show();
+    } else if (systemUpdateTab) {
+      systemUpdateTab.click();
     }
     if (updatePane && typeof updatePane.scrollIntoView === "function") {
       updatePane.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -7399,15 +7464,15 @@
   }
 
   function bindButtons() {
-    const updateSubTab = q("system-sub-update-tab");
-    if (updateSubTab) {
+    const updateMainTab = q("system-update-tab");
+    if (updateMainTab) {
       const refreshUpdateTabData = () => {
         runQuiet(refreshManagedRepos);
         runQuiet(refreshAutodiscoverServices);
         runQuiet(refreshStatus);
       };
-      updateSubTab.addEventListener("click", refreshUpdateTabData);
-      updateSubTab.addEventListener("shown.bs.tab", refreshUpdateTabData);
+      updateMainTab.addEventListener("click", refreshUpdateTabData);
+      updateMainTab.addEventListener("shown.bs.tab", refreshUpdateTabData);
     }
 
     initPlayerRepoFieldSync();
@@ -7512,8 +7577,26 @@
     if (extraRepoBrowseBtn) {
       extraRepoBrowseBtn.addEventListener("click", () => run(openRepoInstallPathModal));
     }
+    const bulkSelectAll = q("bulk-select-all-updates");
+    if (bulkSelectAll) {
+      bulkSelectAll.addEventListener("change", () => {
+        const checks = document.querySelectorAll(".js-repo-update-check:not(:disabled)");
+        checks.forEach((c) => { c.checked = bulkSelectAll.checked; });
+        updateBulkUpdateToolbar();
+      });
+    }
+    const bulkUpdateBtn = q("btn-bulk-update-repos");
+    if (bulkUpdateBtn) {
+      bulkUpdateBtn.addEventListener("click", () => run(bulkUpdateSelectedRepos));
+    }
+
     const extraRepoList = q("extra-repos-list");
     if (extraRepoList) {
+      extraRepoList.addEventListener("change", (event) => {
+        if (event.target && event.target.classList.contains("js-repo-update-check")) {
+          updateBulkUpdateToolbar();
+        }
+      });
       extraRepoList.addEventListener("click", (event) => {
         const btn = event.target && event.target.closest ? event.target.closest("button.js-extra-repo-action") : null;
         if (!btn) return;

@@ -141,8 +141,13 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
         </button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link" id="system-update-tab" data-bs-toggle="tab" data-bs-target="#system-update-pane" type="button" role="tab">
+          <i class="bi bi-arrow-repeat me-1"></i>System<span id="system-update-tab-badge" class="badge text-bg-warning ms-1 d-none">!</span>
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-pane" type="button" role="tab">
-          <i class="bi bi-gear me-1"></i>System
+          <i class="bi bi-sliders me-1"></i>Verwaltung
         </button>
       </li>
       <li class="nav-item" role="presentation">
@@ -1389,6 +1394,144 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
         </div>
       </div>
 
+      <div class="tab-pane fade" id="system-update-pane" role="tabpanel" aria-labelledby="system-update-tab">
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="portal-card p-4">
+              <section id="llm-manager-card" class="mb-3 d-none">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                  <div>
+                    <h3 class="h6 mb-2">LLM-Manager</h3>
+                    <div id="llm-manager-health" class="small text-secondary">Health: -</div>
+                  </div>
+                  <div id="llm-manager-badges" class="d-flex flex-wrap gap-1 small"></div>
+                </div>
+                <div class="row g-3">
+                  <div class="col-12 col-xl-5">
+                    <div class="d-flex flex-wrap gap-2">
+                      <button id="btn-llm-manager-details" class="btn btn-outline-dark btn-sm">Details</button>
+                      <button id="btn-llm-manager-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
+                      <button id="btn-llm-manager-report" class="btn btn-outline-secondary btn-sm">Report jetzt</button>
+                      <button id="btn-llm-manager-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
+                      <button id="btn-llm-manager-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
+                      <button id="btn-llm-manager-autostart" class="btn btn-outline-warning btn-sm" data-enabled="1">Autostart aktivieren</button>
+                    </div>
+                  </div>
+                  <div class="col-12 col-xl-7">
+                    <div class="small text-uppercase text-secondary mb-2">Modelle</div>
+                    <div id="llm-manager-models" class="small text-secondary">Keine Modelle gemeldet.</div>
+                  </div>
+                </div>
+              </section>
+              <section class="mb-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                  <div>
+                    <h3 class="h6 mb-2">Device-Portal</h3>
+                  </div>
+                  <div id="system-portal-status-badges" class="d-flex flex-wrap gap-1 small"></div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="btn-system-portal-details" class="btn btn-outline-dark btn-sm">Details</button>
+                  <button id="btn-system-portal-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
+                  <button id="btn-system-update-portal" class="btn btn-outline-primary btn-sm">Update starten</button>
+                  <button id="btn-system-install-portal-service" class="btn btn-outline-secondary btn-sm">Service installieren / umschalten</button>
+                  <button id="btn-system-portal-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
+                  <button id="btn-system-portal-restart-now" class="btn btn-outline-secondary btn-sm">Restart</button>
+                </div>
+              </section>
+              <hr class="my-3">
+              <section class="mb-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                  <div>
+                    <h3 class="h6 mb-2">Joormann-Media-Jarvis-DisplayPlayer</h3>
+                  </div>
+                  <div id="system-player-status-badges" class="d-flex flex-wrap gap-1 small"></div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-0">
+                  <button id="btn-system-player-details" class="btn btn-outline-dark btn-sm">Details</button>
+                  <button id="btn-system-player-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
+                  <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Install/Update</button>
+                  <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
+                  <button id="btn-system-player-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
+                  <button id="btn-system-player-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
+                </div>
+              </section>
+              <hr class="my-3">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <h4 class="h6 mb-0">Weitere Repos</h4>
+                <button id="btn-extra-repo-refresh" class="btn btn-outline-secondary btn-sm">Liste aktualisieren</button>
+              </div>
+              <div id="bulk-update-toolbar" class="d-none mb-3 p-2 rounded border bg-light d-flex flex-wrap align-items-center gap-2">
+                <div class="form-check m-0">
+                  <input class="form-check-input" type="checkbox" id="bulk-select-all-updates">
+                  <label class="form-check-label small fw-semibold" for="bulk-select-all-updates">Alle auswählen</label>
+                </div>
+                <span id="bulk-update-selection-count" class="text-secondary small">0 ausgewählt</span>
+                <button id="btn-bulk-update-repos" class="btn btn-primary btn-sm ms-auto" disabled>
+                  <i class="bi bi-arrow-repeat me-1"></i>Ausgewählte updaten (<span id="bulk-update-repo-count">0</span>)
+                </button>
+              </div>
+              <div id="extra-repos-list" class="small mb-3">Keine zusätzlichen Repos hinterlegt.</div>
+              <h4 class="h6 mb-2">Repo hinzufügen / bearbeiten</h4>
+              <input id="extra-repo-id" type="hidden" value="">
+              <div class="row g-2 mb-2">
+                <div class="col-12 col-lg-3">
+                  <label for="extra-repo-name" class="form-label form-label-sm mb-1">Name</label>
+                  <input id="extra-repo-name" type="text" class="form-control form-control-sm" placeholder="Jarvis AudioPlayer">
+                </div>
+                <div class="col-12 col-lg-4">
+                  <label for="extra-repo-link" class="form-label form-label-sm mb-1">Repo Link / Pfad</label>
+                  <input id="extra-repo-link" type="text" class="form-control form-control-sm" placeholder="https://github.com/.../repo.git">
+                </div>
+                <div class="col-12 col-lg-2">
+                  <label for="extra-repo-install-dir" class="form-label form-label-sm mb-1">Installationspfad</label>
+                  <div class="input-group input-group-sm">
+                    <input id="extra-repo-install-dir" type="text" class="form-control form-control-sm" placeholder="/home/djanebmb/projects/RepoName">
+                    <button id="btn-extra-repo-install-dir-browse" type="button" class="btn btn-outline-secondary" title="Ordner auswählen">
+                      <i class="bi bi-folder2-open"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-2">
+                  <label for="extra-repo-service-name" class="form-label form-label-sm mb-1">Service</label>
+                  <input id="extra-repo-service-name" type="text" class="form-control form-control-sm" placeholder="optional (auto: repo-name.service)">
+                </div>
+                <div class="col-12 col-lg-1">
+                  <label for="extra-repo-service-user" class="form-label form-label-sm mb-1">User</label>
+                  <input id="extra-repo-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
+                </div>
+              </div>
+              <div class="d-flex flex-wrap gap-3 mb-2">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" role="switch" id="extra-repo-use-service" checked>
+                  <label class="form-check-label small" for="extra-repo-use-service">Als Service installieren</label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" role="switch" id="extra-repo-autostart" checked>
+                  <label class="form-check-label small" for="extra-repo-autostart">Autostart aktivieren</label>
+                </div>
+              </div>
+              <div class="d-flex flex-wrap gap-2 mb-2">
+                <button id="btn-extra-repo-save" class="btn btn-outline-secondary btn-sm">Repo hinzufügen</button>
+              </div>
+              <hr class="my-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0">Autodiscover (LAN)</h3>
+                <button id="btn-autodiscover-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
+              </div>
+              <div class="small text-secondary mb-2">Services melden sich beim Start an `/autodiscover` und können hier direkt übernommen werden.</div>
+              <div id="autodiscover-services-list" class="small text-secondary">Keine Autodiscover-Einträge.</div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="portal-card p-4">
+              <h3 class="h6 mb-2">Update & Install Log</h3>
+              <pre id="system-update-log" class="code-block mb-0" style="max-height: 260px; overflow:auto;">-</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="tab-pane fade" id="system-pane" role="tabpanel" aria-labelledby="system-tab">
         <ul class="nav nav-pills nav-justified gap-2 mb-3 system-subtabs" id="systemSubTabs" role="tablist">
           <li class="nav-item" role="presentation">
@@ -1424,19 +1567,6 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
                 <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
               </svg>
               Sync
-            </button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="system-sub-update-tab" data-bs-toggle="tab" data-bs-target="#system-sub-update" type="button" role="tab">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
-                <path d="m12 14 4-4"></path>
-                <path d="M16 10V20"></path>
-                <path d="M8 4 4 8"></path>
-                <path d="M4 8V18"></path>
-                <path d="M20 4H10"></path>
-                <path d="M14 20H4"></path>
-              </svg>
-              Update
             </button>
           </li>
 	        </ul>
@@ -1626,130 +1756,6 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
             </div>
           </div>
 
-          <div class="tab-pane fade" id="system-sub-update" role="tabpanel" aria-labelledby="system-sub-update-tab">
-            <div class="row g-3">
-              <div class="col-12">
-                <div class="portal-card p-4">
-                  <section id="llm-manager-card" class="mb-3 d-none">
-                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-                      <div>
-                        <h3 class="h6 mb-2">LLM-Manager</h3>
-                        <div id="llm-manager-health" class="small text-secondary">Health: -</div>
-                      </div>
-                      <div id="llm-manager-badges" class="d-flex flex-wrap gap-1 small"></div>
-                    </div>
-                    <div class="row g-3">
-                      <div class="col-12 col-xl-5">
-                        <div class="d-flex flex-wrap gap-2">
-                          <button id="btn-llm-manager-details" class="btn btn-outline-dark btn-sm">Details</button>
-                          <button id="btn-llm-manager-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
-                          <button id="btn-llm-manager-report" class="btn btn-outline-secondary btn-sm">Report jetzt</button>
-                          <button id="btn-llm-manager-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
-                          <button id="btn-llm-manager-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
-                          <button id="btn-llm-manager-autostart" class="btn btn-outline-warning btn-sm" data-enabled="1">Autostart aktivieren</button>
-                        </div>
-                      </div>
-                      <div class="col-12 col-xl-7">
-                        <div class="small text-uppercase text-secondary mb-2">Modelle</div>
-                        <div id="llm-manager-models" class="small text-secondary">Keine Modelle gemeldet.</div>
-                      </div>
-                    </div>
-                  </section>
-                  <section class="mb-3">
-                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-                      <div>
-                        <h3 class="h6 mb-2">Device-Portal</h3>
-                      </div>
-                      <div id="system-portal-status-badges" class="d-flex flex-wrap gap-1 small"></div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2">
-                      <button id="btn-system-portal-details" class="btn btn-outline-dark btn-sm">Details</button>
-                      <button id="btn-system-portal-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
-                      <button id="btn-system-update-portal" class="btn btn-outline-primary btn-sm">Update starten</button>
-                      <button id="btn-system-install-portal-service" class="btn btn-outline-secondary btn-sm">Service installieren / umschalten</button>
-                      <button id="btn-system-portal-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
-                      <button id="btn-system-portal-restart-now" class="btn btn-outline-secondary btn-sm">Restart</button>
-                    </div>
-                  </section>
-                  <hr class="my-3">
-                  <section class="mb-3">
-                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-                      <div>
-                        <h3 class="h6 mb-2">Joormann-Media-Jarvis-DisplayPlayer</h3>
-                      </div>
-                      <div id="system-player-status-badges" class="d-flex flex-wrap gap-1 small"></div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2 mb-0">
-                      <button id="btn-system-player-details" class="btn btn-outline-dark btn-sm">Details</button>
-                      <button id="btn-system-player-update" class="btn btn-outline-primary btn-sm d-none">Update</button>
-                      <button id="btn-stream-player-install-update" class="btn btn-outline-primary btn-sm">Install/Update</button>
-                      <button id="btn-stream-player-update-status" class="btn btn-outline-secondary btn-sm">Update-Status</button>
-                      <button id="btn-system-player-toggle" class="btn btn-outline-warning btn-sm" data-action="stop">Stop</button>
-                      <button id="btn-system-player-restart" class="btn btn-outline-secondary btn-sm">Restart</button>
-                    </div>
-                  </section>
-                  <hr class="my-3">
-                  <div id="extra-repos-list" class="small mb-3">Keine zusätzlichen Repos hinterlegt.</div>
-                  <h4 class="h6 mb-2">Repo hinzufügen / bearbeiten</h4>
-                  <input id="extra-repo-id" type="hidden" value="">
-                  <div class="row g-2 mb-2">
-                    <div class="col-12 col-lg-3">
-                      <label for="extra-repo-name" class="form-label form-label-sm mb-1">Name</label>
-                      <input id="extra-repo-name" type="text" class="form-control form-control-sm" placeholder="Jarvis AudioPlayer">
-                    </div>
-                    <div class="col-12 col-lg-4">
-                      <label for="extra-repo-link" class="form-label form-label-sm mb-1">Repo Link / Pfad</label>
-                      <input id="extra-repo-link" type="text" class="form-control form-control-sm" placeholder="https://github.com/.../repo.git">
-                    </div>
-                    <div class="col-12 col-lg-2">
-                      <label for="extra-repo-install-dir" class="form-label form-label-sm mb-1">Installationspfad</label>
-                      <div class="input-group input-group-sm">
-                        <input id="extra-repo-install-dir" type="text" class="form-control form-control-sm" placeholder="/home/djanebmb/projects/RepoName">
-                        <button id="btn-extra-repo-install-dir-browse" type="button" class="btn btn-outline-secondary" title="Ordner auswählen">
-                          <i class="bi bi-folder2-open"></i>
-                        </button>
-                      </div>
-                    </div>
-                    <div class="col-12 col-lg-2">
-                      <label for="extra-repo-service-name" class="form-label form-label-sm mb-1">Service</label>
-                      <input id="extra-repo-service-name" type="text" class="form-control form-control-sm" placeholder="optional (auto: repo-name.service)">
-                    </div>
-                    <div class="col-12 col-lg-1">
-                      <label for="extra-repo-service-user" class="form-label form-label-sm mb-1">User</label>
-                      <input id="extra-repo-service-user" type="text" class="form-control form-control-sm" placeholder="djanebmb">
-                    </div>
-                  </div>
-                  <div class="d-flex flex-wrap gap-3 mb-2">
-                    <div class="form-check form-switch">
-                      <input class="form-check-input" type="checkbox" role="switch" id="extra-repo-use-service" checked>
-                      <label class="form-check-label small" for="extra-repo-use-service">Als Service installieren</label>
-                    </div>
-                    <div class="form-check form-switch">
-                      <input class="form-check-input" type="checkbox" role="switch" id="extra-repo-autostart" checked>
-                      <label class="form-check-label small" for="extra-repo-autostart">Autostart aktivieren</label>
-                    </div>
-                  </div>
-                  <div class="d-flex flex-wrap gap-2 mb-2">
-                    <button id="btn-extra-repo-save" class="btn btn-outline-secondary btn-sm">Repo hinzufügen</button>
-                    <button id="btn-extra-repo-refresh" class="btn btn-outline-secondary btn-sm">Liste aktualisieren</button>
-                  </div>
-                  <hr class="my-3">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h3 class="h6 mb-0">Autodiscover (LAN)</h3>
-                    <button id="btn-autodiscover-refresh" class="btn btn-outline-secondary btn-sm">Aktualisieren</button>
-                  </div>
-                  <div class="small text-secondary mb-2">Services melden sich beim Start an `/autodiscover` und können hier direkt übernommen werden.</div>
-                  <div id="autodiscover-services-list" class="small text-secondary">Keine Autodiscover-Einträge.</div>
-                </div>
-              </div>
-              <div class="col-12">
-                <div class="portal-card p-4">
-                  <h3 class="h6 mb-2">Update & Install Log</h3>
-                  <pre id="system-update-log" class="code-block mb-0" style="max-height: 260px; overflow:auto;">-</pre>
-                </div>
-              </div>
-            </div>
-          </div>
 
 	        </div>
 	      </div>
