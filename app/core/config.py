@@ -13,7 +13,10 @@ DEFAULT_CONFIG: dict = {
     'registration_token': '',
     'panel_register_path': '/api/device/link/register',
     'panel_hardware_register_path': '/api/hardware-device/register',
+    'panel_jarvis_register_path': '/api/jarvis/node/register',
+    'panel_jarvis_verify_path': '/api/jarvis/node/verify-token',
     'panel_ping_path': '/api/device/ping',
+    'panel_register_target': '',
     'selected_stream_slug': '',
     'selected_stream_name': '',
     'selected_stream_updated_at': '',
@@ -220,6 +223,18 @@ def ensure_config() -> dict:
     # Auto-migrate legacy hardware register route to current API route.
     if (cfg.get('panel_hardware_register_path') or '').strip() == '/api/hardware/device/register':
         cfg['panel_hardware_register_path'] = '/api/hardware-device/register'
+        changed = True
+
+    if not isinstance(cfg.get('panel_jarvis_register_path'), str):
+        cfg['panel_jarvis_register_path'] = DEFAULT_CONFIG['panel_jarvis_register_path']
+        changed = True
+
+    if not isinstance(cfg.get('panel_jarvis_verify_path'), str):
+        cfg['panel_jarvis_verify_path'] = '/api/jarvis/node/verify-token'
+        changed = True
+
+    if not isinstance(cfg.get('panel_register_target'), str):
+        cfg['panel_register_target'] = ''
         changed = True
 
     # Auto-migrate legacy hardware verify route to current API route.

@@ -133,6 +133,7 @@
     panelUrl: "",
     token: "",
     nodeType: "raspi_node",
+    registrationTarget: "",
     verifiedUrl: false,
     registered: false,
     linkType: "skip",
@@ -1448,6 +1449,7 @@
     setupWizardState.panelUrl = String(cfg.admin_base_url || "").trim();
     setupWizardState.token = String(cfg.registration_token || "").trim();
     setupWizardState.nodeType = String(cfg.node_runtime_type || "raspi_node").trim().toLowerCase() || "raspi_node";
+    setupWizardState.registrationTarget = String(cfg.panel_register_target || "").trim().toLowerCase();
     setupWizardState.verifiedUrl = assignOnly;
     setupWizardState.registered = assignOnly;
     setupWizardState.linkType = "skip";
@@ -1545,15 +1547,15 @@
     if (!validatePayload.valid) {
       throw new Error("Token ist ungültig.");
     }
-    const registerEndpoint = setupWizardState.nodeType === "raspi_node"
-      ? "/api/panel/register"
-      : "/api/panel/register-hardware";
+    setupWizardState.registrationTarget = String(validatePayload.registration_target || "").trim().toLowerCase();
+    const registerEndpoint = "/api/panel/register";
     const registerPayload = await fetchJson(registerEndpoint, {
       method: "POST",
       body: {
         admin_base_url: setupWizardState.panelUrl || q("setup-panel-url").value || "",
         registration_token: setupWizardState.token,
         node_type: setupWizardState.nodeType,
+        registration_target: setupWizardState.registrationTarget || undefined,
       },
       timeoutMs: setupWizardState.nodeType === "raspi_node" ? REQUEST_TIMEOUTS.panelTokenValidateMs : REQUEST_TIMEOUTS.panelRegisterMs,
     });
@@ -1574,7 +1576,10 @@
     const result = q("setup-step-2-result");
     if (result) {
       const h = registerPayload.http || "-";
-      result.textContent = `Gerät erfolgreich verknüpft via ${registerEndpoint} (HTTP ${h}).`;
+      const targetLabel = setupWizardState.registrationTarget === "jarvis"
+        ? "Jarvis AI Hub"
+        : (setupWizardState.registrationTarget === "hardware" ? "Hardware Node" : "Smarthome Node");
+      result.textContent = `Gerät erfolgreich verknüpft (${targetLabel}) via ${registerEndpoint} (HTTP ${h}).`;
     }
     await refreshStatus();
   }
@@ -3897,11 +3902,14 @@
 
   async function panelRegister() {
     const adminBaseUrl = requireAdminBaseUrl();
+    const cfg = (statusDashboardState.status || {}).config || {};
     await fetchJson("/api/panel/register", {
       method: "POST",
       body: {
         admin_base_url: adminBaseUrl,
         registration_token: els.regToken.value || "",
+        node_type: cfg.node_runtime_type || "raspi_node",
+        registration_target: cfg.panel_register_target || undefined,
       },
     });
     await refreshStatus();
@@ -5365,7 +5373,6 @@
   function renderManagedRepos(items = []) {
     const host = q("extra-repos-list");
     if (!host) return;
-    const devUiMode = String(document.body?.dataset?.devMode || "").trim() === "1";
     const list = (Array.isArray(items) ? items : []).slice().sort((a, b) => {
       const sa = (a && a.service_status && typeof a.service_status === "object") ? a.service_status : {};
       const sb = (b && b.service_status && typeof b.service_status === "object") ? b.service_status : {};
@@ -5432,8 +5439,8 @@
       }
       const hasUiUrl = /^https?:\/\//i.test(uiUrlRaw);
       const uiUrl = escapeHtml(uiUrlRaw || "");
-      const openButtonHtml = devUiMode
-        ? `<a class="btn btn-outline-info btn-sm ${hasUiUrl ? "" : "disabled"}" ${hasUiUrl ? `href="${uiUrl}" target="_blank" rel="noopener noreferrer"` : 'href="#" tabindex="-1" aria-disabled="true"'}>Öffnen</a>`
+      const openButtonHtml = (isRunning && hasUiUrl)
+        ? `<a class="btn btn-outline-info btn-sm" href="${uiUrl}" target="_blank" rel="noopener noreferrer">Öffnen</a>`
         : "";
       const installOrUninstallButtonHtml = isInstalled
         ? `<button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>`

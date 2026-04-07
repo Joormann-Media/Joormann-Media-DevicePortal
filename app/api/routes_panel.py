@@ -182,6 +182,27 @@ def _panel_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, 
     return payload
 
 
+def _panel_jarvis_register_payload(cfg: dict, dev: dict, fp: dict, host: str, ip: str, token: str, node_type: str) -> dict:
+    os_info = fp.get('os') if isinstance(fp.get('os'), dict) else {}
+    payload = {
+        'registrationToken': token,
+        'registerToken': token,
+        'token': token,
+        'nodeName': host or 'Jarvis Node',
+        'hostname': host,
+        'nodeType': node_type,
+        'type': node_type,
+        'os': os_info.get('pretty_name') or os_info.get('id') or '',
+        'operatingSystem': os_info.get('pretty_name') or os_info.get('id') or '',
+        'osVersion': os_info.get('version') or '',
+        'localIp': ip,
+        'publicIp': '',
+        'platform': fp.get('machine') or '',
+        'fingerprintHash': dev.get('machine_id') or '',
+    }
+    return payload
+
+
 def _safe_slug(value: str, fallback: str = 'deviceportal-node') -> str:
     raw = (value or '').strip().lower()
     if not raw:
@@ -1289,6 +1310,87 @@ def _panel_verify_token_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/verify-token"
 
 
+def _panel_jarvis_verify_url(base_url: str, cfg: dict | None = None) -> str:
+    if isinstance(cfg, dict):
+        path = str(cfg.get('panel_jarvis_verify_path') or '/api/jarvis/node/verify-token').strip() or '/api/jarvis/node/verify-token'
+        if not path.startswith('/'):
+            path = f'/{path}'
+        return f"{base_url}{path}"
+    return f"{base_url}/api/jarvis/node/verify-token"
+
+
+def _panel_jarvis_register_url(base_url: str, cfg: dict | None = None) -> str:
+    if isinstance(cfg, dict):
+        path = str(cfg.get('panel_jarvis_register_path') or '/api/jarvis/node/register').strip() or '/api/jarvis/node/register'
+        if not path.startswith('/'):
+            path = f'/{path}'
+        return f"{base_url}{path}"
+    return f"{base_url}/api/jarvis/node/register"
+
+
+def _registration_target_from_node_type(node_type: str) -> str:
+    nt = str(node_type or '').strip().lower()
+    if nt in ('server', 'workstation', 'hardware_node', 'hardware'):
+        return 'hardware'
+    if nt in ('jarvis_node', 'jarvis'):
+        return 'jarvis'
+    if nt in ('smarthome_node', 'smarthome'):
+        return 'smarthome'
+    return 'smarthome'
+
+
+def _detect_token_target(base_url: str, token: str, dev: dict, cfg: dict, preferred: str = '') -> dict:
+    payload = {
+        'registerToken': token,
+        'registrationToken': token,
+        'register_token': token,
+        'token': token,
+        'deviceUuid': dev.get('device_uuid') or '',
+        'device_uuid': dev.get('device_uuid') or '',
+    }
+
+    candidates: list[tuple[str, str]] = []
+    preferred = preferred.strip().lower()
+    if preferred in ('smarthome', 'jarvis', 'hardware'):
+        candidates.append((preferred, 'preferred'))
+
+    for target in ('smarthome', 'jarvis', 'hardware'):
+        if target == preferred:
+            continue
+        candidates.append((target, 'fallback'))
+
+    result = {
+        'target': '',
+        'verify_url': '',
+        'http': None,
+        'response': None,
+        'skipped': False,
+        'skipped_reason': '',
+    }
+
+    for target, _label in candidates:
+        if target == 'smarthome':
+            verify_url = _panel_verify_token_url(base_url)
+        elif target == 'jarvis':
+            verify_url = _panel_jarvis_verify_url(base_url, cfg)
+        else:
+            configured_verify_path = str(cfg.get('panel_hardware_verify_path') or '/api/hardware-device/verify-token').strip()
+            verify_url = configured_verify_path if configured_verify_path.startswith('http') else f"{base_url}{configured_verify_path if configured_verify_path.startswith('/') else f'/{configured_verify_path}'}"
+        code, resp, err = http_post_json(verify_url, payload, timeout=8)
+        result.update({'verify_url': verify_url, 'http': code, 'response': resp})
+        if code is None:
+            continue
+        if code in (404, 405):
+            result['skipped'] = True
+            result['skipped_reason'] = 'verify_endpoint_missing'
+            continue
+        valid = _response_indicates_success(code, resp) or (bool((resp or {}).get('valid')) if isinstance(resp, dict) else False)
+        if valid:
+            result['target'] = target
+            return result
+
+    return result
+
 def _panel_assign_url(base_url: str) -> str:
     return f"{base_url}/api/device/link/assign"
 
@@ -1632,6 +1734,83 @@ def _extract_panel_device_flags(resp: dict | None) -> dict | None:
     return None
 
 
+def _extract_panel_node_roles(resp: dict | None) -> list[str]:
+    if not isinstance(resp, dict):
+        return []
+
+    sources: list[dict] = [resp]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        sources.append(data)
+        data_device = data.get('device')
+        if isinstance(data_device, dict):
+            sources.append(data_device)
+    root_device = resp.get('device')
+    if isinstance(root_device, dict):
+        sources.append(root_device)
+
+    roles: list[str] = []
+
+    def _add_role(value: object) -> None:
+        if not isinstance(value, str):
+            return
+        raw = value.strip().lower()
+        if not raw:
+            return
+        aliases = {
+            'raspi_node': 'raspi',
+            'raspi-node': 'raspi',
+            'raspberrypi': 'raspi',
+            'raspi': 'raspi',
+            'hardware_node': 'hardware',
+            'hardware-node': 'hardware',
+            'hardware': 'hardware',
+            'jarvis_node': 'jarvis',
+            'jarvis-node': 'jarvis',
+            'jarvis': 'jarvis',
+            'smarthome_node': 'smarthome',
+            'smarthome-node': 'smarthome',
+            'smarthome': 'smarthome',
+        }
+        mapped = aliases.get(raw, raw)
+        if mapped not in ('raspi', 'hardware', 'jarvis', 'smarthome'):
+            return
+        if mapped not in roles:
+            roles.append(mapped)
+
+    def _add_bool(flag: object, role: str) -> None:
+        if isinstance(flag, bool):
+            if flag and role not in roles:
+                roles.append(role)
+            return
+        if isinstance(flag, (int, float)):
+            if flag != 0 and role not in roles:
+                roles.append(role)
+            return
+        if isinstance(flag, str):
+            lowered = flag.strip().lower()
+            if lowered in ('1', 'true', 'yes', 'on', 'active'):
+                if role not in roles:
+                    roles.append(role)
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        role_value = source.get('node_role') or source.get('nodeRole') or source.get('role')
+        _add_role(role_value)
+        for key in ('node_roles', 'nodeRoles', 'roles'):
+            raw_roles = source.get(key)
+            if isinstance(raw_roles, list):
+                for item in raw_roles:
+                    _add_role(item)
+        _add_bool(source.get('is_raspi_node', source.get('isRaspiNode')), 'raspi')
+        _add_bool(source.get('is_hardware_node', source.get('isHardwareNode')), 'hardware')
+        _add_bool(source.get('is_jarvis_node', source.get('isJarvisNode')), 'jarvis')
+        _add_bool(source.get('is_smarthome_node', source.get('isSmarthomeNode')), 'smarthome')
+
+    return roles
+
+
 def _extract_rotated_device_credentials(resp: dict | None) -> dict:
     if not isinstance(resp, dict):
         return {}
@@ -1913,12 +2092,18 @@ def api_panel_ping():
     flags = _extract_panel_device_flags(resp if isinstance(resp, dict) else None)
     if isinstance(flags, dict):
         cfg['panel_device_flags'] = flags
+    node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
+    if node_roles:
+        cfg['panel_node_roles'] = node_roles
     panel_error = '' if linked else (_extract_response_message(resp if isinstance(resp, dict) else None) or f'http {code}')
 
     if isinstance(resp, dict):
         slug = (resp.get('deviceSlug') or resp.get('slug') or '').strip()
         if slug:
             cfg['device_slug'] = slug
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+        elif isinstance(flags, dict) or node_roles:
             cfg['updated_at'] = utc_now()
             write_json(CONFIG_PATH, cfg, mode=0o600)
 
@@ -1965,12 +2150,74 @@ def api_panel_register():
 
     node_type = _normalize_node_type(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'raspi_node')
     _persist_node_type_choice(cfg, node_type)
-    if node_type in ('server', 'workstation'):
-        return api_panel_register_hardware()
 
     token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
     if not token:
         return jsonify(ok=False, error='registration_token missing'), 400
+
+    base_url = _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base_url:
+        return jsonify(ok=False, error='admin_base_url missing'), 400
+
+    registration_target = str(data.get('registration_target') or '').strip().lower()
+    if not registration_target:
+        registration_target = str(cfg.get('panel_register_target') or '').strip().lower()
+    if not registration_target:
+        preferred = _registration_target_from_node_type(node_type)
+        detect = _detect_token_target(base_url, token, dev, cfg, preferred=preferred)
+        if detect.get('target'):
+            registration_target = detect.get('target')
+            cfg['panel_register_target'] = registration_target
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+        else:
+            registration_target = preferred
+
+    if registration_target == 'hardware':
+        return api_panel_register_hardware()
+    if registration_target == 'jarvis':
+        jarvis_url = _panel_jarvis_register_url(base_url, cfg)
+        if not (jarvis_url.startswith('http://') or jarvis_url.startswith('https://')):
+            return jsonify(ok=False, error='invalid_panel_url', resolved_url=jarvis_url), 400
+
+        jarvis_node_type = 'workstation' if node_type in ('workstation', 'server') else 'raspberrypi'
+        payload = _panel_jarvis_register_payload(cfg, dev, fp, host, ip, token, node_type=jarvis_node_type)
+        code, resp, err = http_post_json(jarvis_url, payload, timeout=10)
+        if code is None:
+            st = _update_panel_link_state(
+                cfg,
+                linked=_sticky_linked(cfg, False, None, None),
+                last_http=None,
+                last_response=None,
+                last_error=str(err),
+            )
+            update_state(cfg, dev, fp, mode='setup', message='jarvis register failed', panel_state_overrides=st)
+            return jsonify(ok=False, error=str(err), panel_link_state=st), 502
+
+        linked = _response_indicates_success(code, resp)
+        panel_error = '' if linked else (_extract_response_message(resp if isinstance(resp, dict) else None) or f'http {code}')
+        if linked:
+            cfg['registration_token'] = token
+            cfg['panel_register_target'] = 'jarvis'
+            node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
+            cfg['panel_node_roles'] = node_roles or ['jarvis']
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+
+        st = _update_panel_link_state(cfg, linked=linked, last_http=code, last_response=resp, last_error=panel_error)
+        update_state(cfg, dev, fp, mode='setup', message='jarvis register', panel_state_overrides=st)
+        if linked:
+            return jsonify(ok=True, panel_link_state=st, response=resp, http=code, resolved_url=jarvis_url), 200
+
+        return jsonify(
+            ok=False,
+            error='register_failed',
+            detail=panel_error or 'Registrierung fehlgeschlagen.',
+            panel_link_state=st,
+            response=resp,
+            http=code,
+            resolved_url=jarvis_url,
+        ), 400
 
     url = _panel_url(cfg, 'panel_register_path')
     if not url:
@@ -2025,8 +2272,18 @@ def api_panel_register():
         if isinstance(resp, dict):
             _apply_rotated_device_credentials(dev, resp)
         cfg['registration_token'] = token
+        cfg['panel_register_target'] = registration_target or 'smarthome'
         if node_type:
             cfg['node_runtime_type'] = node_type
+        node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
+        if not node_roles:
+            if registration_target == 'hardware':
+                node_roles = ['hardware']
+            elif registration_target == 'jarvis':
+                node_roles = ['jarvis']
+            else:
+                node_roles = ['raspi', 'smarthome']
+        cfg['panel_node_roles'] = node_roles
         linked_user_ids, linked_customer_ids = _extract_link_ids(resp if isinstance(resp, dict) else None)
         linked_user_rows, linked_customer_rows = _extract_link_rows(resp if isinstance(resp, dict) else None)
         if link_target_type == 'user' and link_target_id.isdigit():
@@ -2092,16 +2349,24 @@ def api_panel_register_hardware():
     if request_base:
         cfg['admin_base_url'] = request_base
 
+    token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
+    base = _safe_base_url(cfg.get('admin_base_url', ''))
+    preferred_target = str(data.get('registration_target') or '').strip().lower()
+    if token and base and preferred_target and preferred_target != 'hardware':
+        return api_panel_register()
+    if token and base and not preferred_target:
+        detect = _detect_token_target(base, token, dev, cfg, preferred='hardware')
+        if detect.get('target') and detect.get('target') != 'hardware':
+            return api_panel_register()
+
     node_type = _normalize_node_type(data.get('node_type') or data.get('nodeType') or cfg.get('node_runtime_type') or 'server')
     if node_type == 'raspi_node':
         node_type = 'server'
     _persist_node_type_choice(cfg, node_type)
 
-    token = (data.get('registration_token') or cfg.get('registration_token') or '').strip()
     if not token:
         return jsonify(ok=False, error='registration_token missing'), 400
 
-    base = _safe_base_url(cfg.get('admin_base_url', ''))
     if not base:
         return jsonify(ok=False, error='admin_base_url missing'), 400
 
@@ -2137,10 +2402,13 @@ def api_panel_register_hardware():
                 _apply_rotated_device_credentials(dev, resp)
             next_token = token
             cfg['node_runtime_type'] = node_type
+            cfg['panel_register_target'] = 'hardware'
             cfg['panel_hardware_register_path'] = path
             flags = _extract_panel_device_flags(resp if isinstance(resp, dict) else None)
             if isinstance(flags, dict):
                 cfg['panel_device_flags'] = flags
+            node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
+            cfg['panel_node_roles'] = node_roles or ['hardware']
             exchanged_key = ''
             resolved_client_id = ''
             if isinstance(resp, dict):
@@ -2325,6 +2593,11 @@ def api_panel_sync_status():
             last_response=resp,
             last_error='',
         )
+        node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
+        if node_roles:
+            cfg['panel_node_roles'] = node_roles
+            cfg['updated_at'] = utc_now()
+            write_json(CONFIG_PATH, cfg, mode=0o600)
         if request_base:
             cfg['admin_base_url'] = request_base
             cfg['updated_at'] = utc_now()
@@ -2411,6 +2684,12 @@ def api_panel_sync_status():
             flags = _extract_panel_device_flags(ping_resp if isinstance(ping_resp, dict) else None)
             if isinstance(flags, dict):
                 cfg['panel_device_flags'] = flags
+            node_roles = _extract_panel_node_roles(ping_resp if isinstance(ping_resp, dict) else None)
+            if node_roles:
+                cfg['panel_node_roles'] = node_roles
+            if isinstance(flags, dict) or node_roles:
+                cfg['updated_at'] = utc_now()
+                write_json(CONFIG_PATH, cfg, mode=0o600)
         elif ping_http is None:
             ping_error = str(ping_err or '')
 
@@ -2424,6 +2703,12 @@ def api_panel_sync_status():
     linked_user_ids, linked_customer_ids = _extract_link_ids(resp if isinstance(resp, dict) else None)
     if linked_user_ids or linked_customer_ids:
         _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
+
+    node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
+    if node_roles:
+        cfg['panel_node_roles'] = node_roles
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
 
     if request_base:
         cfg['admin_base_url'] = request_base
@@ -2757,111 +3042,51 @@ def api_panel_validate_token():
     token = (data.get('registration_token') or '').strip()
     if not token:
         return jsonify(ok=False, error='registration_token missing'), 400
+    preferred_target = str(data.get('registration_target') or '').strip().lower()
+    if not preferred_target:
+        preferred_target = _registration_target_from_node_type(node_type)
 
-    payload = {
-        'registerToken': token,
-        'registrationToken': token,
-        'register_token': token,
-        'token': token,
-        'deviceUuid': dev.get('device_uuid') or '',
-        'device_uuid': dev.get('device_uuid') or '',
-    }
-
-    if node_type == 'raspi_node':
-        verify_url = _panel_verify_token_url(base_url)
-        code, resp, err = http_post_json(verify_url, payload, timeout=8)
-        if code is None:
-            return jsonify(ok=False, error='token_verify_failed', detail=str(err), verify_url=verify_url), 502
-        if code in (404, 405):
-            # Backward-compatible fallback: older panels may not expose a dedicated verify endpoint.
-            return jsonify(
-                ok=True,
-                valid=True,
-                skipped=True,
-                message='Token-Prüfung wird beim Registrieren durchgeführt.',
-                http=code,
-                verify_url=verify_url,
-                response=resp,
-            ), 200
-
-        valid = _response_indicates_success(code, resp)
-        if request_base and valid:
+    result = _detect_token_target(base_url, token, dev, cfg, preferred=preferred_target)
+    if result.get('target'):
+        if request_base:
             cfg['admin_base_url'] = request_base
-            cfg['updated_at'] = utc_now()
-            write_json(CONFIG_PATH, cfg, mode=0o600)
-        if valid:
-            return jsonify(ok=True, valid=True, node_type=node_type, http=code, verify_url=verify_url, response=resp), 200
-
-        panel_msg = _extract_response_message(resp) or 'Token ungültig oder abgelaufen.'
+        cfg['panel_register_target'] = result.get('target')
+        cfg['updated_at'] = utc_now()
+        write_json(CONFIG_PATH, cfg, mode=0o600)
         return jsonify(
-            ok=False,
-            error='token_invalid',
-            detail=panel_msg,
-            valid=False,
+            ok=True,
+            valid=True,
             node_type=node_type,
-            http=code,
-            verify_url=verify_url,
-            response=resp,
-        ), 400
+            registration_target=result.get('target'),
+            http=result.get('http'),
+            verify_url=result.get('verify_url'),
+            response=result.get('response'),
+        ), 200
 
-    configured_verify_path = str(cfg.get('panel_hardware_verify_path') or '/api/hardware-device/verify-token').strip()
-    verify_candidates: list[str] = [configured_verify_path, '/api/hardware-device/verify-token', '/api/hardware/device/verify-token']
-    deduped_paths: list[str] = []
-    for candidate in verify_candidates:
-        candidate = str(candidate or '').strip()
-        if not candidate:
-            continue
-        if not candidate.startswith('http://') and not candidate.startswith('https://') and not candidate.startswith('/'):
-            candidate = f'/{candidate}'
-        if candidate not in deduped_paths:
-            deduped_paths.append(candidate)
-
-    last_code = None
-    last_resp = None
-    last_err = None
-    resolved_verify_url = ''
-    for path in deduped_paths:
-        verify_url = path if path.startswith('http://') or path.startswith('https://') else f'{base_url}{path}'
-        code, resp, err = http_post_json(verify_url, payload, timeout=8)
-        resolved_verify_url = verify_url
-        last_code, last_resp, last_err = code, resp, err
-        if code is None:
-            continue
-        if code in (404, 405):
-            continue
-        valid = _response_indicates_success(code, resp) or (bool((resp or {}).get('valid')) if isinstance(resp, dict) else False)
-        if valid:
-            if request_base:
-                cfg['admin_base_url'] = request_base
-                cfg['panel_hardware_verify_path'] = path
-                cfg['node_runtime_type'] = node_type
-                cfg['updated_at'] = utc_now()
-                write_json(CONFIG_PATH, cfg, mode=0o600)
-            return jsonify(ok=True, valid=True, node_type=node_type, http=code, verify_url=verify_url, response=resp), 200
-
-    if last_code in (404, 405) or (last_code is None and deduped_paths):
+    if result.get('skipped'):
         return jsonify(
             ok=True,
             valid=True,
             skipped=True,
             node_type=node_type,
-            message='Hardware-Token-Prüfung wird beim Registrieren durchgeführt.',
-            http=last_code,
-            verify_url=resolved_verify_url,
-            response=last_resp,
+            registration_target=preferred_target or _registration_target_from_node_type(node_type),
+            message='Token-Prüfung wird beim Registrieren durchgeführt.',
+            http=result.get('http'),
+            verify_url=result.get('verify_url'),
+            response=result.get('response'),
         ), 200
 
-    panel_msg = _extract_response_message(last_resp) if isinstance(last_resp, dict) else ''
-    panel_msg = panel_msg or (str(last_err) if last_err else '') or 'Token ungültig oder abgelaufen.'
+    panel_msg = _extract_response_message(result.get('response')) if isinstance(result.get('response'), dict) else ''
+    panel_msg = panel_msg or 'Token ungültig oder abgelaufen.'
     return jsonify(
         ok=False,
         error='token_invalid',
         detail=panel_msg,
         valid=False,
         node_type=node_type,
-        http=last_code,
-        verify_url=resolved_verify_url,
-        response=last_resp,
+        http=result.get('http'),
+        verify_url=result.get('verify_url'),
+        response=result.get('response'),
     ), 400
 
 

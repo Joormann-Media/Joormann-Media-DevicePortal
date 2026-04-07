@@ -248,6 +248,8 @@
         box.textContent = text;
       }
 
+      let registrationTarget = "";
+
       async function doDomainCheck() {
         const domain = String(q("fr-domain").value || "").trim();
         if (!domain) {
@@ -270,6 +272,7 @@
           node_type: nodeType,
         });
         const effectiveNodeType = String(data.node_type || nodeType || "").trim();
+        registrationTarget = String(data.registration_target || "").trim().toLowerCase();
         const autoDetected = String(data.auto_detected || "").trim().toLowerCase();
         const nodeTypeSelect = q("fr-node-type");
         if (nodeTypeSelect && (autoDetected === "hardware" || (effectiveNodeType && effectiveNodeType !== nodeType))) {
@@ -283,7 +286,10 @@
         const nodeTypeLabel = activeNodeType === "raspi_node"
           ? "DeviceNode (Raspberry Pi)"
           : (activeNodeType === "workstation" ? "Workstation" : "Server");
-        q("fr-step2-result").textContent = `Token gültig (HTTP ${data.http || "-"}) - Flow: ${nodeTypeLabel}`;
+        const targetLabel = registrationTarget === "jarvis"
+          ? "Jarvis AI Hub"
+          : (registrationTarget === "hardware" ? "Hardware Node" : "Smarthome Node");
+        q("fr-step2-result").textContent = `Token gültig (HTTP ${data.http || "-"}) - Ziel: ${targetLabel} · Flow: ${nodeTypeLabel}`;
         return data;
       }
 
@@ -294,11 +300,12 @@
         if (!domain) throw new Error("Bitte Domain eingeben.");
         if (!token) throw new Error("Bitte Register-Token eingeben.");
 
-        const endpoint = nodeType === "raspi_node" ? "/api/panel/register" : "/api/panel/register-hardware";
+        const endpoint = "/api/panel/register";
         const payload = {
           admin_base_url: domain,
           registration_token: token,
           node_type: nodeType,
+          registration_target: registrationTarget || undefined,
         };
         const data = await fetchJson(endpoint, payload);
         q("fr-step2-result").textContent = `Registriert via ${endpoint} (HTTP ${data.http || "-"})`;
