@@ -1,0 +1,17 @@
+[Unit]
+Description=Joormann Media Service (Joormann-Media-Deviceportal)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+WorkingDirectory=/home/djanebmb/projects/Joormann-Media-Deviceportal
+ExecStart=/home/djanebmb/projects/Joormann-Media-Deviceportal/scripts/start-dev.sh
+ExecStop=/home/djanebmb/projects/Joormann-Media-Deviceportal/scripts/stop-dev.sh
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
