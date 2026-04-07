@@ -949,6 +949,14 @@ def _repo_default_service_name(repo_link: str) -> str:
     return f'{slug}.service'
 
 
+def _repo_default_service_id(repo_link: str, repo_name: str = '', service_name: str = '') -> str:
+    link = str(repo_link or '').strip().lower()
+    name = str(repo_name or '').strip().lower()
+    service = str(service_name or '').strip().lower()
+    seed = f'{link}|{name}|{service}'
+    return f'jsvc_{hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]}'
+
+
 def _is_repo_url(value: str) -> bool:
     raw = str(value or '').strip().lower()
     return raw.startswith('http://') or raw.startswith('https://') or raw.startswith('git@') or raw.startswith('ssh://')
@@ -1019,6 +1027,7 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     name = str(source.get('name') or '').strip()
     repo_link = str(source.get('repo_link') or source.get('repo_dir') or '').strip()
     service_name = str(source.get('service_name') or '').strip()
+    service_id = str(source.get('service_id') or '').strip()
     service_user = str(source.get('service_user') or '').strip()
     install_dir = str(source.get('install_dir') or '').strip()
     if service_name in {'-', '—', 'none', 'null'}:
@@ -1051,6 +1060,8 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
     autostart = True if autostart_raw is None else bool(autostart_raw)
     if use_service and not service_name and repo_link:
         service_name = _repo_default_service_name(repo_link)
+    if not service_id:
+        service_id = _repo_default_service_id(repo_link, name, service_name)
 
     if not repo_id:
         seed = f"{name}|{repo_link}|{service_name}|{service_user}"
@@ -1065,6 +1076,7 @@ def _sanitize_managed_repo_entry(item: dict) -> dict:
         'name': name,
         'repo_link': repo_link,
         'service_name': service_name,
+        'service_id': service_id,
         'service_user': service_user,
         'install_dir': install_dir,
         'use_service': use_service,
@@ -1156,10 +1168,15 @@ def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
     repo_name = str(payload.get('repo_name') or payload.get('name') or _repo_default_name(repo_link)).strip()
     repo_branch = str(payload.get('repo_branch') or payload.get('branch') or 'main').strip() or 'main'
     service_name = str(payload.get('service_name') or '').strip()
+    service_id = str(payload.get('service_id') or '').strip()
     service_user = str(payload.get('service_user') or '').strip()
     install_dir = str(payload.get('install_dir') or '').strip()
     use_service = bool(payload.get('use_service', True))
     autostart = bool(payload.get('autostart', True))
+    if not service_name and repo_link:
+        service_name = _repo_default_service_name(repo_link)
+    if not service_id:
+        service_id = _repo_default_service_id(repo_link, repo_name, service_name)
     api_base_url = str(payload.get('api_base_url') or '').strip()
     health_url = str(payload.get('health_url') or '').strip()
     ui_url = str(payload.get('ui_url') or payload.get('web_url') or '').strip()
@@ -1183,6 +1200,7 @@ def _sanitize_autodiscover_entry(data: dict, remote_addr: str) -> dict:
         'repo_link': repo_link,
         'repo_branch': repo_branch,
         'service_name': service_name,
+        'service_id': service_id,
         'service_user': service_user,
         'install_dir': install_dir,
         'use_service': use_service,
@@ -1308,6 +1326,7 @@ def _sanitize_llm_manager_payload(payload: dict) -> dict:
         "reported_at": utc_now(),
         "source": str(data.get("source") or "llm-lab").strip(),
         "repo_link": str(data.get("repo_link") or "").strip(),
+        "service_id": str(data.get("service_id") or "").strip(),
         "install_dir": str(data.get("install_dir") or "").strip(),
         "service_name": str(data.get("service_name") or "").strip(),
         "service_user": str(data.get("service_user") or "").strip(),
@@ -1439,6 +1458,7 @@ def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False, retries: in
     payload = {
         "source": "llm-lab-runtime",
         "repo_link": str(repo.get("repo_link") or "").strip(),
+        "service_id": str(repo.get("service_id") or "").strip(),
         "install_dir": str(repo.get("install_dir") or "").strip(),
         "service_name": str(repo.get("service_name") or "").strip(),
         "service_user": str(repo.get("service_user") or "").strip(),
@@ -1689,6 +1709,7 @@ def api_autodiscover_register():
             'name': str(item.get('repo_name') or '').strip(),
             'repo_link': str(item.get('repo_link') or '').strip(),
             'service_name': str(item.get('service_name') or '').strip(),
+            'service_id': str(item.get('service_id') or '').strip(),
             'service_user': str(item.get('service_user') or '').strip(),
             'install_dir': str(item.get('install_dir') or '').strip(),
             'use_service': bool(item.get('use_service', True)),
@@ -1816,6 +1837,7 @@ def api_autodiscover_promote(service_id: str):
             'name': str(target.get('repo_name') or '').strip(),
             'repo_link': str(target.get('repo_link') or '').strip(),
             'service_name': str(target.get('service_name') or '').strip(),
+            'service_id': str(target.get('service_id') or '').strip(),
             'service_user': str(target.get('service_user') or '').strip(),
             'install_dir': str(target.get('install_dir') or '').strip(),
             'use_service': bool(target.get('use_service', True)),
