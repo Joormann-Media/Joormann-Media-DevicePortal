@@ -1275,6 +1275,7 @@
     const flags = (config && typeof config === "object" && config.panel_device_flags && typeof config.panel_device_flags === "object")
       ? config.panel_device_flags
       : {};
+    const nodeRolesRaw = (config && typeof config === "object") ? config.panel_node_roles : null;
 
     const readFlag = (...keys) => {
       for (const key of keys) {
@@ -1313,6 +1314,25 @@
     const updatedEl = q("hero-flag-updated");
     if (updatedEl) {
       updatedEl.textContent = String(flags.updated_at || flags.updatedAt || "-");
+    }
+
+    const rolesEl = q("hero-node-roles");
+    if (rolesEl) {
+      const normalized = [];
+      const source = Array.isArray(nodeRolesRaw) ? nodeRolesRaw : [];
+      for (const roleRaw of source) {
+        const role = String(roleRaw || "").trim().toLowerCase();
+        if (!role) continue;
+        if (!["raspi", "hardware", "jarvis", "smarthome"].includes(role)) continue;
+        if (!normalized.includes(role)) normalized.push(role);
+      }
+      const labels = {
+        raspi: "Raspi",
+        hardware: "Hardware",
+        jarvis: "Jarvis",
+        smarthome: "Smarthome",
+      };
+      rolesEl.textContent = normalized.length ? normalized.map((r) => labels[r] || r).join(" | ") : "-";
     }
   }
 
