@@ -10,6 +10,7 @@ from app.api.routes_stream import refresh_llm_manager_from_runtime
 from app.core.config import ensure_config
 from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
+from app.core.family_registry_push import maybe_push_family_registry
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_fingerprint
 from app.core.gitinfo import get_repo_update_info, get_update_info
 from app.core.netcontrol import NetControlError, get_network_info
@@ -257,15 +258,18 @@ def api_status():
 
 @bp_status.post('/api/runtime/warmup')
 def api_runtime_warmup():
+    cfg = ensure_config()
     viewmodel = _build_runtime_viewmodel()
     _RUNTIME_SNAPSHOT_CACHE["viewmodel"] = viewmodel
     _RUNTIME_SNAPSHOT_CACHE["updated_at"] = _iso_now()
+    push_result = maybe_push_family_registry(cfg, "warmup")
     return jsonify(
         ok=True,
         data={
             "status": "ready",
             "progress": 100,
             "updated_at": _RUNTIME_SNAPSHOT_CACHE["updated_at"],
+            "registry_push": push_result,
         },
     )
 

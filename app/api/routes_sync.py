@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 from app.api import routes_panel
 from app.core.config import _safe_base_url, ensure_config
 from app.core.device import ensure_device
+from app.core.family_registry_push import maybe_push_family_registry
 from app.core.fingerprint import collect_fingerprint
 from app.core.httpclient import http_post_json
 from app.core.jsonio import write_json
@@ -52,6 +53,11 @@ def _bool(value: object, default: bool = False) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return default
+
+
+def _registry_trigger_for_sync(triggered_by: str) -> str:
+    raw = str(triggered_by or "").strip().lower()
+    return "auto_sync" if ("auto" in raw or "cron" in raw or "scheduler" in raw) else "manual_sync"
 
 
 def _orientation_to_rotation(value: object) -> int:
@@ -861,6 +867,8 @@ def api_sync_run():
         state["last_error"] = "" if ok_all else "admin_actions_partial_error"
         cfg["updated_at"] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
+        if ok_all:
+            maybe_push_family_registry(cfg, _registry_trigger_for_sync(triggered_by))
 
         return jsonify(
             ok=ok_all,
@@ -953,6 +961,7 @@ def api_sync_run():
     state["last_push_at"] = utc_now()
     cfg["updated_at"] = utc_now()
     write_json(CONFIG_PATH, cfg, mode=0o600)
+    maybe_push_family_registry(cfg, _registry_trigger_for_sync(triggered_by))
 
     return jsonify(
         ok=True,

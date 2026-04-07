@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 from app.core.config import _panel_url, _safe_base_url, ensure_config
 from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
+from app.core.family_registry_push import maybe_push_family_registry
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint
 from app.core.gitinfo import get_repo_update_info, get_update_info
 from app.core.httpclient import http_get_json, http_get_text, http_post_json
@@ -2827,6 +2828,7 @@ def api_panel_sync_now():
                 )
                 if ping_code is not None and 200 <= ping_code < 300:
                     st = _update_panel_link_state(cfg, linked=True, last_http=ping_code, last_response=ping_resp, last_error='')
+                    push_result = maybe_push_family_registry(cfg, "manual_sync")
                     return jsonify(
                         ok=True,
                         synced=True,
@@ -2836,6 +2838,7 @@ def api_panel_sync_now():
                         panel_ping_url=ping_url,
                         response=ping_resp,
                         panel_link_state=st,
+                        registry_push=push_result,
                         api_key_bootstrap={'ok': True, 'updated': False, 'skipped': True, 'reason': 'hardware_node'},
                     ), 200
         # Hardware fallback: full register flow with token.
@@ -2877,6 +2880,7 @@ def api_panel_sync_now():
                 _persist_link_targets(cfg, linked_user_ids, linked_customer_ids)
             _update_panel_link_state(cfg, linked=True, last_http=ping_code, last_response=ping_resp, last_error='')
             bootstrap_refresh = _pull_and_apply_bootstrap_keys(cfg, dev)
+            push_result = maybe_push_family_registry(cfg, "manual_sync")
             return jsonify(
                 ok=True,
                 synced=True,
@@ -2885,6 +2889,7 @@ def api_panel_sync_now():
                 panel_ping_url=ping_url,
                 response=ping_resp,
                 panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+                registry_push=push_result,
                 api_key_bootstrap=bootstrap_refresh,
             ), 200
 
@@ -2950,6 +2955,7 @@ def api_panel_sync_now():
             _ack_api_key_bootstrap(cfg, dev, applied.get('ids') or [], applied.get('activated_directions') or [])
 
     _update_panel_link_state(cfg, linked=True, last_http=code, last_response=resp, last_error='')
+    push_result = maybe_push_family_registry(cfg, "manual_sync")
 
     return jsonify(
         ok=True,
@@ -2961,6 +2967,7 @@ def api_panel_sync_now():
         panel_ping_http=ping_code,
         panel_ping_response=ping_resp,
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+        registry_push=push_result,
         api_key_bootstrap=_pull_and_apply_bootstrap_keys(cfg, dev),
     ), 200
 

@@ -26,6 +26,7 @@ from app.core.auth_session import (
 )
 from app.core.config import ensure_config
 from app.core.device import ensure_device
+from app.core.family_registry_push import maybe_push_family_registry
 
 bp_auth = Blueprint("auth", __name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -389,6 +390,7 @@ def login_submit():
                 user_id=int(result.get("uid") or 0) or None,
                 dev_mode=dev_mode,
             )
+        maybe_push_family_registry(cfg, "login")
     except (LocalAuthError, PanelAuthError) as exc:
         return render_template(
             login_template,
@@ -477,6 +479,7 @@ def login_submit_2fa():
         user_id=int(pending_2fa.get("user_id") or 0) or None,
         dev_mode=dev_mode,
     )
+    maybe_push_family_registry(cfg, "login")
     clear_pending_panel_2fa()
     return redirect(next_url)
 

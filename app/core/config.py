@@ -114,6 +114,25 @@ DEFAULT_CONFIG: dict = {
         'webhook_url': '',
         'updated_at': None,
     },
+    'family_panel_registry_sync': {
+        'enabled': True,
+        'base_url': '',
+        'sync_path': '/api/public/portal/service-registry/sync',
+        'sync_token': '',
+        'timeout_seconds': 8,
+        'min_interval_seconds': 15,
+        'include_managed_repos': True,
+        'include_autodiscover': True,
+        'trigger_login': True,
+        'trigger_manual_sync': True,
+        'trigger_auto_sync': True,
+        'trigger_warmup': True,
+        'last_pushed_at': None,
+        'last_trigger': '',
+        'last_status': '',
+        'last_error': '',
+        'last_http_status': None,
+    },
     'llm_manager': {},
 }
 
@@ -303,6 +322,15 @@ def ensure_config() -> dict:
         if 'updated_at' not in ss:
             ss['updated_at'] = None
             changed = True
+    if not isinstance(cfg.get('family_panel_registry_sync'), dict):
+        cfg['family_panel_registry_sync'] = dict(DEFAULT_CONFIG['family_panel_registry_sync'])
+        changed = True
+    else:
+        registry_sync = cfg['family_panel_registry_sync']
+        for key, value in DEFAULT_CONFIG['family_panel_registry_sync'].items():
+            if key not in registry_sync:
+                registry_sync[key] = value
+                changed = True
     if changed:
         cfg['updated_at'] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
