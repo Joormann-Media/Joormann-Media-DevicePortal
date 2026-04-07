@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import socket
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import requests
 from flask import current_app
@@ -149,6 +150,97 @@ def _normalize_entry(row: dict, source_name: str, fallback_node_name: str) -> di
     }
 
 
+def _guess_node_host(cfg: dict, fallback_node_name: str) -> str:
+    candidates: list[str] = []
+    managed = cfg.get("managed_install_repos")
+    if isinstance(managed, list):
+        for row in managed:
+            if not isinstance(row, dict):
+                continue
+            for key in ("api_base_url", "health_url", "ui_url"):
+                raw = str(row.get(key) or "").strip()
+                if not raw:
+                    continue
+                try:
+                    parsed = urlparse(raw)
+                except Exception:
+                    parsed = None
+                if parsed and parsed.hostname:
+                    candidates.append(parsed.hostname)
+    if candidates:
+        return candidates[0]
+    return fallback_node_name
+
+
+def _guess_node_name(cfg: dict, fallback_node_name: str) -> str:
+    managed = cfg.get("managed_install_repos")
+    if isinstance(managed, list):
+        for row in managed:
+            if not isinstance(row, dict):
+                continue
+            for key in ("node_name", "hostname"):
+                value = str(row.get(key) or "").strip()
+                if value:
+                    return value
+    return fallback_node_name
+
+
+def _build_runtime_entries(cfg: dict, fallback_node_name: str) -> list[dict]:
+    node_host = _guess_node_host(cfg, fallback_node_name)
+    node_name = _guess_node_name(cfg, fallback_node_name) or node_host or fallback_node_name
+    entries: list[dict] = []
+
+    portal_base = f"http://{node_host}:5070" if node_host else "http://127.0.0.1:5070"
+    entries.append(
+        _normalize_entry(
+            {
+                "service_id": "deviceportal_core",
+                "service_name": "device-portal.service",
+                "repo_name": "Device-Portal",
+                "repo_link": "internal://deviceportal/core",
+                "api_base_url": portal_base,
+                "health_url": f"{portal_base}/health",
+                "ui_url": f"{portal_base}/",
+                "node_name": node_name,
+                "hostname": node_host,
+                "service_port": 5070,
+                "tags": ["jarvis", "portal", "system"],
+                "capabilities": ["portal.ui", "portal.sync", "portal.registry"],
+                "source": "runtime_system",
+            },
+            "runtime_system",
+            fallback_node_name,
+        )
+    )
+
+    llm = cfg.get("llm_manager") if isinstance(cfg.get("llm_manager"), dict) else {}
+    llm_base = str(llm.get("api_base_url") or "").strip()
+    if llm_base:
+        entries.append(
+            _normalize_entry(
+                {
+                    "service_id": "llm_manager_runtime",
+                    "service_name": "llm-manager.runtime",
+                    "repo_name": "LLM-Manager",
+                    "repo_link": "internal://llm-manager/runtime",
+                    "api_base_url": llm_base,
+                    "health_url": str(llm.get("health_url") or "").strip(),
+                    "ui_url": str(llm.get("ui_url") or "").strip(),
+                    "node_name": node_name,
+                    "hostname": node_host,
+                    "service_port": urlparse(llm_base).port if urlparse(llm_base).port else None,
+                    "tags": ["jarvis", "llm", "system"],
+                    "capabilities": ["llm.runtime", "ollama.version", "llm.models"],
+                    "source": "runtime_system",
+                },
+                "runtime_system",
+                fallback_node_name,
+            )
+        )
+
+    return entries
+
+
 def _dedupe_entries(rows: list[dict]) -> list[dict]:
     deduped: dict[str, dict] = {}
     for row in rows:
@@ -232,6 +324,9 @@ def maybe_push_family_registry(cfg: dict, trigger: str, *, force: bool = False) 
                 if not isinstance(row, dict):
                     continue
                 entries.append(_normalize_entry(row, "autodiscover", fallback_node_name))
+
+    if _to_bool(sync_cfg.get("include_runtime_services"), True):
+        entries.extend(_build_runtime_entries(cfg, fallback_node_name))
 
     entries = _dedupe_entries(entries)
     if not entries:

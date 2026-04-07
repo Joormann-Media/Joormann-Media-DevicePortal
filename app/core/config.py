@@ -123,6 +123,7 @@ DEFAULT_CONFIG: dict = {
         'min_interval_seconds': 15,
         'include_managed_repos': True,
         'include_autodiscover': True,
+        'include_runtime_services': True,
         'trigger_login': True,
         'trigger_manual_sync': True,
         'trigger_auto_sync': True,
