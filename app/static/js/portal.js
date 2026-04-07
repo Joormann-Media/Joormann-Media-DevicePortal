@@ -5537,19 +5537,6 @@
     const countBtnEl = q("bulk-update-repo-count");
     const btn = q("btn-bulk-update-repos");
     const selectAll = q("bulk-select-all-updates");
-    const hasUpdates = managedInstallRepos.some((r) => {
-      const ui = resolveRepoUpdateInfo(r);
-      return ui && ui.available;
-    });
-    if (toolbar) {
-      if (hasUpdates) {
-        toolbar.classList.remove("d-none");
-        toolbar.classList.add("d-flex");
-      } else {
-        toolbar.classList.add("d-none");
-        toolbar.classList.remove("d-flex");
-      }
-    }
     const allChecks = document.querySelectorAll(".js-repo-update-check:not(:disabled)");
     const checkedChecks = document.querySelectorAll(".js-repo-update-check:checked");
     const selectedCount = checkedChecks.length;
