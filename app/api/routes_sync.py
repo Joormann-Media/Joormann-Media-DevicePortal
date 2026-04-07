@@ -909,7 +909,16 @@ def api_sync_run():
         state["last_sync_at"] = utc_now()
         cfg["updated_at"] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
-        return jsonify(ok=False, message="Sync-Profil ist deaktiviert."), 403
+        registry_push = maybe_push_family_registry(cfg, _registry_trigger_for_sync(triggered_by))
+        return jsonify(
+            ok=bool(registry_push.get("ok")),
+            message="Sync-Profil ist deaktiviert. Registry-Meldung wurde separat ausgeführt.",
+            warning="sync_profile_disabled",
+            data={
+                "sync_state": state,
+                "registry_push": registry_push,
+            },
+        ), 200
 
     if direction in {"portal_to_admin", "bidirectional"}:
         if not bool(profile.get("allowManualSyncFromPortal", False)) and not bool(profile.get("allowAutoSyncFromPortal", False)):
@@ -918,7 +927,16 @@ def api_sync_run():
             state["last_sync_at"] = utc_now()
             cfg["updated_at"] = utc_now()
             write_json(CONFIG_PATH, cfg, mode=0o600)
-            return jsonify(ok=False, message="Portal-Sync ist nicht freigegeben."), 403
+            registry_push = maybe_push_family_registry(cfg, _registry_trigger_for_sync(triggered_by))
+            return jsonify(
+                ok=bool(registry_push.get("ok")),
+                message="Portal-Sync ist nicht freigegeben. Registry-Meldung wurde separat ausgeführt.",
+                warning="portal_sync_not_allowed",
+                data={
+                    "sync_state": state,
+                    "registry_push": registry_push,
+                },
+            ), 200
 
     field_updates = _build_portal_field_updates(cfg, dev)
     filtered_updates = {}
