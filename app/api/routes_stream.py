@@ -1322,6 +1322,12 @@ def _sanitize_llm_manager_payload(payload: dict) -> dict:
             "update_status": str(item.get("update_status") or "unknown").strip(),
         })
 
+    default_model = str(data.get("default_model") or "").strip()
+    if not default_model and models:
+        first_name = str(models[0].get("name") or models[0].get("model") or "").strip()
+        if first_name:
+            default_model = first_name
+
     return {
         "reported_at": utc_now(),
         "source": str(data.get("source") or "llm-lab").strip(),
@@ -1334,7 +1340,7 @@ def _sanitize_llm_manager_payload(payload: dict) -> dict:
         "health_url": str(data.get("health_url") or "").strip(),
         "ui_url": str(data.get("ui_url") or "").strip(),
         "ollama": data.get("ollama") if isinstance(data.get("ollama"), dict) else {},
-        "default_model": str(data.get("default_model") or "").strip(),
+        "default_model": default_model,
         "models": models,
     }
 

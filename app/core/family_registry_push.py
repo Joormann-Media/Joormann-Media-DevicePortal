@@ -216,6 +216,7 @@ def _build_runtime_entries(cfg: dict, fallback_node_name: str) -> list[dict]:
     llm = cfg.get("llm_manager") if isinstance(cfg.get("llm_manager"), dict) else {}
     llm_base = str(llm.get("api_base_url") or "").strip()
     if llm_base:
+        llm_models = llm.get("models") if isinstance(llm.get("models"), list) else []
         entries.append(
             _normalize_entry(
                 {
@@ -231,6 +232,8 @@ def _build_runtime_entries(cfg: dict, fallback_node_name: str) -> list[dict]:
                     "service_port": urlparse(llm_base).port if urlparse(llm_base).port else None,
                     "tags": ["jarvis", "llm", "system"],
                     "capabilities": ["llm.runtime", "ollama.version", "llm.models"],
+                    "default_model": str(llm.get("default_model") or "").strip(),
+                    "models": llm_models,
                     "source": "runtime_system",
                 },
                 "runtime_system",
