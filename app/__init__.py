@@ -50,6 +50,25 @@ def _is_local_unauth_llm_report() -> bool:
         return False
 
 
+def _is_private_remote(remote: str) -> bool:
+    remote = (remote or "").strip()
+    if not remote:
+        return False
+    try:
+        addr = ip_address(remote)
+        return addr.is_loopback or addr.is_private
+    except ValueError:
+        return False
+
+
+def _is_private_unauth_registry_read() -> bool:
+    if request.method != "GET":
+        return False
+    if request.path not in {"/api/autodiscover/services", "/api/stream/player/repos"}:
+        return False
+    return _is_private_remote(str(request.remote_addr or ""))
+
+
 def create_app() -> Flask:
     app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -119,6 +138,9 @@ def create_app() -> Flask:
             return None
         # Allow local LLM manager report without login.
         if _is_local_unauth_llm_report():
+            return None
+        # Allow read-only service registry sync pulls from private LAN nodes.
+        if _is_private_unauth_registry_read():
             return None
 
         if is_authenticated():
