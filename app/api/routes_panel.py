@@ -1811,6 +1811,56 @@ def _extract_panel_node_roles(resp: dict | None) -> list[str]:
     return roles
 
 
+def _normalize_node_roles(roles: object) -> list[str]:
+    out: list[str] = []
+    if not isinstance(roles, list):
+        return out
+    for role_raw in roles:
+        role = str(role_raw or '').strip().lower()
+        if role in ('raspi', 'hardware', 'jarvis', 'smarthome') and role not in out:
+            out.append(role)
+    return out
+
+
+def _node_roles_changed(previous_roles: object, current_roles: object) -> bool:
+    prev = sorted(_normalize_node_roles(previous_roles))
+    curr = sorted(_normalize_node_roles(current_roles))
+    if curr == []:
+        return False
+    return prev != curr
+
+
+def _trigger_full_resync_after_role_change(cfg: dict, dev: dict, fp: dict, host: str, ip: str) -> dict:
+    base_url = _safe_base_url(cfg.get('admin_base_url', ''))
+    if not base_url:
+        return {'ok': False, 'reason': 'missing_base_url'}
+
+    node_type = _normalize_node_type(cfg.get('node_runtime_type') or 'raspi_node')
+    if node_type in ('server', 'workstation'):
+        client_id = str(cfg.get('client_id') or '').strip()
+        panel_keys = cfg.get('panel_api_keys') if isinstance(cfg.get('panel_api_keys'), dict) else {}
+        api_key = str((panel_keys.get('raspi_to_admin') if isinstance(panel_keys, dict) else '') or '').strip()
+        if not client_id or not api_key:
+            return {'ok': False, 'reason': 'missing_hardware_credentials'}
+        payload = _panel_hardware_register_payload(cfg, dev, fp, host, ip, str(cfg.get('registration_token') or ''), node_type=node_type)
+        return _panel_hardware_auto_import(base_url, client_id, api_key, payload)
+
+    register_url = _panel_url(cfg, 'panel_register_path')
+    if not register_url or not (register_url.startswith('http://') or register_url.startswith('https://')):
+        return {'ok': False, 'reason': 'invalid_register_url'}
+
+    payload = _panel_sync_payload(cfg, dev, fp, host, ip)
+    code, resp, err = http_post_json(register_url, payload, timeout=10)
+    if code is None:
+        return {'ok': False, 'reason': 'request_failed', 'detail': str(err)}
+    return {
+        'ok': _response_indicates_success(code, resp),
+        'http': code,
+        'response': resp,
+        'detail': '' if _response_indicates_success(code, resp) else (_extract_response_message(resp if isinstance(resp, dict) else None) or f'http {code}'),
+    }
+
+
 def _extract_rotated_device_credentials(resp: dict | None) -> dict:
     if not isinstance(resp, dict):
         return {}
@@ -2505,6 +2555,9 @@ def api_panel_register_hardware():
 def api_panel_sync_status():
     cfg = ensure_config()
     dev = ensure_device()
+    fp = ensure_fingerprint()
+    host = get_hostname()
+    ip = get_ip()
 
     data = request.get_json(force=True, silent=True) or {}
     panel_state = cfg.get('panel_link_state') if isinstance(cfg.get('panel_link_state'), dict) else {}
@@ -2593,9 +2646,13 @@ def api_panel_sync_status():
             last_response=resp,
             last_error='',
         )
+        previous_roles = cfg.get('panel_node_roles') if isinstance(cfg.get('panel_node_roles'), list) else []
         node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
+        role_change_resync = {'ok': True, 'skipped': True}
         if node_roles:
             cfg['panel_node_roles'] = node_roles
+            if _node_roles_changed(previous_roles, node_roles):
+                role_change_resync = _trigger_full_resync_after_role_change(cfg, dev, fp, host, ip)
             cfg['updated_at'] = utc_now()
             write_json(CONFIG_PATH, cfg, mode=0o600)
         if request_base:
@@ -2610,6 +2667,8 @@ def api_panel_sync_status():
             response=resp,
             panel_link_state=st,
             node_type=node_type,
+            panel_node_roles=(cfg.get('panel_node_roles') if isinstance(cfg.get('panel_node_roles'), list) else []),
+            role_change_resync=role_change_resync,
             api_key_bootstrap={'ok': True, 'updated': False, 'skipped': True, 'reason': 'hardware_node'},
         ), 200
 
@@ -2673,6 +2732,7 @@ def api_panel_sync_status():
 
     ping_http = None
     ping_error = ''
+    role_change_resync = {'ok': True, 'skipped': True}
     ping_url = _panel_url(cfg, 'panel_ping_path')
     if ping_url and (ping_url.startswith('http://') or ping_url.startswith('https://')):
         fp = ensure_fingerprint()
@@ -2706,7 +2766,10 @@ def api_panel_sync_status():
 
     node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
     if node_roles:
+        previous_roles = cfg.get('panel_node_roles') if isinstance(cfg.get('panel_node_roles'), list) else []
         cfg['panel_node_roles'] = node_roles
+        if _node_roles_changed(previous_roles, node_roles):
+            role_change_resync = _trigger_full_resync_after_role_change(cfg, dev, fp, host, ip)
         cfg['updated_at'] = utc_now()
         write_json(CONFIG_PATH, cfg, mode=0o600)
 
@@ -2721,6 +2784,8 @@ def api_panel_sync_status():
         sync_url=sync_url,
         response=resp,
         panel_device_flags=(cfg.get('panel_device_flags') if isinstance(cfg.get('panel_device_flags'), dict) else {}),
+        panel_node_roles=(cfg.get('panel_node_roles') if isinstance(cfg.get('panel_node_roles'), list) else []),
+        role_change_resync=role_change_resync,
         ping_http=ping_http,
         ping_error=ping_error,
         api_key_bootstrap=_pull_and_apply_bootstrap_keys(cfg, dev),
