@@ -64,7 +64,7 @@ def _is_private_remote(remote: str) -> bool:
 def _is_private_unauth_registry_read() -> bool:
     if request.method != "GET":
         return False
-    if request.path not in {"/api/autodiscover/services", "/api/stream/player/repos"}:
+    if request.path not in {"/api/autodiscover/services", "/api/stream/player/repos", "/api/llm-manager/status"}:
         return False
     return _is_private_remote(str(request.remote_addr or ""))
 
