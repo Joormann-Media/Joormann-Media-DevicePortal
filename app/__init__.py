@@ -50,6 +50,26 @@ def _is_local_unauth_llm_report() -> bool:
         return False
 
 
+def _is_local_unauth_player_update() -> bool:
+    path = request.path or ""
+    method = request.method or "GET"
+    if method == "POST":
+        if not (path.startswith("/api/stream/player/repos/") and path.endswith("/install-update")):
+            return False
+    elif method == "GET":
+        if path != "/api/stream/player/install-update/status":
+            return False
+    else:
+        return False
+    remote = (request.remote_addr or "").strip()
+    if not remote:
+        return False
+    try:
+        return ip_address(remote).is_loopback
+    except ValueError:
+        return False
+
+
 def _is_private_remote(remote: str) -> bool:
     remote = (remote or "").strip()
     if not remote:
@@ -138,6 +158,9 @@ def create_app() -> Flask:
             return None
         # Allow local LLM manager report without login.
         if _is_local_unauth_llm_report():
+            return None
+        # Allow local player update triggers/status via localhost without login.
+        if _is_local_unauth_player_update():
             return None
         # Allow read-only service registry sync pulls from private LAN nodes.
         if _is_private_unauth_registry_read():
