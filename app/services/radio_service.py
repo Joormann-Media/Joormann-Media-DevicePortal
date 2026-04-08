@@ -11,6 +11,8 @@ from typing import Any
 import shutil
 
 from app.core.config import ensure_config
+from app.core.jsonio import read_json, write_json
+from app.core.paths import DATA_DIR
 from app.core.timeutil import utc_now
 
 
@@ -23,6 +25,7 @@ class RadioService:
         self._process: subprocess.Popen[str] | None = None
         self._stream_url: str | None = None
         self._playback_url: str | None = None
+        self._started_at: str | None = None
         self._last_error: str | None = None
         self._rtsp_adapter_process: subprocess.Popen[str] | None = None
         self._rtsp_adapter_source_url: str | None = None
@@ -32,6 +35,67 @@ class RadioService:
         self._rtsp_adapter_last_stderr: str | None = None
         self._rtsp_adapter_last_exit_code: int | None = None
         self._mpv_last_stderr: str | None = None
+        self._state_path = os.path.join(DATA_DIR, "radio-state.json")
+
+    def _is_pid_alive(self, pid: int) -> bool:
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except Exception:
+            return False
+
+    def _is_mpv_process(self, pid: int) -> bool:
+        if pid <= 0:
+            return False
+        cmdline_path = f"/proc/{pid}/cmdline"
+        try:
+            raw = open(cmdline_path, "rb").read()
+            text = raw.decode("utf-8", errors="ignore").replace("\x00", " ").lower()
+        except Exception:
+            return True
+        return "mpv" in text
+
+    def _read_state_locked(self) -> dict[str, Any]:
+        state = read_json(self._state_path, {})
+        if not isinstance(state, dict):
+            return {}
+        return state
+
+    def _write_state_locked(self, running: bool) -> None:
+        pid = self._process.pid if self._process is not None and self._process.poll() is None else None
+        payload = {
+            "running": bool(running),
+            "pid": int(pid) if isinstance(pid, int) else None,
+            "stream_url": self._stream_url,
+            "playback_url": self._playback_url,
+            "started_at": self._started_at,
+            "updated_at": utc_now(),
+            "last_error": self._last_error,
+        }
+        write_json(self._state_path, payload, mode=0o600)
+
+    def _restore_running_from_state_locked(self) -> tuple[bool, int | None]:
+        state = self._read_state_locked()
+        pid_raw = state.get("pid")
+        pid = int(pid_raw) if isinstance(pid_raw, (int, float, str)) and str(pid_raw).strip().isdigit() else None
+        running = bool(state.get("running")) and isinstance(pid, int) and self._is_pid_alive(pid) and self._is_mpv_process(pid)
+        if running:
+            if not self._stream_url:
+                self._stream_url = str(state.get("stream_url") or "").strip() or None
+            if not self._playback_url:
+                self._playback_url = str(state.get("playback_url") or "").strip() or None
+            if not self._started_at:
+                self._started_at = str(state.get("started_at") or "").strip() or None
+            return True, pid
+
+        if state:
+            state["running"] = False
+            state["pid"] = None
+            state["updated_at"] = utc_now()
+            write_json(self._state_path, state, mode=0o600)
+        return False, None
 
     def _detect_stream_kind(self, url: str) -> str:
         value = str(url or "").strip().lower()
@@ -397,6 +461,8 @@ class RadioService:
                 time.sleep(0.35)
                 if self._process.poll() is None:
                     self._last_error = None
+                    self._started_at = utc_now()
+                    self._write_state_locked(True)
                     return {
                         "ok": True,
                         "message": "Radio gestartet",
@@ -420,12 +486,15 @@ class RadioService:
 
             if adapter_active:
                 self._stop_rtsp_adapter_locked()
+            self._started_at = None
             self._last_error = last_error
+            self._write_state_locked(False)
             return {"ok": False, "message": f"Radio-Start fehlgeschlagen: {last_error}", "stream_url": url}
 
     def stop(self) -> dict[str, Any]:
         with self._lock:
-            if self._process is None and self._rtsp_adapter_process is None:
+            state_running, state_pid = self._restore_running_from_state_locked()
+            if self._process is None and self._rtsp_adapter_process is None and not state_running:
                 return {"ok": True, "message": "Radio bereits gestoppt"}
 
             try:
@@ -438,11 +507,24 @@ class RadioService:
                         self._process.kill()
                 except Exception:
                     pass
+            if self._process is None and state_running and isinstance(state_pid, int):
+                try:
+                    os.kill(state_pid, signal.SIGTERM)
+                    for _ in range(12):
+                        if not self._is_pid_alive(state_pid):
+                            break
+                        time.sleep(0.2)
+                    if self._is_pid_alive(state_pid):
+                        os.kill(state_pid, signal.SIGKILL)
+                except Exception:
+                    pass
 
             self._process = None
             self._stream_url = None
             self._playback_url = None
+            self._started_at = None
             self._stop_rtsp_adapter_locked()
+            self._write_state_locked(False)
             logger.info("Radio playback stopped")
             return {"ok": True, "message": "Radio gestoppt"}
 
@@ -470,6 +552,12 @@ class RadioService:
 
     def status(self) -> dict[str, Any]:
         running = self._process is not None and self._process.poll() is None
+        state_pid: int | None = None
+        if not running:
+            running, state_pid = self._restore_running_from_state_locked()
+        if running and self._process is not None and self._process.poll() is None:
+            self._write_state_locked(True)
+
         adapter_running = self._rtsp_adapter_process is not None and self._rtsp_adapter_process.poll() is None
         stream_kind = self._detect_stream_kind(self._stream_url or "")
         return {
@@ -477,7 +565,8 @@ class RadioService:
             "stream_url": self._stream_url,
             "playback_url": self._playback_url,
             "stream_kind": stream_kind,
-            "pid": self._process.pid if running and self._process is not None else None,
+            "pid": self._process.pid if running and self._process is not None else state_pid,
+            "started_at": self._started_at,
             "last_error": self._last_error,
             "rtsp_adapter": {
                 "active": adapter_running,

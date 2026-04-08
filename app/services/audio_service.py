@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from typing import Any
+
+import requests
 
 from app.core.netcontrol import NetControlError, audio_outputs_status, audio_output_set
 from app.core.config import ensure_config
@@ -11,6 +14,32 @@ from app.services import bluetooth_service
 from app.services.raspotify_service import status as raspotify_status
 from app.services.radio_service import radio_service
 from app.services.tts_service import tts_service
+
+
+def _player_control_base_url() -> str:
+    host = str(os.getenv("DEVICEPLAYER_CONTROL_API_HOST", "127.0.0.1") or "").strip() or "127.0.0.1"
+    if host in {"0.0.0.0", "::"}:
+        host = "127.0.0.1"
+    try:
+        port = int(str(os.getenv("DEVICEPLAYER_CONTROL_API_PORT", "5081") or "5081").strip())
+    except Exception:
+        port = 5081
+    return f"http://{host}:{port}"
+
+
+def _player_runtime_status() -> dict[str, Any]:
+    url = f"{_player_control_base_url()}/player/status"
+    try:
+        response = requests.get(url, timeout=1.5)
+    except Exception:
+        return {}
+    if int(response.status_code) >= 400:
+        return {}
+    try:
+        data = response.json() if response.text else {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _build_sinks_payload(outputs: dict[str, Any]) -> dict[str, Any]:
@@ -175,6 +204,21 @@ def collect_status(
             "rtsp_adapter_active": bool(rtsp_adapter.get("active")),
             "rtsp_adapter_target_url": str(rtsp_adapter.get("target_url") or "").strip(),
         }
+    else:
+        runtime = _player_runtime_status()
+        runtime_state = str(runtime.get("state") or "").strip().lower()
+        runtime_source_type = str(runtime.get("source_type") or "").strip().lower()
+        runtime_has_source = runtime_state in {"playing", "buffering", "paused"} and runtime_source_type not in {"", "none", "idle"}
+        if runtime_has_source:
+            active_source = runtime_source_type
+            active_source_detail = {
+                "type": runtime_source_type,
+                "label": f"Player ({runtime_source_type})",
+                "state": runtime_state,
+                "source": str(runtime.get("source") or "").strip(),
+                "output": str(runtime.get("output") or "").strip(),
+                "volume": runtime.get("volume"),
+            }
 
     return {
         "bluetooth": bluetooth,

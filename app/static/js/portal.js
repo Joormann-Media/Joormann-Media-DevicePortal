@@ -4255,6 +4255,11 @@
     } else if (activeSource === "radio") {
       const streamUrl = String(activeSourceDetail.stream_url || activeSourceDetail.playback_url || "").trim();
       sourceLabel = streamUrl ? `radio (${streamUrl})` : "radio";
+    } else {
+      const runtimeSource = String(activeSourceDetail.source || "").trim();
+      if (runtimeSource) {
+        sourceLabel = `${activeSource} (${runtimeSource})`;
+      }
     }
     q("audio-status-source").textContent = sourceLabel;
     if (bluetooth.ok) {
