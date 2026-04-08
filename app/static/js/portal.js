@@ -4242,6 +4242,10 @@
     const activeSourceDetail = (data.active_source_detail && typeof data.active_source_detail === "object")
       ? data.active_source_detail
       : {};
+    const state = (data.state && typeof data.state === "object") ? data.state : {};
+    const stateSourcePayload = (state.active_source_payload && typeof state.active_source_payload === "object")
+      ? state.active_source_payload
+      : {};
     const bluetooth = (data.bluetooth && typeof data.bluetooth === "object") ? data.bluetooth : {};
     const outputs = (data.outputs && typeof data.outputs === "object") ? data.outputs : {};
     const savedOutput = String(((outputs.saved || {}).selected_output) || "").trim();
@@ -4253,10 +4257,26 @@
       const filePath = String(activeSourceDetail.file_path || "").trim();
       sourceLabel = filePath ? `tts (${filePath})` : "tts";
     } else if (activeSource === "radio") {
-      const streamUrl = String(activeSourceDetail.stream_url || activeSourceDetail.playback_url || "").trim();
+      const radio = (data.radio && typeof data.radio === "object") ? data.radio : {};
+      const streamUrl = String(
+        activeSourceDetail.stream_url
+        || activeSourceDetail.playback_url
+        || stateSourcePayload.stream_url
+        || stateSourcePayload.streamUrl
+        || stateSourcePayload.playback_url
+        || stateSourcePayload.url
+        || radio.stream_url
+        || radio.playback_url
+        || ""
+      ).trim();
       sourceLabel = streamUrl ? `radio (${streamUrl})` : "radio";
     } else {
-      const runtimeSource = String(activeSourceDetail.source || "").trim();
+      const runtimeSource = String(
+        activeSourceDetail.source
+        || stateSourcePayload.source
+        || stateSourcePayload.url
+        || ""
+      ).trim();
       if (runtimeSource) {
         sourceLabel = `${activeSource} (${runtimeSource})`;
       }
