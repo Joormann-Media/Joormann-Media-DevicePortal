@@ -15,8 +15,8 @@ from app.core.netcontrol import (
 from app.core.paths import CONFIG_PATH
 from app.core.timeutil import utc_now
 from app.services.audio_service import collect_status
+from app.services.audio_backend import request_audio_backend
 from app.services import bluetooth_service
-from app.services.radio_service import radio_service
 from app.services.tts_service import tts_service
 from app.services.raspotify_service import status as raspotify_status, start as raspotify_start, stop as raspotify_stop, restart as raspotify_restart
 
@@ -233,6 +233,40 @@ def _resolve_radio_output_id(request_data: dict | None = None) -> str:
     return str(profile.get("selected_output") or "").strip()
 
 
+def _forward_audio_backend(method: str, path: str, payload: dict | None = None, timeout: float = 8.0) -> tuple[bool, dict, int]:
+    status, data, err, base_url = request_audio_backend(method, path, payload=payload or {}, timeout=timeout)
+    if status is None:
+        message = "Kein externer Jarvis-AudioPlayer erreichbar."
+        if err:
+            message = f"{message} ({err})"
+        return False, {
+            "ok": False,
+            "error_code": "audio_backend_unavailable",
+            "message": message,
+            "backend_base_url": base_url,
+        }, 502
+
+    response_payload = data if isinstance(data, dict) else {}
+    if status >= 400 or not bool(response_payload.get("ok", True)):
+        message = str(response_payload.get("message") or f"Audio-Backend-Request fehlgeschlagen (HTTP {status}).").strip()
+        return False, {
+            "ok": False,
+            "error_code": str(response_payload.get("error_code") or response_payload.get("error") or "audio_backend_failed"),
+            "message": message,
+            "detail": response_payload.get("detail") or "",
+            "backend_base_url": base_url,
+            "backend_response": response_payload,
+        }, status
+
+    backend_data = response_payload.get("data") if isinstance(response_payload.get("data"), dict) else response_payload
+    return True, {
+        "ok": True,
+        "message": str(response_payload.get("message") or "ok"),
+        "backend_base_url": base_url,
+        **(backend_data if isinstance(backend_data, dict) else {}),
+    }, 200
+
+
 @bp_audio.get("/api/audio/bluetooth/scan")
 def api_audio_bluetooth_scan():
     raw_duration = request.args.get("duration", "8")
@@ -419,6 +453,8 @@ def api_audio_raspotify_restart():
 def api_audio_radio_play():
     data = request.get_json(force=True, silent=True) or {}
     stream_url = str(data.get("stream_url") or data.get("url") or "").strip()
+    if not stream_url:
+        return _error("invalid_payload", "Field 'stream_url' is required", status=400)
     output_id = _resolve_radio_output_id(data)
     output_warning = ""
     if output_id:
@@ -426,9 +462,9 @@ def api_audio_radio_play():
             audio_output_set(output_id)
         except NetControlError as exc:
             output_warning = f"{exc.code}: {exc.message}"
-    result = radio_service.play(stream_url)
-    if not result.get("ok"):
-        return _error("radio_failed", result.get("message", "Radio-Start fehlgeschlagen"), status=400)
+    ok, result, status = _forward_audio_backend("POST", "/api/audio/radio/start", {"stream_url": stream_url, "streamUrl": stream_url, "url": stream_url})
+    if not ok:
+        return _error(str(result.get("error_code") or "radio_failed"), str(result.get("message") or "Radio-Start fehlgeschlagen"), status=status, detail=str(result.get("detail") or ""))
     if output_id:
         result["output_id"] = output_id
     if output_warning:
@@ -440,6 +476,8 @@ def api_audio_radio_play():
 def api_audio_radio_start():
     data = request.get_json(force=True, silent=True) or {}
     stream_url = str(data.get("stream_url") or data.get("url") or data.get("streamUrl") or "").strip()
+    if not stream_url:
+        return _error("invalid_payload", "Field 'stream_url' is required", status=400)
     output_id = _resolve_radio_output_id(data)
     output_warning = ""
     if output_id:
@@ -447,9 +485,9 @@ def api_audio_radio_start():
             audio_output_set(output_id)
         except NetControlError as exc:
             output_warning = f"{exc.code}: {exc.message}"
-    result = radio_service.play(stream_url)
-    if not result.get("ok"):
-        return _error("radio_failed", result.get("message", "Radio-Start fehlgeschlagen"), status=400)
+    ok, result, status = _forward_audio_backend("POST", "/api/audio/radio/start", {"stream_url": stream_url, "streamUrl": stream_url, "url": stream_url})
+    if not ok:
+        return _error(str(result.get("error_code") or "radio_failed"), str(result.get("message") or "Radio-Start fehlgeschlagen"), status=status, detail=str(result.get("detail") or ""))
     if output_id:
         result["output_id"] = output_id
     if output_warning:
@@ -459,13 +497,29 @@ def api_audio_radio_start():
 
 @bp_audio.post("/api/audio/radio/stop")
 def api_audio_radio_stop():
-    result = radio_service.stop()
+    ok, result, status = _forward_audio_backend("POST", "/api/audio/radio/stop", {})
+    if not ok:
+        return _error(str(result.get("error_code") or "radio_stop_failed"), str(result.get("message") or "Radio-Stop fehlgeschlagen"), status=status, detail=str(result.get("detail") or ""))
     return _ok(result)
 
 
 @bp_audio.get("/api/audio/radio/status")
 def api_audio_radio_status():
-    return _ok(radio_service.status())
+    ok, result, status = _forward_audio_backend("GET", "/api/audio/status", timeout=5.0)
+    if not ok:
+        return _error(str(result.get("error_code") or "radio_status_failed"), str(result.get("message") or "Radio-Status nicht verfügbar"), status=status, detail=str(result.get("detail") or ""))
+    radio = result.get("radio") if isinstance(result.get("radio"), dict) else {}
+    payload = {
+        "running": bool(radio.get("running")),
+        "stream_url": str(radio.get("stream_url") or "").strip() or None,
+        "playback_url": str(radio.get("playback_url") or "").strip() or None,
+        "stream_kind": str(radio.get("stream_kind") or "unknown"),
+        "pid": radio.get("pid"),
+        "last_error": radio.get("last_error"),
+        "rtsp_adapter": radio.get("rtsp_adapter") if isinstance(radio.get("rtsp_adapter"), dict) else {},
+        "backend_base_url": result.get("backend_base_url"),
+    }
+    return _ok(payload)
 
 
 @bp_audio.post("/api/radio/play")
@@ -490,8 +544,10 @@ def api_radio_status_alias():
 
 @bp_audio.post("/api/audio/stop-all")
 def api_audio_stop_all():
-    radio_result = radio_service.stop()
-    return _ok({"radio": radio_result, "message": "all sources stopped"})
+    ok, result, status = _forward_audio_backend("POST", "/api/audio/radio/stop", {})
+    if not ok:
+        return _error(str(result.get("error_code") or "stop_all_failed"), str(result.get("message") or "Stop-All fehlgeschlagen"), status=status, detail=str(result.get("detail") or ""))
+    return _ok({"radio": result, "message": "all sources stopped"})
 
 
 @bp_audio.post("/api/audio/tts/test")

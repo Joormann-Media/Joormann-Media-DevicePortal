@@ -255,6 +255,39 @@ def _dedupe_entries(rows: list[dict]) -> list[dict]:
     return list(deduped.values())
 
 
+def _prefer_modern_audio_entries(rows: list[dict]) -> list[dict]:
+    def _bag(row: dict) -> str:
+        return " ".join([
+            str(row.get("repo_name") or "").strip().lower(),
+            str(row.get("repo_link") or "").strip().lower(),
+            str(row.get("service_name") or "").strip().lower(),
+        ])
+
+    has_modern_audio = False
+    for row in rows:
+        bag = _bag(row)
+        if "jarvis-audioplayer" in bag or "jarvis-audio-player" in bag:
+            has_modern_audio = True
+            break
+
+    if not has_modern_audio:
+        return rows
+
+    filtered: list[dict] = []
+    for row in rows:
+        bag = _bag(row)
+        is_legacy_deviceplayer = (
+            ("deviceplayer" in bag or "device-player" in bag)
+            and "displayplayer" not in bag
+            and "jarvis-audioplayer" not in bag
+            and "jarvis-audio-player" not in bag
+        )
+        if is_legacy_deviceplayer:
+            continue
+        filtered.append(row)
+    return filtered
+
+
 def _parse_iso(value: object) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -332,6 +365,7 @@ def maybe_push_family_registry(cfg: dict, trigger: str, *, force: bool = False) 
         entries.extend(_build_runtime_entries(cfg, fallback_node_name))
 
     entries = _dedupe_entries(entries)
+    entries = _prefer_modern_audio_entries(entries)
     if not entries:
         return {"ok": False, "pushed": False, "reason": "entries_empty"}
 

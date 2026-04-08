@@ -26,6 +26,7 @@ from app.core.netcontrol import spotify_connect_service_action
 from app.core.paths import CONFIG_PATH, DATA_DIR
 from app.core.storage_state import get_storage_state
 from app.core.timeutil import utc_now
+from app.services.audio_backend import request_audio_backend
 from app.services.audio_service import collect_status
 
 bp_stream = Blueprint('stream', __name__)
@@ -2372,13 +2373,26 @@ def api_stream_player_install_update_status():
 
 @bp_stream.get('/api/stream/player/audio/status')
 def api_stream_player_audio_status():
-    code, payload, err = _player_control_request('GET', '/player/status', timeout=6)
-    if code is None:
-        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
-    if code >= 400:
-        return jsonify(ok=False, error='audio_status_failed', detail=f'HTTP {code}', response=payload), (code if code >= 400 else 502)
+    status, payload, err, _backend = request_audio_backend('GET', '/api/audio/status', timeout=6.0)
+    if status is None:
+        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
+    if status >= 400:
+        return jsonify(ok=False, error='audio_status_failed', detail=f'HTTP {status}', response=payload), status
 
-    data = payload if isinstance(payload, dict) else {}
+    backend_payload = payload if isinstance(payload, dict) else {}
+    backend_data = backend_payload.get('data') if isinstance(backend_payload.get('data'), dict) else backend_payload
+    active_source = str(backend_data.get('active_source') or '').strip().lower()
+    radio = backend_data.get('radio') if isinstance(backend_data.get('radio'), dict) else {}
+    radio_running = bool(radio.get('running'))
+    source_url = str(radio.get('stream_url') or radio.get('playback_url') or '').strip()
+    data = {
+        'state': 'playing' if (active_source == 'radio' and radio_running) else 'idle',
+        'source_type': active_source if active_source else ('radio' if radio_running else 'none'),
+        'source': source_url if source_url else ('radio' if radio_running else ''),
+        'output': '',
+        'volume': None,
+        'health': {'status': 'healthy'},
+    }
     try:
         hub_status = collect_status(include_bluetooth=False)
     except Exception:
@@ -2532,14 +2546,11 @@ def api_stream_player_audio_path_browser():
 
 @bp_stream.post('/api/stream/player/audio/play-file')
 def api_stream_player_audio_play_file():
-    data = request.get_json(force=True, silent=True) or {}
-    path = str(data.get('path') or '').strip()
-    if not path:
-        return jsonify(ok=False, error='missing_path', detail='path fehlt.'), 400
-    code, payload, err = _player_control_request('POST', '/player/play-file', {'path': path}, timeout=8)
-    if code is None:
-        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
-    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+    return jsonify(
+        ok=False,
+        error='unsupported_operation',
+        detail='Lokales Datei-Playback im DevicePortal ist deaktiviert. Bitte externen Jarvis-AudioPlayer verwenden.',
+    ), 501
 
 
 @bp_stream.post('/api/stream/player/audio/play-stream')
@@ -2548,34 +2559,41 @@ def api_stream_player_audio_play_stream():
     url = str(data.get('url') or '').strip()
     if not url:
         return jsonify(ok=False, error='missing_url', detail='url fehlt.'), 400
-    code, payload, err = _player_control_request('POST', '/player/play-stream', {'url': url}, timeout=8)
-    if code is None:
-        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
-    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+    status, payload, err, _backend = request_audio_backend(
+        'POST',
+        '/api/audio/radio/start',
+        {'stream_url': url, 'streamUrl': url, 'url': url},
+        timeout=10.0,
+    )
+    if status is None:
+        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
+    return jsonify(ok=status < 400 and bool(payload.get('ok', True)), data=payload), (status if status >= 400 else 200)
 
 
 @bp_stream.post('/api/stream/player/audio/stop')
 def api_stream_player_audio_stop():
-    code, payload, err = _player_control_request('POST', '/player/stop', {}, timeout=8)
-    if code is None:
-        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
-    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+    status, payload, err, _backend = request_audio_backend('POST', '/api/audio/radio/stop', {}, timeout=8.0)
+    if status is None:
+        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
+    return jsonify(ok=status < 400 and bool(payload.get('ok', True)), data=payload), (status if status >= 400 else 200)
 
 
 @bp_stream.post('/api/stream/player/audio/pause')
 def api_stream_player_audio_pause():
-    code, payload, err = _player_control_request('POST', '/player/pause', {}, timeout=8)
-    if code is None:
-        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
-    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+    return jsonify(
+        ok=False,
+        error='unsupported_operation',
+        detail='Pause wird vom externen Jarvis-AudioPlayer aktuell nicht angeboten.',
+    ), 501
 
 
 @bp_stream.post('/api/stream/player/audio/resume')
 def api_stream_player_audio_resume():
-    code, payload, err = _player_control_request('POST', '/player/resume', {}, timeout=8)
-    if code is None:
-        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
-    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+    return jsonify(
+        ok=False,
+        error='unsupported_operation',
+        detail='Resume wird vom externen Jarvis-AudioPlayer aktuell nicht angeboten.',
+    ), 501
 
 
 @bp_stream.post('/api/stream/player/audio/volume')
@@ -2587,7 +2605,12 @@ def api_stream_player_audio_volume():
         volume = int(data.get('volume'))
     except Exception:
         return jsonify(ok=False, error='invalid_volume', detail='volume muss int sein.'), 400
-    code, payload, err = _player_control_request('POST', '/player/volume', {'volume': volume}, timeout=8)
-    if code is None:
-        return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
-    return jsonify(ok=code < 400 and bool(payload.get('ok', True)), data=payload), (code if code >= 400 else 200)
+    status, payload, err, _backend = request_audio_backend(
+        'POST',
+        '/api/audio/volume',
+        {'volume_percent': volume, 'volume': volume},
+        timeout=8.0,
+    )
+    if status is None:
+        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
+    return jsonify(ok=status < 400 and bool(payload.get('ok', True)), data=payload), (status if status >= 400 else 200)
