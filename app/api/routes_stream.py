@@ -2383,12 +2383,16 @@ def api_stream_player_audio_status():
     backend_data = backend_payload.get('data') if isinstance(backend_payload.get('data'), dict) else backend_payload
     active_source = str(backend_data.get('active_source') or '').strip().lower()
     radio = backend_data.get('radio') if isinstance(backend_data.get('radio'), dict) else {}
+    tts = backend_data.get('tts') if isinstance(backend_data.get('tts'), dict) else {}
     radio_running = bool(radio.get('running'))
+    tts_running = bool(tts.get('running'))
     source_url = str(radio.get('stream_url') or radio.get('playback_url') or '').strip()
+    tts_source = str(tts.get('file_path') or '').strip()
+    has_playing = (active_source == 'radio' and radio_running) or (active_source == 'tts' and tts_running)
     data = {
-        'state': 'playing' if (active_source == 'radio' and radio_running) else 'idle',
-        'source_type': active_source if active_source else ('radio' if radio_running else 'none'),
-        'source': source_url if source_url else ('radio' if radio_running else ''),
+        'state': 'playing' if has_playing else 'idle',
+        'source_type': active_source if active_source else ('radio' if radio_running else ('tts' if tts_running else 'none')),
+        'source': source_url if source_url else (tts_source if tts_source else ('radio' if radio_running else ('tts' if tts_running else ''))),
         'output': '',
         'volume': None,
         'health': {'status': 'healthy'},

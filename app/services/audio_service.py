@@ -11,10 +11,9 @@ from app.core.config import ensure_config
 from app.core.jsonio import write_json
 from app.core.paths import CONFIG_PATH
 from app.core.timeutil import utc_now
+from app.services.audio_backend import request_audio_backend
 from app.services import bluetooth_service
 from app.services.raspotify_service import status as raspotify_status
-from app.services.radio_service import radio_service
-from app.services.tts_service import tts_service
 
 
 def _player_control_base_url() -> str:
@@ -286,14 +285,22 @@ def collect_status(
         errors.append({"scope": "raspotify", "message": exc.message})
         raspotify = {"ok": False, "error": exc.message, "detail": exc.detail}
 
-    radio = radio_service.status()
-    tts = tts_service.status()
+    radio: dict[str, Any] = {"running": False}
+    tts: dict[str, Any] = {"running": False}
+    backend_active_source = "idle"
+    backend_status, backend_payload, _backend_err, _backend_base = request_audio_backend("GET", "/api/audio/status", timeout=1.4)
+    if backend_status is not None and int(backend_status) < 400 and isinstance(backend_payload, dict):
+        backend_data = backend_payload.get("data") if isinstance(backend_payload.get("data"), dict) else backend_payload
+        if isinstance(backend_data, dict):
+            radio = backend_data.get("radio") if isinstance(backend_data.get("radio"), dict) else radio
+            tts = backend_data.get("tts") if isinstance(backend_data.get("tts"), dict) else tts
+            backend_active_source = str(backend_data.get("active_source") or "").strip().lower() or "idle"
 
     sinks_payload = _build_sinks_payload(outputs if isinstance(outputs, dict) else {})
 
     active_source = "idle"
     active_source_detail: dict[str, Any] = {}
-    if tts.get("running"):
+    if tts.get("running") or backend_active_source == "tts":
         active_source = "tts"
         active_source_detail = {
             "type": "tts",
@@ -302,7 +309,7 @@ def collect_status(
             "file_path": str(tts.get("file_path") or "").strip(),
             "pid": tts.get("pid"),
         }
-    elif radio.get("running"):
+    elif radio.get("running") or backend_active_source == "radio":
         active_source = "radio"
         rtsp_adapter = radio.get("rtsp_adapter") if isinstance(radio.get("rtsp_adapter"), dict) else {}
         active_source_detail = {

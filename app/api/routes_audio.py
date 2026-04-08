@@ -17,7 +17,6 @@ from app.core.timeutil import utc_now
 from app.services.audio_service import collect_status
 from app.services.audio_backend import request_audio_backend
 from app.services import bluetooth_service
-from app.services.tts_service import tts_service
 from app.services.raspotify_service import status as raspotify_status, start as raspotify_start, stop as raspotify_stop, restart as raspotify_restart
 
 bp_audio = Blueprint("audio", __name__)
@@ -103,23 +102,41 @@ def api_audio_mixer():
             "message": exc.message,
             "detail": exc.detail,
         })
+    backend_settings: dict[str, Any] | None = None
+    backend_info: dict[str, Any] = {"ok": False}
+    b_status, b_payload, b_err, b_base = request_audio_backend("GET", "/api/audio/mixer/settings", timeout=3.0)
+    if b_status is not None and int(b_status) < 400 and isinstance(b_payload, dict) and bool(b_payload.get("ok", True)):
+        raw_backend_settings = b_payload.get("data") if isinstance(b_payload.get("data"), dict) else b_payload
+        if isinstance(raw_backend_settings, dict):
+            backend_settings = raw_backend_settings
+            backend_info = {"ok": True, "base_url": b_base}
+    elif b_status is not None:
+        backend_info = {"ok": False, "base_url": b_base, "status": int(b_status)}
+    elif b_err:
+        backend_info = {"ok": False, "error": b_err}
+
+    view_settings = backend_settings if isinstance(backend_settings, dict) else {
+        "tts_volume_percent": int(profile.get("tts_volume_percent") or 90),
+        "tts_target_mode": str(profile.get("tts_target_mode") or "current"),
+        "tts_target_output_id": str(profile.get("tts_target_output_id") or ""),
+        "ducking_enabled": bool(profile.get("ducking_enabled", True)),
+        "ducking_level_percent": int(profile.get("ducking_level_percent") or 30),
+        "ducking_attack_ms": int(profile.get("ducking_attack_ms") or 120),
+        "ducking_release_ms": int(profile.get("ducking_release_ms") or 450),
+        "channel_volumes": profile.get("channel_volumes") if isinstance(profile.get("channel_volumes"), dict) else {},
+        "mic_volumes": profile.get("mic_volumes") if isinstance(profile.get("mic_volumes"), dict) else {},
+        "updated_at": str(profile.get("updated_at") or ""),
+    }
+
     return _ok({
         "outputs": outputs,
         "sources": sources,
         "warnings": warnings,
         "settings": {
+            **view_settings,
             "master_volume_percent": int(profile.get("master_volume_percent") or 65),
-            "tts_volume_percent": int(profile.get("tts_volume_percent") or 90),
-            "tts_target_mode": str(profile.get("tts_target_mode") or "current"),
-            "tts_target_output_id": str(profile.get("tts_target_output_id") or ""),
-            "ducking_enabled": bool(profile.get("ducking_enabled", True)),
-            "ducking_level_percent": int(profile.get("ducking_level_percent") or 30),
-            "ducking_attack_ms": int(profile.get("ducking_attack_ms") or 120),
-            "ducking_release_ms": int(profile.get("ducking_release_ms") or 450),
-            "channel_volumes": profile.get("channel_volumes") if isinstance(profile.get("channel_volumes"), dict) else {},
-            "mic_volumes": profile.get("mic_volumes") if isinstance(profile.get("mic_volumes"), dict) else {},
-            "updated_at": str(profile.get("updated_at") or ""),
         },
+        "audio_backend": backend_info,
     })
 
 
@@ -153,12 +170,27 @@ def api_audio_mixer_settings_save():
         profile["ducking_enabled"] = bool(profile.get("ducking_enabled", True))
     profile["updated_at"] = utc_now()
 
+    ok_backend, backend_result, backend_status = _forward_audio_backend("POST", "/api/audio/mixer/settings", {
+        "tts_volume_percent": profile["tts_volume_percent"],
+        "ducking_enabled": profile["ducking_enabled"],
+        "ducking_level_percent": profile["ducking_level_percent"],
+        "ducking_attack_ms": profile["ducking_attack_ms"],
+        "ducking_release_ms": profile["ducking_release_ms"],
+    }, timeout=6.0)
+    if not ok_backend:
+        return _error(
+            str(backend_result.get("error_code") or "audio_backend_failed"),
+            str(backend_result.get("message") or "Audio-Backend nicht erreichbar"),
+            status=backend_status,
+            detail=str(backend_result.get("detail") or ""),
+        )
+
     cfg["audio_mixer"] = profile
     cfg["updated_at"] = utc_now()
     ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
     if not ok:
         return _error("config_write_failed", "Could not persist audio mixer settings", status=500, detail=err)
-    return _ok({"settings": profile})
+    return _ok({"settings": profile, "audio_backend": backend_result})
 
 
 def _outputs_to_sinks() -> dict:
@@ -547,16 +579,17 @@ def api_audio_stop_all():
     ok, result, status = _forward_audio_backend("POST", "/api/audio/radio/stop", {})
     if not ok:
         return _error(str(result.get("error_code") or "stop_all_failed"), str(result.get("message") or "Stop-All fehlgeschlagen"), status=status, detail=str(result.get("detail") or ""))
-    return _ok({"radio": result, "message": "all sources stopped"})
+    tts_ok, tts_result, _tts_status = _forward_audio_backend("POST", "/api/audio/tts/stop", {})
+    return _ok({"radio": result, "tts": tts_result if tts_ok else {"ok": False}, "message": "all sources stopped"})
 
 
 @bp_audio.post("/api/audio/tts/test")
 def api_audio_tts_test():
     data = request.get_json(force=True, silent=True) or {}
     text = str(data.get("text") or "Dies ist ein TTS Test.").strip() or "Dies ist ein TTS Test."
-    result = tts_service.speak(text=text)
-    if not result.get("ok"):
-        return _error("tts_failed", result.get("message", "TTS fehlgeschlagen"), status=400)
+    ok, result, status = _forward_audio_backend("POST", "/api/audio/tts/speak", {"text": text, "message": text}, timeout=10.0)
+    if not ok:
+        return _error(str(result.get("error_code") or "tts_failed"), str(result.get("message") or "TTS fehlgeschlagen"), status=status, detail=str(result.get("detail") or ""))
     return _ok(result)
 
 
@@ -566,9 +599,9 @@ def api_audio_tts_speak():
     text = str(data.get("text") or data.get("message") or "").strip()
     if not text:
         return _error("invalid_payload", "Field 'text' is required", status=400)
-    result = tts_service.speak(text=text)
-    if not result.get("ok"):
-        return _error("tts_failed", result.get("message", "TTS fehlgeschlagen"), status=400)
+    ok, result, status = _forward_audio_backend("POST", "/api/audio/tts/speak", {"text": text, "message": text}, timeout=10.0)
+    if not ok:
+        return _error(str(result.get("error_code") or "tts_failed"), str(result.get("message") or "TTS fehlgeschlagen"), status=status, detail=str(result.get("detail") or ""))
     return _ok(result)
 
 
