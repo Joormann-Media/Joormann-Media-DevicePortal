@@ -1306,7 +1306,9 @@ def _is_remote_autodiscover_repo(repo: dict) -> bool:
 def _sanitize_llm_manager_payload(payload: dict) -> dict:
     data = payload if isinstance(payload, dict) else {}
     models_raw = data.get("models") if isinstance(data.get("models"), list) else []
+    running_raw = data.get("running") if isinstance(data.get("running"), list) else []
     models = []
+    running = []
     for item in models_raw:
         if not isinstance(item, dict):
             continue
@@ -1321,6 +1323,18 @@ def _sanitize_llm_manager_payload(payload: dict) -> dict:
             "parameter_size": str(item.get("parameter_size") or "").strip(),
             "quantization_level": str(item.get("quantization_level") or "").strip(),
             "update_status": str(item.get("update_status") or "unknown").strip(),
+        })
+    for item in running_raw:
+        if not isinstance(item, dict):
+            continue
+        running.append({
+            "name": str(item.get("name") or item.get("model") or "").strip(),
+            "model": str(item.get("model") or "").strip(),
+            "size": str(item.get("size") or "").strip(),
+            "size_vram": str(item.get("size_vram") or "").strip(),
+            "processor": str(item.get("processor") or "").strip(),
+            "context": str(item.get("context") or "").strip(),
+            "until": str(item.get("until") or "").strip(),
         })
 
     default_model = str(data.get("default_model") or "").strip()
@@ -1343,6 +1357,7 @@ def _sanitize_llm_manager_payload(payload: dict) -> dict:
         "ollama": data.get("ollama") if isinstance(data.get("ollama"), dict) else {},
         "default_model": default_model,
         "models": models,
+        "running": running,
     }
 
 
@@ -1475,6 +1490,7 @@ def refresh_llm_manager_from_runtime(cfg: dict, force: bool = False, retries: in
         "ollama": summary.get("ollama") if isinstance(summary.get("ollama"), dict) else {},
         "default_model": summary.get("default_model", ""),
         "models": summary.get("models") if isinstance(summary.get("models"), list) else [],
+        "running": summary.get("running") if isinstance(summary.get("running"), list) else [],
     }
     sanitized = _sanitize_llm_manager_payload(payload)
     cfg["llm_manager"] = sanitized
