@@ -104,6 +104,7 @@ def audio_backend_base_urls(cfg: dict | None = None) -> list[str]:
     candidates.extend([item for item in managed if isinstance(item, dict)])
     candidates.extend([item for item in autodiscover if isinstance(item, dict)])
 
+    registry_candidate_count = 0
     for repo in candidates:
         if not _is_audio_repo_candidate(repo):
             continue
@@ -112,15 +113,18 @@ def audio_backend_base_urls(cfg: dict | None = None) -> list[str]:
             continue
         score = _candidate_score(repo, base_url, local_names)
         urls.append((score, base_url))
+        registry_candidate_count += 1
 
-    # Safety fallback: probe common local audio service ports even when registry data is stale.
-    for port in (5096, 5097, 5095):
-        urls.append((180, f"http://127.0.0.1:{port}"))
-    for host in sorted(local_names):
-        if host in {"127.0.0.1", "::1", "localhost"}:
-            continue
+    # Safety fallback only when no registry candidate exists.
+    # Otherwise stale local ports can shadow the managed/reported backend.
+    if registry_candidate_count == 0:
         for port in (5096, 5097, 5095):
-            urls.append((120, f"http://{host}:{port}"))
+            urls.append((180, f"http://127.0.0.1:{port}"))
+        for host in sorted(local_names):
+            if host in {"127.0.0.1", "::1", "localhost"}:
+                continue
+            for port in (5096, 5097, 5095):
+                urls.append((120, f"http://{host}:{port}"))
 
     urls.sort(key=lambda row: row[0], reverse=True)
     out: list[str] = []
