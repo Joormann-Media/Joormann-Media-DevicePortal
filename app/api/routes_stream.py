@@ -1323,6 +1323,24 @@ def _is_remote_autodiscover_repo(repo: dict) -> bool:
     source = str((repo or {}).get('source') or '').strip().lower()
     if source != 'autodiscover':
         return False
+    install_dir = str((repo or {}).get('install_dir') or '').strip()
+    if install_dir:
+        try:
+            path = Path(install_dir).expanduser().resolve()
+            if path.exists():
+                # If the configured install dir exists locally, treat it as local repo
+                # even when autodiscover host metadata is inconsistent.
+                return False
+        except Exception:
+            pass
+    repo_link = str((repo or {}).get('repo_link') or '').strip()
+    if repo_link.startswith('/'):
+        try:
+            path = Path(repo_link).expanduser().resolve()
+            if path.exists():
+                return False
+        except Exception:
+            pass
     local_aliases = _current_host_aliases()
     candidates = {
         str((repo or {}).get('hostname') or '').strip().lower(),
