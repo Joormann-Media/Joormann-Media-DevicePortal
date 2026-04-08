@@ -370,28 +370,77 @@ def _collect_alsa_caps() -> dict:
     caps["cards"] = rows
 
     if _has("amixer"):
-        def _volume_for_card(card_id: int | None) -> int | None:
+        def _controls_for_card(card_id: int | None) -> list[str]:
             args = ["amixer"]
             if card_id is not None:
                 args.extend(["-c", str(card_id)])
-            args.extend(["sget", "PCM"])
+            args.append("scontrols")
+            code_ctrl, out_ctrl, _ = _run(args, timeout=8)
+            if code_ctrl != 0:
+                return []
+            controls: list[str] = []
+            for line in out_ctrl.splitlines():
+                m = re.search(r"'([^']+)'", line)
+                if m:
+                    controls.append(m.group(1))
+            return controls
+
+        def _read_control_volume(card_id: int | None, control_name: str) -> int | None:
+            args = ["amixer"]
+            if card_id is not None:
+                args.extend(["-c", str(card_id)])
+            args.extend(["sget", control_name])
             code_get, out_get, _ = _run(args, timeout=8)
             if code_get != 0:
-                # fallback
-                args2 = ["amixer"]
-                if card_id is not None:
-                    args2.extend(["-c", str(card_id)])
-                args2.extend(["sget", "Master"])
-                code_get, out_get, _ = _run(args2, timeout=8)
-                if code_get != 0:
-                    return None
-            m = ALSA_PERCENT_RE.search(out_get)
-            if not m:
                 return None
-            try:
-                return max(0, min(150, int(m.group(1))))
-            except Exception:
+            values = ALSA_PERCENT_RE.findall(out_get)
+            if not values:
                 return None
+            parsed: list[int] = []
+            for raw in values:
+                try:
+                    parsed.append(max(0, min(150, int(raw))))
+                except Exception:
+                    continue
+            if not parsed:
+                return None
+            return max(parsed)
+
+        def _volume_for_card(card_id: int | None) -> int | None:
+            controls = _controls_for_card(card_id)
+            if not controls:
+                return None
+            preferred = ["PCM", "Master", "Speaker", "Headphone", "Line", "Digital", "Playback"]
+            include_tokens = ("pcm", "master", "speaker", "headphone", "line", "digital", "playback", "front", "surround", "center", "lfe", "side")
+            exclude_tokens = ("capture", "mic", "boost", "input", "loopback")
+            ordered: list[str] = []
+            used = set()
+            for name in preferred:
+                for ctl in controls:
+                    low = ctl.lower()
+                    if (
+                        (low == name.lower() or name.lower() in low)
+                        and not any(token in low for token in exclude_tokens)
+                        and ctl not in used
+                    ):
+                        ordered.append(ctl)
+                        used.add(ctl)
+            for ctl in controls:
+                if ctl not in used:
+                    low = ctl.lower()
+                    if any(token in low for token in include_tokens) and not any(token in low for token in exclude_tokens):
+                        ordered.append(ctl)
+                        used.add(ctl)
+            # Use the highest relevant playback volume as user-visible channel volume.
+            # This mirrors the write path where we set multiple controls.
+            best: int | None = None
+            for ctl in ordered:
+                vol = _read_control_volume(card_id, ctl)
+                if vol is None:
+                    continue
+                if best is None or vol > best:
+                    best = vol
+            return best
 
         for cid in speaker_cards:
             vol = _volume_for_card(cid)

@@ -100,19 +100,30 @@ def _alsa_simple_controls(card_id: int | None = None) -> list[str]:
 
 def _alsa_set_control_volume(volume: int, card_id: int | None = None) -> tuple[bool, str]:
     controls = _alsa_simple_controls(card_id)
-    preferred = ["PCM", "Master", "Speaker", "Headphone", "Line"]
+    preferred = ["PCM", "Master", "Speaker", "Headphone", "Line", "Digital", "Playback"]
+    include_tokens = ("pcm", "master", "speaker", "headphone", "line", "digital", "playback", "front", "surround", "center", "lfe", "side")
+    exclude_tokens = ("capture", "mic", "boost", "input", "loopback")
     ordered: list[str] = []
     used = set()
     for name in preferred:
         for ctl in controls:
-            if ctl.lower() == name.lower() and ctl not in used:
+            low = ctl.lower()
+            if (
+                (low == name.lower() or name.lower() in low)
+                and not any(token in low for token in exclude_tokens)
+                and ctl not in used
+            ):
                 ordered.append(ctl)
                 used.add(ctl)
     for ctl in controls:
-        if ctl not in used:
+        if ctl in used:
+            continue
+        low = ctl.lower()
+        if any(token in low for token in include_tokens) and not any(token in low for token in exclude_tokens):
             ordered.append(ctl)
             used.add(ctl)
 
+    successful: list[str] = []
     for ctl in ordered:
         args = ["amixer"]
         if card_id is not None:
@@ -120,8 +131,23 @@ def _alsa_set_control_volume(volume: int, card_id: int | None = None) -> tuple[b
         args.extend(["-q", "sset", ctl, f"{volume}%"])
         code, _, _ = _run(args, timeout=8)
         if code == 0:
-            scope = f"card{card_id}" if card_id is not None else "default"
-            return True, f"{scope}:{ctl}"
+            successful.append(ctl)
+
+    if not successful:
+        # conservative fallback: touch at most one writable control
+        for ctl in controls:
+            args = ["amixer"]
+            if card_id is not None:
+                args.extend(["-c", str(card_id)])
+            args.extend(["-q", "sset", ctl, f"{volume}%"])
+            code, _, _ = _run(args, timeout=8)
+            if code == 0:
+                successful.append(ctl)
+                break
+
+    if successful:
+        scope = f"card{card_id}" if card_id is not None else "default"
+        return True, f"{scope}:{','.join(successful)}"
     return False, "no writable alsa control"
 
 
