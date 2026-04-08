@@ -153,27 +153,9 @@
   const MANAGED_REPOS_CACHE_KEY = "deviceportal.managed_repos_cache.v2";
   const SYSTEM_UPDATE_SUMMARY_CACHE_KEY = "deviceportal.system_update_summary.v1";
   const STORAGE_FM_UPLOAD_MAX_FILE_BYTES = 512 * 1024 * 1024;
-  const AUDIO_DEVICE_MAX_PERCENT = 150;
-  const AUDIO_UI_MAX_PERCENT = 100;
 
   function q(id) {
     return document.getElementById(id);
-  }
-
-  function audioDevicePercentToUi(value) {
-    const raw = Number(value);
-    if (!Number.isFinite(raw)) return null;
-    const device = Math.max(0, Math.min(AUDIO_DEVICE_MAX_PERCENT, Math.round(raw)));
-    const ui = Math.round((device / AUDIO_DEVICE_MAX_PERCENT) * AUDIO_UI_MAX_PERCENT);
-    return Math.max(0, Math.min(AUDIO_UI_MAX_PERCENT, ui));
-  }
-
-  function audioUiPercentToDevice(value) {
-    const raw = Number(value);
-    if (!Number.isFinite(raw)) return null;
-    const ui = Math.max(0, Math.min(AUDIO_UI_MAX_PERCENT, Math.round(raw)));
-    const device = Math.round((ui / AUDIO_UI_MAX_PERCENT) * AUDIO_DEVICE_MAX_PERCENT);
-    return Math.max(0, Math.min(AUDIO_DEVICE_MAX_PERCENT, device));
   }
 
   function _repoLooksInstalled(item) {
@@ -4479,13 +4461,13 @@
     for (const item of availableOutputs) {
       if (!item || typeof item !== "object") continue;
       if (String(item.id || "").trim() !== currentOutput) continue;
-      const v = audioDevicePercentToUi(item.volume_percent);
+      const v = Number(item.volume_percent);
       if (Number.isFinite(v)) {
         currentOutputVolume = Math.max(0, Math.min(100, Math.round(v)));
       }
       break;
     }
-    const configuredMaster = audioDevicePercentToUi(settings.master_volume_percent);
+    const configuredMaster = Number(settings.master_volume_percent);
     const masterVolume = Number.isFinite(currentOutputVolume)
       ? currentOutputVolume
       : (Number.isFinite(configuredMaster) ? Math.max(0, Math.min(100, Math.round(configuredMaster))) : 65);
@@ -4510,8 +4492,8 @@
           const label = String(item.label || channelId);
           const sinkName = String(item.sink_name || "");
           const availableNow = !!item.available;
-          const volRaw = audioDevicePercentToUi(item.volume_percent);
-          const fallbackRaw = audioDevicePercentToUi(channelVolumes[channelId]);
+          const volRaw = Number(item.volume_percent);
+          const fallbackRaw = Number(channelVolumes[channelId]);
           const volume = Number.isFinite(volRaw)
             ? Math.max(0, Math.min(100, Math.round(volRaw)))
             : (Number.isFinite(fallbackRaw) ? Math.max(0, Math.min(100, Math.round(fallbackRaw))) : 65);
@@ -4632,9 +4614,7 @@
   async function setAudioChannelVolume(channelId, volumePercent, options = {}) {
     const id = String(channelId || "").trim();
     if (!id) throw new Error("Kanal fehlt.");
-    const uiVolume = Math.max(0, Math.min(100, Math.round(Number(volumePercent) || 0)));
-    const volume = audioUiPercentToDevice(uiVolume);
-    if (!Number.isFinite(volume)) throw new Error("Kanal-Lautstärke ungültig.");
+    const volume = Math.max(0, Math.min(100, Math.round(Number(volumePercent) || 0)));
     await fetchJson("/api/audio/channel/volume", {
       method: "POST",
       body: { channel_id: id, volume_percent: volume },
@@ -4644,7 +4624,7 @@
       await refreshAudioMixer();
     }
     if (options.notify) {
-      toast(`Kanal ${id}: ${uiVolume}%`, "success");
+      toast(`Kanal ${id}: ${volume}%`, "success");
     }
   }
 
@@ -4955,8 +4935,6 @@
     const volume = Number(raw);
     if (!Number.isFinite(volume)) throw new Error("Lautstärke muss eine Zahl sein.");
     const clamped = Math.max(0, Math.min(100, Math.round(volume)));
-    const backendVolume = audioUiPercentToDevice(clamped);
-    if (!Number.isFinite(backendVolume)) throw new Error("Lautstärke ungültig.");
     const currentOutputId = currentOutputIdFromMixer();
     const sinkName = currentSinkNameFromMixer();
     if (currentOutputId) {
@@ -4964,7 +4942,7 @@
         method: "POST",
         body: {
           channel_id: currentOutputId,
-          volume_percent: backendVolume,
+          volume_percent: clamped,
         },
         timeoutMs: 12000,
       });
@@ -4972,7 +4950,7 @@
       await fetchJson("/api/audio/volume", {
         method: "POST",
         body: {
-          volume_percent: backendVolume,
+          volume_percent: clamped,
           sink_name: sinkName || "",
         },
         timeoutMs: 12000,
