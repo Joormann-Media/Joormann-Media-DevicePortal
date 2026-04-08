@@ -4237,7 +4237,9 @@
   }
 
   function renderAudioHubStatus(payload) {
-    const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+    const data = (payload && payload.data && typeof payload.data === "object")
+      ? payload.data
+      : ((payload && typeof payload === "object") ? payload : {});
     const activeSource = String(data.active_source || "idle");
     const activeSourceDetail = (data.active_source_detail && typeof data.active_source_detail === "object")
       ? data.active_source_detail
@@ -4320,9 +4322,22 @@
   }
 
   async function refreshAudioHubStatus() {
+    const warmupData = consumeWarmupData(["sections", "legacy", "audio_status"]);
+    if (warmupData && typeof warmupData === "object") {
+      renderAudioHubStatus(warmupData);
+      return warmupData;
+    }
     const payload = await fetchJson("/api/audio/status", { cache: "no-store" });
     renderAudioHubStatus(payload);
     return payload;
+  }
+
+  async function primeAudioHubData() {
+    await Promise.allSettled([
+      refreshAudioOutputs(),
+      refreshAudioMixer(),
+      refreshAudioHubStatus(),
+    ]);
   }
 
   function setAudioRangeLabel(rangeId, labelId) {
@@ -4354,7 +4369,9 @@
   }
 
   function renderAudioMixer(payload) {
-    const root = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+    const root = (payload && payload.data && typeof payload.data === "object")
+      ? payload.data
+      : ((payload && typeof payload === "object") ? payload : {});
     audioMixerState.lastPayload = root;
     const outputs = (root.outputs && typeof root.outputs === "object") ? root.outputs : {};
     const sources = (root.sources && typeof root.sources === "object") ? root.sources : {};
@@ -4555,6 +4572,11 @@
   }
 
   async function refreshAudioMixer() {
+    const warmupData = consumeWarmupData(["sections", "legacy", "audio_mixer"]);
+    if (warmupData && typeof warmupData === "object") {
+      renderAudioMixer(warmupData);
+      return warmupData;
+    }
     const payload = await fetchJson("/api/audio/mixer", { cache: "no-store" });
     renderAudioMixer(payload);
     return payload;
@@ -6477,6 +6499,11 @@
   }
 
   async function refreshAudioOutputs() {
+    const warmupData = consumeWarmupData(["sections", "legacy", "audio_outputs"]);
+    if (warmupData && typeof warmupData === "object") {
+      renderAudioOutputs(warmupData);
+      return warmupData;
+    }
     const payload = await fetchJson("/api/audio/outputs", { cache: "no-store" });
     renderAudioOutputs(payload);
     return payload;
@@ -8265,6 +8292,7 @@
     runQuiet(refreshAutodiscoverServices);
     await run(runRuntimeWarmupFlow);
     await run(refreshStatus);
+    await run(primeAudioHubData);
     await run(refreshPanelFlagsLive);
     await run(refreshSyncStatus);
     await runQuiet(panelSyncCheck, ["device_not_linked", "setup_required"]);
@@ -8280,9 +8308,7 @@
     await run(refreshStreamAudioFiles);
     await runQuiet(refreshStreamAudioStatus, ["audio_control_unreachable", "connection refused"]);
     await run(refreshBluetoothDevices);
-    await run(refreshAudioOutputs);
-    await runQuiet(refreshAudioMixer, ["audio_control_unreachable", "connection refused"]);
-    await runQuiet(refreshAudioHubStatus, ["audio_control_unreachable", "connection refused"]);
+    await runQuiet(primeAudioHubData, ["audio_control_unreachable", "connection refused"]);
     await run(loadPlayerRepoConfig);
     await run(refreshManagedRepos);
     await run(refreshAutodiscoverServices);

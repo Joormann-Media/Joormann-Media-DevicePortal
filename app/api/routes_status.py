@@ -14,10 +14,12 @@ from app.core.family_registry_push import maybe_push_family_registry
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_fingerprint
 from app.core.gitinfo import get_repo_update_info, get_update_info
 from app.core.netcontrol import NetControlError, get_network_info
-from app.core.netcontrol import spotify_connect_service_action
+from app.core.netcontrol import audio_sources_status, spotify_connect_service_action
 from app.core.storage_state import get_storage_state
 from app.core.state import get_state, update_state
 from app.core.systeminfo import format_uptime_human, parse_cpu_temp_c, parse_load_stats, parse_mem_stats_kb, parse_uptime_seconds
+from app.services.audio_backend import request_audio_backend
+from app.services.audio_service import collect_status
 
 bp_status = Blueprint('status', __name__)
 _RUNTIME_SNAPSHOT_CACHE: dict[str, object] = {}
@@ -232,6 +234,67 @@ def _build_runtime_viewmodel() -> dict:
         legacy["llm_manager"] = llm_manager if isinstance(llm_manager, dict) else {}
     except Exception:
         legacy["llm_manager"] = {}
+    try:
+        audio_status = collect_status()
+        legacy["audio_status"] = audio_status if isinstance(audio_status, dict) else {}
+    except Exception as exc:
+        legacy["audio_status"] = {"ok": False, "error": str(exc)}
+    try:
+        audio_status_payload = legacy["audio_status"] if isinstance(legacy.get("audio_status"), dict) else {}
+        outputs_payload = audio_status_payload.get("outputs") if isinstance(audio_status_payload.get("outputs"), dict) else {}
+        legacy["audio_outputs"] = outputs_payload if isinstance(outputs_payload, dict) else {}
+    except Exception:
+        legacy["audio_outputs"] = {}
+    try:
+        cfg = ensure_config()
+        settings = cfg.get("audio_mixer") if isinstance(cfg.get("audio_mixer"), dict) else {}
+        merged_settings = {
+            "tts_volume_percent": int(settings.get("tts_volume_percent", 90)),
+            "tts_target_mode": str(settings.get("tts_target_mode") or "current"),
+            "tts_target_output_id": str(settings.get("tts_target_output_id") or ""),
+            "ducking_level_percent": int(settings.get("ducking_level_percent", 30)),
+            "ducking_enabled": bool(settings.get("ducking_enabled", True)),
+            "ducking_attack_ms": int(settings.get("ducking_attack_ms", 120)),
+            "ducking_release_ms": int(settings.get("ducking_release_ms", 450)),
+            "master_volume_percent": int(settings.get("master_volume_percent", 65)),
+            "channel_volumes": settings.get("channel_volumes") if isinstance(settings.get("channel_volumes"), dict) else {},
+            "mic_volumes": settings.get("mic_volumes") if isinstance(settings.get("mic_volumes"), dict) else {},
+        }
+        backend_status, backend_payload, _backend_err, backend_base = request_audio_backend("GET", "/api/audio/mixer/settings", timeout=2.0)
+        if backend_status is not None and int(backend_status) < 400 and isinstance(backend_payload, dict):
+            backend_data = backend_payload.get("data") if isinstance(backend_payload.get("data"), dict) else backend_payload
+            if isinstance(backend_data, dict):
+                for key in (
+                    "tts_volume_percent",
+                    "tts_target_mode",
+                    "tts_target_output_id",
+                    "ducking_level_percent",
+                    "ducking_enabled",
+                    "ducking_attack_ms",
+                    "ducking_release_ms",
+                ):
+                    if key in backend_data:
+                        merged_settings[key] = backend_data.get(key)
+
+        try:
+            sources_payload = audio_sources_status()
+            if not isinstance(sources_payload, dict):
+                sources_payload = {}
+        except Exception:
+            sources_payload = {}
+
+        outputs_payload = legacy["audio_outputs"] if isinstance(legacy.get("audio_outputs"), dict) else {}
+        legacy["audio_mixer"] = {
+            "outputs": outputs_payload,
+            "sources": sources_payload,
+            "settings": merged_settings,
+            "audio_backend": {
+                "ok": backend_status is not None and int(backend_status) < 400,
+                "base_url": backend_base,
+            },
+        }
+    except Exception as exc:
+        legacy["audio_mixer"] = {"outputs": {}, "sources": {}, "settings": {}, "error": str(exc)}
 
     # DevicePortal classic UI expects these keys, even when empty.
     legacy.setdefault("software_requirements", {})
