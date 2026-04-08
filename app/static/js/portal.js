@@ -4368,6 +4368,28 @@
     return "";
   }
 
+  function currentOutputIdFromMixer() {
+    const root = (audioMixerState.lastPayload && typeof audioMixerState.lastPayload === "object") ? audioMixerState.lastPayload : {};
+    const outputs = (root.outputs && typeof root.outputs === "object") ? root.outputs : {};
+    return String(outputs.current_output || "").trim();
+  }
+
+  function syncMasterAndCurrentChannelUi(volumePercent) {
+    const volume = Math.max(0, Math.min(100, Math.round(Number(volumePercent) || 0)));
+    const currentOutputId = currentOutputIdFromMixer();
+    if (!currentOutputId) return;
+    const sliders = document.querySelectorAll("#audio-channel-list input[type='range'][data-channel-id]");
+    for (const slider of sliders) {
+      if (!slider || typeof slider !== "object") continue;
+      if (String(slider.dataset.channelId || "").trim() !== currentOutputId) continue;
+      slider.value = String(volume);
+      const wrap = slider.closest(".border.rounded.p-2");
+      const valueEl = wrap ? wrap.querySelector("[data-role='audio-channel-value']") : null;
+      if (valueEl) valueEl.textContent = String(volume);
+      break;
+    }
+  }
+
   function renderAudioMixer(payload) {
     const root = (payload && payload.data && typeof payload.data === "object")
       ? payload.data
@@ -4473,8 +4495,8 @@
           const volRaw = Number(item.volume_percent);
           const fallbackRaw = Number(channelVolumes[channelId]);
           const volume = Number.isFinite(volRaw)
-            ? Math.max(0, Math.min(150, Math.round(volRaw)))
-            : (Number.isFinite(fallbackRaw) ? Math.max(0, Math.min(150, Math.round(fallbackRaw))) : 65);
+            ? Math.max(0, Math.min(100, Math.round(volRaw)))
+            : (Number.isFinite(fallbackRaw) ? Math.max(0, Math.min(100, Math.round(fallbackRaw))) : 65);
 
           const wrap = document.createElement("div");
           wrap.className = "border rounded p-2";
@@ -4493,7 +4515,7 @@
           const slider = document.createElement("input");
           slider.type = "range";
           slider.min = "0";
-          slider.max = "150";
+          slider.max = "100";
           slider.step = "1";
           slider.value = String(volume);
           slider.className = "form-range mb-0";
@@ -4501,7 +4523,14 @@
           slider.dataset.channelId = channelId;
           slider.addEventListener("input", () => {
             const valueEl = wrap.querySelector('[data-role="audio-channel-value"]');
-            if (valueEl) valueEl.textContent = String(Math.max(0, Math.min(150, Math.round(Number(slider.value) || 0))));
+            const current = Math.max(0, Math.min(100, Math.round(Number(slider.value) || 0)));
+            if (valueEl) valueEl.textContent = String(current);
+            if (channelId === currentOutput) {
+              const masterSlider = q("stream-audio-volume");
+              const masterValueEl = q("stream-audio-volume-value");
+              if (masterSlider) masterSlider.value = String(current);
+              if (masterValueEl) masterValueEl.textContent = String(current);
+            }
             queueAudioChannelVolume(channelId, Number(slider.value || 0));
           });
           slider.addEventListener("change", () => {
@@ -4585,7 +4614,7 @@
   async function setAudioChannelVolume(channelId, volumePercent, options = {}) {
     const id = String(channelId || "").trim();
     if (!id) throw new Error("Kanal fehlt.");
-    const volume = Math.max(0, Math.min(150, Math.round(Number(volumePercent) || 0)));
+    const volume = Math.max(0, Math.min(100, Math.round(Number(volumePercent) || 0)));
     await fetchJson("/api/audio/channel/volume", {
       method: "POST",
       body: { channel_id: id, volume_percent: volume },
@@ -4906,17 +4935,30 @@
     const volume = Number(raw);
     if (!Number.isFinite(volume)) throw new Error("Lautstärke muss eine Zahl sein.");
     const clamped = Math.max(0, Math.min(100, Math.round(volume)));
+    const currentOutputId = currentOutputIdFromMixer();
     const sinkName = currentSinkNameFromMixer();
-    await fetchJson("/api/audio/volume", {
-      method: "POST",
-      body: {
-        volume_percent: clamped,
-        sink_name: sinkName || "",
-      },
-      timeoutMs: 12000,
-    });
+    if (currentOutputId) {
+      await fetchJson("/api/audio/channel/volume", {
+        method: "POST",
+        body: {
+          channel_id: currentOutputId,
+          volume_percent: clamped,
+        },
+        timeoutMs: 12000,
+      });
+    } else {
+      await fetchJson("/api/audio/volume", {
+        method: "POST",
+        body: {
+          volume_percent: clamped,
+          sink_name: sinkName || "",
+        },
+        timeoutMs: 12000,
+      });
+    }
     const valueEl = q("stream-audio-volume-value");
     if (valueEl) valueEl.textContent = String(clamped);
+    syncMasterAndCurrentChannelUi(clamped);
     if (clamped > 0) {
       streamAudioLastNonZeroVolume = clamped;
     }
@@ -7581,6 +7623,7 @@
       const clamped = Math.max(0, Math.min(100, Math.round(vol)));
       const valueEl = q("stream-audio-volume-value");
       if (valueEl) valueEl.textContent = String(clamped);
+      syncMasterAndCurrentChannelUi(clamped);
       scheduleStreamAudioVolumeSet();
     });
     q("stream-audio-volume").addEventListener("change", () => run(() => streamAudioSetVolume({ notify: false, refresh: true })));
