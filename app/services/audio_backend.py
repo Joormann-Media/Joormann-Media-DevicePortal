@@ -10,6 +10,8 @@ import requests
 
 from app.core.config import ensure_config
 
+_LAST_GOOD_BACKEND_URL: str = ""
+
 
 def _normalize_base_url(raw: object) -> str:
     value = str(raw or "").strip()
@@ -111,6 +113,15 @@ def audio_backend_base_urls(cfg: dict | None = None) -> list[str]:
         score = _candidate_score(repo, base_url, local_names)
         urls.append((score, base_url))
 
+    # Safety fallback: probe common local audio service ports even when registry data is stale.
+    for port in (5096, 5097, 5095):
+        urls.append((180, f"http://127.0.0.1:{port}"))
+    for host in sorted(local_names):
+        if host in {"127.0.0.1", "::1", "localhost"}:
+            continue
+        for port in (5096, 5097, 5095):
+            urls.append((120, f"http://{host}:{port}"))
+
     urls.sort(key=lambda row: row[0], reverse=True)
     out: list[str] = []
     seen: set[str] = set()
@@ -124,16 +135,27 @@ def audio_backend_base_urls(cfg: dict | None = None) -> list[str]:
 
 
 def request_audio_backend(method: str, path: str, payload: dict | None = None, timeout: float = 6.0) -> tuple[int | None, dict[str, Any], str, str]:
+    global _LAST_GOOD_BACKEND_URL
     cfg = ensure_config()
     method_up = str(method or "GET").strip().upper() or "GET"
-    for base_url in audio_backend_base_urls(cfg):
+    candidates = audio_backend_base_urls(cfg)
+    if _LAST_GOOD_BACKEND_URL and _LAST_GOOD_BACKEND_URL in candidates:
+        candidates = [_LAST_GOOD_BACKEND_URL] + [item for item in candidates if item != _LAST_GOOD_BACKEND_URL]
+
+    first_error: tuple[int | None, dict[str, Any], str, str] | None = None
+    first_success: tuple[int | None, dict[str, Any], str, str] | None = None
+    wants_status = method_up == "GET" and path == "/api/audio/status"
+
+    for base_url in candidates:
         url = f"{base_url}{path}"
         try:
             if method_up == "GET":
                 response = requests.get(url, timeout=timeout)
             else:
                 response = requests.post(url, json=payload or {}, timeout=timeout)
-        except Exception:
+        except Exception as exc:
+            if first_error is None:
+                first_error = (None, {}, str(exc), base_url)
             continue
 
         status = int(response.status_code)
@@ -143,7 +165,35 @@ def request_audio_backend(method: str, path: str, payload: dict | None = None, t
             data = {"raw": (response.text or "")[:4000]}
         if not isinstance(data, dict):
             data = {"raw": data}
-        return status, data, "", base_url
 
+        if status >= 400:
+            if first_error is None:
+                first_error = (status, data, f"http_{status}", base_url)
+            continue
+
+        if not wants_status:
+            _LAST_GOOD_BACKEND_URL = base_url
+            return status, data, "", base_url
+
+        if first_success is None:
+            first_success = (status, data, "", base_url)
+
+        payload_data = data.get("data") if isinstance(data.get("data"), dict) else data
+        if isinstance(payload_data, dict):
+            active_source = str(payload_data.get("active_source") or "").strip().lower()
+            radio = payload_data.get("radio") if isinstance(payload_data.get("radio"), dict) else {}
+            tts = payload_data.get("tts") if isinstance(payload_data.get("tts"), dict) else {}
+            radio_running = bool(radio.get("running"))
+            tts_running = bool(tts.get("running"))
+            if active_source in {"radio", "tts"} or radio_running or tts_running:
+                _LAST_GOOD_BACKEND_URL = base_url
+                return status, data, "", base_url
+
+    if first_success is not None:
+        status, data, err, base_url = first_success
+        if base_url:
+            _LAST_GOOD_BACKEND_URL = base_url
+        return status, data, err, base_url
+    if first_error is not None:
+        return first_error
     return None, {}, "audio_backend_unreachable", ""
-
