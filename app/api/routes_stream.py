@@ -26,6 +26,7 @@ from app.core.netcontrol import spotify_connect_service_action
 from app.core.paths import CONFIG_PATH, DATA_DIR
 from app.core.storage_state import get_storage_state
 from app.core.timeutil import utc_now
+from app.services.audio_service import collect_status
 
 bp_stream = Blueprint('stream', __name__)
 
@@ -2305,7 +2306,59 @@ def api_stream_player_audio_status():
         return jsonify(ok=False, error='audio_control_unreachable', detail=err), 502
     if code >= 400:
         return jsonify(ok=False, error='audio_status_failed', detail=f'HTTP {code}', response=payload), (code if code >= 400 else 502)
-    return jsonify(ok=True, data=payload)
+
+    data = payload if isinstance(payload, dict) else {}
+    try:
+        hub_status = collect_status(include_bluetooth=False)
+    except Exception:
+        hub_status = {}
+
+    if isinstance(hub_status, dict):
+        active_source = str(hub_status.get('active_source') or 'idle').strip()
+        active_detail = hub_status.get('active_source_detail') if isinstance(hub_status.get('active_source_detail'), dict) else {}
+        outputs = hub_status.get('outputs') if isinstance(hub_status.get('outputs'), dict) else {}
+        current_output = str(outputs.get('current_output') or '').strip()
+        current_volume = None
+        available_outputs = outputs.get('available_outputs') if isinstance(outputs.get('available_outputs'), list) else []
+        for item in available_outputs:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get('id') or '').strip() != current_output:
+                continue
+            try:
+                current_volume = int(round(float(item.get('volume_percent'))))
+            except Exception:
+                current_volume = None
+            break
+
+        state = str(data.get('state') or '').strip().lower()
+        source_type = str(data.get('source_type') or '').strip().lower()
+        has_active_runtime_source = state in {'playing', 'buffering', 'paused'} and source_type not in {'', 'none', 'idle'}
+
+        if active_source in {'tts', 'radio'} and not has_active_runtime_source:
+            data['state'] = 'playing'
+            data['source_type'] = active_source
+            if active_source == 'tts':
+                data['source'] = str(active_detail.get('file_path') or data.get('source') or 'tts').strip() or 'tts'
+            elif active_source == 'radio':
+                data['source'] = (
+                    str(active_detail.get('stream_url') or '').strip()
+                    or str(active_detail.get('playback_url') or '').strip()
+                    or str(data.get('source') or 'radio').strip()
+                )
+
+        if current_output and not str(data.get('output') or '').strip():
+            data['output'] = current_output
+        if current_volume is not None and (data.get('volume') in (None, '', '-')):
+            data['volume'] = current_volume
+
+        data['hub_active_source'] = active_source
+        data['hub_active_source_detail'] = active_detail
+        data['hub_outputs'] = outputs
+        data['hub_sources'] = hub_status.get('sources') if isinstance(hub_status.get('sources'), dict) else {}
+        data['hub_updated_at'] = str(hub_status.get('updated_at') or '')
+
+    return jsonify(ok=True, data=data)
 
 
 @bp_stream.get('/api/stream/player/audio/files')

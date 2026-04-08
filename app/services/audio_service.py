@@ -153,10 +153,28 @@ def collect_status(
     sinks_payload = _build_sinks_payload(outputs if isinstance(outputs, dict) else {})
 
     active_source = "idle"
+    active_source_detail: dict[str, Any] = {}
     if tts.get("running"):
         active_source = "tts"
+        active_source_detail = {
+            "type": "tts",
+            "label": "TTS",
+            "running": True,
+            "file_path": str(tts.get("file_path") or "").strip(),
+            "pid": tts.get("pid"),
+        }
     elif radio.get("running"):
         active_source = "radio"
+        rtsp_adapter = radio.get("rtsp_adapter") if isinstance(radio.get("rtsp_adapter"), dict) else {}
+        active_source_detail = {
+            "type": "radio",
+            "label": "Radio",
+            "running": True,
+            "stream_url": str(radio.get("stream_url") or "").strip(),
+            "playback_url": str(radio.get("playback_url") or "").strip(),
+            "rtsp_adapter_active": bool(rtsp_adapter.get("active")),
+            "rtsp_adapter_target_url": str(rtsp_adapter.get("target_url") or "").strip(),
+        }
 
     return {
         "bluetooth": bluetooth,
@@ -165,6 +183,7 @@ def collect_status(
         "radio": radio,
         "tts": tts,
         "sources": {"radio": radio, "tts": tts},
+        "active_source_detail": active_source_detail,
         "sinks": sinks_payload,
         "active_source": active_source,
         "updated_at": utc_now(),

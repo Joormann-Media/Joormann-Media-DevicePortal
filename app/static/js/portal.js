@@ -4239,17 +4239,29 @@
   function renderAudioHubStatus(payload) {
     const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
     const activeSource = String(data.active_source || "idle");
+    const activeSourceDetail = (data.active_source_detail && typeof data.active_source_detail === "object")
+      ? data.active_source_detail
+      : {};
     const bluetooth = (data.bluetooth && typeof data.bluetooth === "object") ? data.bluetooth : {};
     const outputs = (data.outputs && typeof data.outputs === "object") ? data.outputs : {};
     const savedOutput = String(((outputs.saved || {}).selected_output) || "").trim();
     const effectiveOutput = String(outputs.current_output || "").trim() || savedOutput;
     const errors = Array.isArray(data.errors) ? data.errors : [];
 
-    q("audio-status-source").textContent = activeSource || "-";
+    let sourceLabel = activeSource || "-";
+    if (activeSource === "tts") {
+      const filePath = String(activeSourceDetail.file_path || "").trim();
+      sourceLabel = filePath ? `tts (${filePath})` : "tts";
+    } else if (activeSource === "radio") {
+      const streamUrl = String(activeSourceDetail.stream_url || activeSourceDetail.playback_url || "").trim();
+      sourceLabel = streamUrl ? `radio (${streamUrl})` : "radio";
+    }
+    q("audio-status-source").textContent = sourceLabel;
     if (bluetooth.ok) {
       q("audio-status-bluetooth").textContent = `verbunden: ${Number(bluetooth.connected_count || 0)}`;
     } else {
-      q("audio-status-bluetooth").textContent = "nicht verfuegbar";
+      const btError = String(bluetooth.error || "").trim();
+      q("audio-status-bluetooth").textContent = btError ? `Fehler: ${btError}` : "nicht verfuegbar";
     }
     if (outputs.ok) {
       q("audio-status-output").textContent = effectiveOutput || "-";
@@ -4690,7 +4702,7 @@
     const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
     const health = (data.health && typeof data.health === "object") ? data.health : {};
     const state = String(data.state || "-");
-    const sourceType = String(data.source_type || "-");
+    const sourceType = String(data.source_type || data.hub_active_source || "-");
     const source = String(data.source || "-");
     const volume = Number.isFinite(Number(data.volume)) ? Number(data.volume) : "-";
     const output = String(data.output || "-");
