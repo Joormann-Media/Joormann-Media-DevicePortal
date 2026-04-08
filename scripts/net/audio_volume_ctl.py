@@ -128,8 +128,17 @@ def _alsa_set_control_volume(volume: int, card_id: int | None = None) -> tuple[b
         args = ["amixer"]
         if card_id is not None:
             args.extend(["-c", str(card_id)])
-        args.extend(["-q", "sset", ctl, f"{volume}%"])
-        code, _, _ = _run(args, timeout=8)
+        # First try to set volume and clear mute in one step.
+        args_unmute = list(args)
+        args_unmute.extend(["-q", "sset", ctl, f"{volume}%", "unmute"])
+        code, _, _ = _run(args_unmute, timeout=8)
+        if code == 0:
+            successful.append(ctl)
+            continue
+        # Fallback for controls without playback switch.
+        args_plain = list(args)
+        args_plain.extend(["-q", "sset", ctl, f"{volume}%"])
+        code, _, _ = _run(args_plain, timeout=8)
         if code == 0:
             successful.append(ctl)
 
@@ -139,8 +148,13 @@ def _alsa_set_control_volume(volume: int, card_id: int | None = None) -> tuple[b
             args = ["amixer"]
             if card_id is not None:
                 args.extend(["-c", str(card_id)])
-            args.extend(["-q", "sset", ctl, f"{volume}%"])
-            code, _, _ = _run(args, timeout=8)
+            args_unmute = list(args)
+            args_unmute.extend(["-q", "sset", ctl, f"{volume}%", "unmute"])
+            code, _, _ = _run(args_unmute, timeout=8)
+            if code != 0:
+                args_plain = list(args)
+                args_plain.extend(["-q", "sset", ctl, f"{volume}%"])
+                code, _, _ = _run(args_plain, timeout=8)
             if code == 0:
                 successful.append(ctl)
                 break
@@ -153,6 +167,14 @@ def _alsa_set_control_volume(volume: int, card_id: int | None = None) -> tuple[b
 
 def _set_volume_alsa_output(output_id: str, volume: int) -> tuple[bool, str]:
     output = (output_id or "").strip().lower()
+    requested_volume = max(0, min(150, int(volume)))
+    # ALSA percentage on analog/klinke is usually not perceptually linear.
+    # Use a gentle loudness curve for local_speaker so UI percent matches heard loudness better.
+    if output == "local_speaker" and requested_volume > 0:
+        normalized = min(requested_volume, 100)
+        volume = int(round((normalized / 100.0) ** 0.55 * 100.0))
+    else:
+        volume = requested_volume
     cards = _alsa_cards()
     speaker_cards: list[int] = []
     hdmi_cards: list[int] = []

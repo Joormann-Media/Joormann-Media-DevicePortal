@@ -18,6 +18,20 @@ ALSA_CARD_ID_RE = re.compile(r"^\s*(card|karte)\s+(\d+):", re.IGNORECASE)
 ALSA_PERCENT_RE = re.compile(r"\[(\d{1,3})%\]")
 
 
+def _speaker_hw_to_ui_percent(raw_percent: int | None) -> int | None:
+    if raw_percent is None:
+        return None
+    try:
+        raw = max(0, min(100, int(raw_percent)))
+    except Exception:
+        return None
+    if raw <= 0:
+        return 0
+    # Inverse of local_speaker set curve in audio_volume_ctl.py (power 0.55)
+    ui = int(round((raw / 100.0) ** (1.0 / 0.55) * 100.0))
+    return max(0, min(100, ui))
+
+
 def _run(args: list[str], timeout: int = 12) -> tuple[int, str, str]:
     proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
@@ -445,7 +459,7 @@ def _collect_alsa_caps() -> dict:
         for cid in speaker_cards:
             vol = _volume_for_card(cid)
             if vol is not None:
-                caps["speaker_volume_percent"] = vol
+                caps["speaker_volume_percent"] = _speaker_hw_to_ui_percent(vol)
                 break
         for cid in hdmi_cards:
             vol = _volume_for_card(cid)
