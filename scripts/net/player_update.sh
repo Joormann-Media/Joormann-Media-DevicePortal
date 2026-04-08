@@ -605,6 +605,20 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd "${REPO_DIR}"
+# ensure single instance: stop script + hard cleanup for stale repo-local app.py
+if [[ -f "${STOP_SCRIPT}" ]]; then
+  /usr/bin/env bash "${STOP_SCRIPT}" >/dev/null 2>&1 || true
+fi
+PIDS=\$(pgrep -f -- "${REPO_DIR}/app.py" || true)
+if [[ -n "\${PIDS}" ]]; then
+  kill \${PIDS} >/dev/null 2>&1 || true
+  sleep 1
+  for pid in \${PIDS}; do
+    kill -0 "\${pid}" >/dev/null 2>&1 && kill -9 "\${pid}" >/dev/null 2>&1 || true
+  done
+fi
+# prevent hidden port hopping that can create "ghost" instances on alternate ports
+export AUTO_PORT_FALLBACK=0
 exec /usr/bin/env bash "${START_SCRIPT}"
 EOF
       chmod 0755 "${START_WRAPPER}" || true
@@ -614,7 +628,16 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd "${REPO_DIR}"
-exec /usr/bin/env bash "${STOP_SCRIPT}"
+/usr/bin/env bash "${STOP_SCRIPT}" || true
+PIDS=\$(pgrep -f -- "${REPO_DIR}/app.py" || true)
+if [[ -n "\${PIDS}" ]]; then
+  kill \${PIDS} >/dev/null 2>&1 || true
+  sleep 1
+  for pid in \${PIDS}; do
+    kill -0 "\${pid}" >/dev/null 2>&1 && kill -9 "\${pid}" >/dev/null 2>&1 || true
+  done
+fi
+exit 0
 EOF
       else
         cat > "${STOP_WRAPPER}" <<'EOF'
@@ -629,6 +652,15 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd "${REPO_DIR}"
+# ensure single instance before foreground start
+PIDS=\$(pgrep -f -- "${APP_ENTRY}" || true)
+if [[ -n "\${PIDS}" ]]; then
+  kill \${PIDS} >/dev/null 2>&1 || true
+  sleep 1
+  for pid in \${PIDS}; do
+    kill -0 "\${pid}" >/dev/null 2>&1 && kill -9 "\${pid}" >/dev/null 2>&1 || true
+  done
+fi
 exec "${VENV_DIR}/bin/python" "${APP_ENTRY}"
 EOF
       chmod 0755 "${START_WRAPPER}" || true
