@@ -1268,6 +1268,43 @@ def _current_host_aliases() -> set[str]:
             continue
         aliases.add(raw)
         aliases.add(raw.split('.')[0])
+        try:
+            _, _, host_ips = socket.gethostbyname_ex(raw)
+        except Exception:
+            host_ips = []
+        for ip_raw in host_ips:
+            ip = str(ip_raw or '').strip().lower()
+            if not ip:
+                continue
+            try:
+                aliases.add(str(ip_address(ip)))
+            except Exception:
+                continue
+    try:
+        proc = subprocess.run(
+            ['ip', '-o', '-4', 'addr', 'show', 'scope', 'global'],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        for line in (proc.stdout or '').splitlines():
+            parts = line.split()
+            if 'inet' not in parts:
+                continue
+            inet_idx = parts.index('inet')
+            if inet_idx + 1 >= len(parts):
+                continue
+            cidr = str(parts[inet_idx + 1] or '').strip()
+            ip = cidr.split('/', 1)[0].strip().lower()
+            if not ip:
+                continue
+            try:
+                aliases.add(str(ip_address(ip)))
+            except Exception:
+                continue
+    except Exception:
+        pass
     aliases.update({'localhost', '127.0.0.1', '::1'})
     return aliases
 
