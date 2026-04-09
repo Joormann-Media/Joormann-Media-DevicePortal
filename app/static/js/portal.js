@@ -12,6 +12,10 @@
   let currentUpdateJobId = "";
   let streamPlayerUpdateJobId = "";
   let streamPlayerUpdatePollHandle = null;
+  let _updateModalInstance = null;
+  let _updateModalActive = false;
+  let _updateModalStartTs = null;
+  let _pendingHistoryMeta = null;
   let streamAudioVolumeDebounceHandle = null;
   let streamAudioLastNonZeroVolume = 65;
   let streamAudioMuted = false;
@@ -5790,6 +5794,13 @@
     if (!target) {
       throw new Error("Repo nicht gefunden.");
     }
+    const repoName = String(target.name || target.repo_link || "Repo");
+    openUpdateModal(repoName);
+    _pendingHistoryMeta = {
+      kind: "managed_repo",
+      name: repoName,
+      service_name: String(target.service_name || ""),
+    };
     const payload = await fetchJson(`/api/stream/player/repos/${encodeURIComponent(String(repoId || "").trim())}/install-update`, {
       method: "POST",
       timeoutMs: 20000,
@@ -5798,7 +5809,7 @@
     streamPlayerUpdateJobId = String(data.job_id || "").trim();
     await pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId);
     await refreshManagedRepos(true);
-    toast(`${String(target.name || "Repo")} Install/Update gestartet`, "success");
+    toast(`${repoName} Install/Update gestartet`, "success");
   }
 
   async function setManagedRepoAsPlayer(repoId) {
@@ -6055,6 +6066,123 @@
     return q("system-update-log") || q("stream-player-update-log");
   }
 
+  // ---------------------------------------------------------------------------
+  // Update log modal helpers
+  // ---------------------------------------------------------------------------
+
+  function _getUpdateModal() {
+    const el = document.getElementById("updateLogModal");
+    if (!el) return null;
+    if (!_updateModalInstance) {
+      _updateModalInstance = bootstrap.Modal.getOrCreateInstance(el);
+    }
+    return _updateModalInstance;
+  }
+
+  function openUpdateModal(title = "Update") {
+    const modal = _getUpdateModal();
+    if (!modal) return;
+    const titleEl = document.getElementById("updateLogModalTitle");
+    const logEl = document.getElementById("update-modal-log");
+    const badge = document.getElementById("update-modal-status-badge");
+    const footerInfo = document.getElementById("update-modal-footer-info");
+    const closeBtn = document.getElementById("update-modal-close-btn");
+    const closeX = document.getElementById("update-modal-close-x");
+    if (titleEl) titleEl.textContent = title;
+    if (logEl) logEl.textContent = "Starte…";
+    if (badge) { badge.textContent = "läuft"; badge.className = "badge text-bg-warning"; }
+    if (footerInfo) footerInfo.textContent = "";
+    if (closeBtn) closeBtn.disabled = true;
+    if (closeX) closeX.disabled = true;
+    _updateModalActive = true;
+    _updateModalStartTs = Date.now();
+    modal.show();
+  }
+
+  function _updateModalLog(text) {
+    const logEl = document.getElementById("update-modal-log");
+    if (!logEl) return;
+    const atBottom = isNearBottom(logEl);
+    logEl.textContent = text;
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function _setUpdateModalStatus(status, success) {
+    const badge = document.getElementById("update-modal-status-badge");
+    const closeBtn = document.getElementById("update-modal-close-btn");
+    const closeX = document.getElementById("update-modal-close-x");
+    const footerInfo = document.getElementById("update-modal-footer-info");
+    const done = status === "done" || status === "failed";
+    if (badge) {
+      if (status === "done" && success) { badge.textContent = "Erfolg"; badge.className = "badge text-bg-success"; }
+      else if (status === "failed" || (status === "done" && !success)) { badge.textContent = "Fehler"; badge.className = "badge text-bg-danger"; }
+      else if (status === "restarting") { badge.textContent = "Neustart"; badge.className = "badge text-bg-info"; }
+      else { badge.textContent = "läuft"; badge.className = "badge text-bg-warning"; }
+    }
+    if (done) {
+      _updateModalActive = false;
+      if (closeBtn) closeBtn.disabled = false;
+      if (closeX) closeX.disabled = false;
+      if (footerInfo && _updateModalStartTs) {
+        const secs = Math.round((Date.now() - _updateModalStartTs) / 1000);
+        footerInfo.textContent = `Dauer: ${secs}s`;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Update history
+  // ---------------------------------------------------------------------------
+
+  async function recordUpdateHistory(entry) {
+    try {
+      await fetchJson("/api/update-history/record", { method: "POST", body: entry, timeoutMs: 5000 });
+    } catch (_) { /* non-critical */ }
+    runQuiet(fetchAndRenderUpdateHistory);
+  }
+
+  async function fetchAndRenderUpdateHistory() {
+    try {
+      const payload = await fetchJson("/api/update-history", { timeoutMs: 6000, cache: "no-store" });
+      renderUpdateHistory(Array.isArray(payload.items) ? payload.items : []);
+    } catch (_) { /* silent */ }
+  }
+
+  function renderUpdateHistory(items) {
+    const host = document.getElementById("update-history-list");
+    const clearBtn = document.getElementById("btn-clear-update-history");
+    if (!host) return;
+    if (!items || !items.length) {
+      host.innerHTML = '<div class="text-secondary">Noch keine Updates durchgeführt.</div>';
+      if (clearBtn) clearBtn.classList.add("d-none");
+      return;
+    }
+    if (clearBtn) clearBtn.classList.remove("d-none");
+    const rows = items.map((item) => {
+      const isOk = item.success || item.status === "done";
+      const badgeClass = item.status === "done" && item.success ? "text-bg-success"
+        : item.status === "failed" ? "text-bg-danger"
+        : "text-bg-secondary";
+      const label = item.status === "done" && item.success ? "OK"
+        : item.status === "failed" ? "Fehler"
+        : item.status || "?";
+      const ts = item.ts ? new Date(item.ts).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : "—";
+      const commits = (item.before_commit || item.after_commit)
+        ? `<span class="text-secondary">${item.before_commit || "?"} → ${item.after_commit || "?"}</span>`
+        : "";
+      const kindIcon = item.kind === "portal" ? "🔧" : item.kind === "player" ? "▶️" : "📦";
+      const svcStr = item.service_name ? `<span class="text-secondary">${item.service_name}</span>` : "";
+      const durationStr = item.duration ? `<span class="text-secondary ms-2">${item.duration}</span>` : "";
+      return `<tr>
+        <td class="text-nowrap pe-2 text-secondary" style="width:1%;white-space:nowrap">${ts}</td>
+        <td class="pe-2">${kindIcon} <span class="fw-semibold">${item.name || "—"}</span>${svcStr ? " " + svcStr : ""}</td>
+        <td class="pe-2"><span class="badge ${badgeClass}">${label}</span>${durationStr}</td>
+        <td class="text-nowrap text-secondary">${commits}</td>
+      </tr>`;
+    }).join("");
+    host.innerHTML = `<table class="table table-sm table-borderless mb-0"><tbody>${rows}</tbody></table>`;
+  }
+
   function renderStreamPlayerUpdateStatus(data) {
     const logEl = getUpdateLogEl();
     if (!logEl) return;
@@ -6084,6 +6212,10 @@
     if (shouldStickBottom) {
       logEl.scrollTop = logEl.scrollHeight;
     }
+    if (_updateModalActive || status === "done" || status === "failed") {
+      _updateModalLog((data || {}).log || lines.join("\n"));
+      _setUpdateModalStatus(status, !!(data || {}).success);
+    }
   }
 
   async function fetchStreamPlayerUpdateStatus(jobId = "") {
@@ -6111,6 +6243,20 @@
               window.clearInterval(streamPlayerUpdatePollHandle);
               streamPlayerUpdatePollHandle = null;
             }
+            const meta = _pendingHistoryMeta;
+            _pendingHistoryMeta = null;
+            if (meta) {
+              recordUpdateHistory({
+                kind: meta.kind || "managed_repo",
+                name: meta.name || jobId || "Repo",
+                status: nextStatus,
+                success: !!data.success,
+                before_commit: data.before_commit || "",
+                after_commit: data.after_commit || "",
+                service_name: meta.service_name || data.service_name || "",
+                ts: new Date().toISOString(),
+              });
+            }
           }
         } catch (_) {
           if (streamPlayerUpdatePollHandle) {
@@ -6119,6 +6265,21 @@
           }
         }
       }, 3500);
+    } else if (status === "done" || status === "failed") {
+      const meta = _pendingHistoryMeta;
+      _pendingHistoryMeta = null;
+      if (meta) {
+        recordUpdateHistory({
+          kind: meta.kind || "managed_repo",
+          name: meta.name || jobId || "Repo",
+          status,
+          success: !!first.success,
+          before_commit: first.before_commit || "",
+          after_commit: first.after_commit || "",
+          service_name: meta.service_name || first.service_name || "",
+          ts: new Date().toISOString(),
+        });
+      }
     }
   }
 
@@ -6127,6 +6288,13 @@
     if (!player_repo_link) {
       throw new Error("Bitte zuerst Player-Repo Link/Pfad setzen.");
     }
+    const playerName = player_repo_link.split("/").pop() || "Player";
+    openUpdateModal(`Player: ${playerName}`);
+    _pendingHistoryMeta = {
+      kind: "player",
+      name: playerName,
+      service_name: String(player_service_name || ""),
+    };
     const payload = await fetchJson("/api/stream/player/install-update", {
       method: "POST",
       body: { player_repo_link, player_service_name, player_service_user },
@@ -7297,6 +7465,8 @@
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Update läuft...';
+    openUpdateModal("Portal-Update");
+    _pendingHistoryMeta = { kind: "portal", name: "Device Portal", service_name: "device-portal.service" };
     try {
       const payload = await fetchJson("/api/system/portal/update", { method: "POST", timeoutMs: 30000 });
       const data = payload.data || {};
@@ -7385,6 +7555,10 @@
     } catch (_) {
       // ignore cache errors
     }
+    if (_updateModalActive || status === "done" || status === "failed") {
+      _updateModalLog(data.log || lines.join("\n"));
+      _setUpdateModalStatus(status, !!success);
+    }
   }
 
   async function fetchPortalUpdateStatus(jobId = "") {
@@ -7460,6 +7634,20 @@
           if (updatePollHandle) {
             clearInterval(updatePollHandle);
             updatePollHandle = null;
+          }
+          const meta = _pendingHistoryMeta;
+          _pendingHistoryMeta = null;
+          if (meta) {
+            recordUpdateHistory({
+              kind: meta.kind || "portal",
+              name: meta.name || "Device Portal",
+              status,
+              success: !!data.success,
+              before_commit: data.before_commit || "",
+              after_commit: data.after_commit || "",
+              service_name: meta.service_name || data.service_name || "",
+              ts: new Date().toISOString(),
+            });
           }
           if (announceDone) {
             const done = status === "done";
@@ -7570,10 +7758,29 @@
         runQuiet(refreshManagedRepos);
         runQuiet(refreshAutodiscoverServices);
         runQuiet(refreshStatus);
+        runQuiet(fetchAndRenderUpdateHistory);
       };
       updateMainTab.addEventListener("click", refreshUpdateTabData);
       updateMainTab.addEventListener("shown.bs.tab", refreshUpdateTabData);
     }
+
+    const clearHistoryBtn = q("btn-clear-update-history");
+    if (clearHistoryBtn) {
+      clearHistoryBtn.addEventListener("click", () => run(async () => {
+        await fetchJson("/api/update-history", { method: "DELETE", timeoutMs: 5000 });
+        renderUpdateHistory([]);
+        toast("Verlauf gelöscht", "success");
+      }));
+    }
+
+    const modalCloseBtn = document.getElementById("update-modal-close-btn");
+    const modalCloseX = document.getElementById("update-modal-close-x");
+    const closeModal = () => {
+      const modal = _getUpdateModal();
+      if (modal && !_updateModalActive) modal.hide();
+    };
+    if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeModal);
+    if (modalCloseX) modalCloseX.addEventListener("click", closeModal);
 
     const checkRepoUpdatesBtn = q("btn-check-repo-updates");
     if (checkRepoUpdatesBtn) {
@@ -8387,6 +8594,7 @@
     await run(refreshSoftwareRequirements);
     await run(loadLastPortalUpdateStatus);
     await run(refreshOverlayState);
+    runQuiet(fetchAndRenderUpdateHistory);
     flushPersistedUpdateResultFlash();
     startApPolling();
     startStoragePolling();

@@ -1531,8 +1531,16 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
           </div>
           <div class="col-12">
             <div class="portal-card p-4">
-              <h3 class="h6 mb-2">Update & Install Log</h3>
-              <pre id="system-update-log" class="code-block mb-0" style="max-height: 260px; overflow:auto;">-</pre>
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <h3 class="h6 mb-0">Update-Verlauf</h3>
+                <button id="btn-clear-update-history" class="btn btn-outline-danger btn-sm d-none">
+                  <i class="bi bi-trash me-1"></i>Verlauf löschen
+                </button>
+              </div>
+              <div id="update-history-list" class="small text-secondary">Noch keine Updates durchgeführt.</div>
+              <hr class="my-3">
+              <h3 class="h6 mb-2">Live-Log</h3>
+              <pre id="system-update-log" class="code-block mb-0" style="max-height: 240px; overflow:auto;">-</pre>
             </div>
           </div>
         </div>
@@ -2227,6 +2235,28 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Update Live-Log Modal -->
+  <div class="modal fade" id="updateLogModal" tabindex="-1" aria-labelledby="updateLogModalTitle" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header py-2">
+          <h5 class="modal-title h6 mb-0" id="updateLogModalTitle">Update</h5>
+          <div class="d-flex align-items-center gap-2 ms-auto">
+            <span id="update-modal-status-badge" class="badge text-bg-secondary">—</span>
+            <button type="button" class="btn-close" id="update-modal-close-x" aria-label="Close"></button>
+          </div>
+        </div>
+        <div class="modal-body p-0">
+          <pre id="update-modal-log" class="code-block m-0 rounded-0" style="min-height: 220px; max-height: 60vh; overflow: auto; border: none;">—</pre>
+        </div>
+        <div class="modal-footer py-2">
+          <span id="update-modal-footer-info" class="text-secondary small me-auto"></span>
+          <button type="button" class="btn btn-secondary btn-sm" id="update-modal-close-btn">Schließen</button>
         </div>
       </div>
     </div>

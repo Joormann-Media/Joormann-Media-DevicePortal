@@ -135,6 +135,7 @@ DEFAULT_CONFIG: dict = {
         'last_http_status': None,
     },
     'llm_manager': {},
+    'update_history': [],
 }
 
 
@@ -229,6 +230,10 @@ def ensure_config() -> dict:
         if 'updated_at' not in ns:
             ns['updated_at'] = None
             changed = True
+
+    if not isinstance(cfg.get('update_history'), list):
+        cfg['update_history'] = []
+        changed = True
 
     clamped = clamp_poll_seconds(cfg.get('poll_seconds', 60))
     if clamped != cfg.get('poll_seconds'):

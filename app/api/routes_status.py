@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from app.api import routes_panel
 from app.api.routes_stream import refresh_llm_manager_from_runtime
 from app.core.config import ensure_config
+from app.core.jsonio import write_json
+from app.core.paths import CONFIG_PATH
 from app.core.display import get_display_snapshot
 from app.core.device import ensure_device
 from app.core.family_registry_push import maybe_push_family_registry
@@ -403,3 +405,68 @@ def api_state():
 @bp_status.get('/api/status/state')
 def api_status_state():
     return api_state()
+
+
+_UPDATE_HISTORY_MAX = 50
+
+_ALLOWED_HISTORY_KINDS = frozenset({"portal", "player", "managed_repo"})
+_ALLOWED_HISTORY_STATUSES = frozenset({"done", "failed", "running", "unknown"})
+
+
+@bp_status.get('/api/update-history')
+def api_get_update_history():
+    cfg = ensure_config()
+    items = cfg.get('update_history')
+    if not isinstance(items, list):
+        items = []
+    return jsonify(ok=True, items=items)
+
+
+@bp_status.post('/api/update-history/record')
+def api_record_update_history():
+    cfg = ensure_config()
+    body = request.get_json(force=True, silent=True) or {}
+
+    kind = str(body.get('kind') or 'unknown').strip()
+    if kind not in _ALLOWED_HISTORY_KINDS:
+        kind = 'unknown'
+
+    status = str(body.get('status') or 'unknown').strip().lower()
+    if status not in _ALLOWED_HISTORY_STATUSES:
+        status = 'unknown'
+
+    entry: dict = {
+        'ts': _iso_now(),
+        'kind': kind,
+        'name': str(body.get('name') or '').strip()[:120],
+        'status': status,
+        'success': bool(body.get('success')),
+        'git_status': str(body.get('git_status') or '').strip()[:64],
+        'before_commit': str(body.get('before_commit') or '').strip()[:12],
+        'after_commit': str(body.get('after_commit') or '').strip()[:12],
+        'service_name': str(body.get('service_name') or '').strip()[:120],
+        'job_id': str(body.get('job_id') or '').strip()[:96],
+        'duration': str(body.get('duration') or '').strip()[:32],
+    }
+
+    history = cfg.get('update_history')
+    if not isinstance(history, list):
+        history = []
+
+    history.insert(0, entry)
+    if len(history) > _UPDATE_HISTORY_MAX:
+        history = history[:_UPDATE_HISTORY_MAX]
+
+    cfg['update_history'] = history
+    write_json(CONFIG_PATH, cfg, mode=0o600)
+
+    return jsonify(ok=True, entry=entry)
+
+
+@bp_status.delete('/api/update-history')
+def api_clear_update_history():
+    cfg = ensure_config()
+    cfg['update_history'] = []
+    write_json(CONFIG_PATH, cfg, mode=0o600)
+    return jsonify(ok=True)
+
