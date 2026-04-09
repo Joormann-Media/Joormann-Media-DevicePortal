@@ -1390,6 +1390,30 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
         <div class="row g-3">
           <div class="col-12">
             <div class="portal-card p-4">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <h3 class="h6 mb-0">Repository Update-Prüfung</h3>
+                <button id="btn-check-repo-updates" class="btn btn-outline-primary btn-sm">
+                  <i class="bi bi-arrow-clockwise me-1"></i>Jetzt prüfen
+                </button>
+              </div>
+              <div class="d-flex flex-wrap gap-3 mb-3 small text-secondary">
+                <span>Zuletzt geprüft: <span id="repo-updates-checked-at">-</span></span>
+                <span>Verfügbare Updates: <span id="repo-updates-count">-</span></span>
+              </div>
+              <div id="bulk-update-toolbar" class="p-2 rounded border bg-light d-flex flex-wrap align-items-center gap-2">
+                <div class="form-check m-0">
+                  <input class="form-check-input" type="checkbox" id="bulk-select-all-updates">
+                  <label class="form-check-label small fw-semibold" for="bulk-select-all-updates">Alle auswählen</label>
+                </div>
+                <span id="bulk-update-selection-count" class="text-secondary small">0 ausgewählt</span>
+                <button id="btn-bulk-update-repos" class="btn btn-primary btn-sm ms-auto" disabled>
+                  <i class="bi bi-arrow-repeat me-1"></i>Ausgewählte updaten (<span id="bulk-update-repo-count">0</span>)
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="portal-card p-4">
               <section id="llm-manager-card" class="mb-3 d-none">
                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
                   <div>
@@ -1452,16 +1476,6 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
               <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                 <h4 class="h6 mb-0">Weitere Repos</h4>
                 <button id="btn-extra-repo-refresh" class="btn btn-outline-secondary btn-sm">Liste aktualisieren</button>
-              </div>
-              <div id="bulk-update-toolbar" class="mb-3 p-2 rounded border bg-light d-flex flex-wrap align-items-center gap-2">
-                <div class="form-check m-0">
-                  <input class="form-check-input" type="checkbox" id="bulk-select-all-updates">
-                  <label class="form-check-label small fw-semibold" for="bulk-select-all-updates">Alle auswählen</label>
-                </div>
-                <span id="bulk-update-selection-count" class="text-secondary small">0 ausgewählt</span>
-                <button id="btn-bulk-update-repos" class="btn btn-primary btn-sm ms-auto" disabled>
-                  <i class="bi bi-arrow-repeat me-1"></i>Ausgewählte updaten (<span id="bulk-update-repo-count">0</span>)
-                </button>
               </div>
               <div id="extra-repos-list" class="small mb-3">Keine zusätzlichen Repos hinterlegt.</div>
               <h4 class="h6 mb-2">Repo hinzufügen / bearbeiten</h4>

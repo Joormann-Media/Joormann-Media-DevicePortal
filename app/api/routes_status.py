@@ -319,6 +319,12 @@ def api_status():
     return jsonify(ok=True, **payload)
 
 
+@bp_status.post('/api/status/check-updates')
+def api_status_check_updates():
+    payload = _collect_status_payload(force_repo_updates=True)
+    return jsonify(ok=True, **payload)
+
+
 @bp_status.post('/api/runtime/warmup')
 def api_runtime_warmup():
     cfg = ensure_config()

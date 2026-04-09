@@ -659,6 +659,13 @@
       renderManagedRepos(managedInstallRepos);
     }
     renderHeroUpdateBadge((statusDashboardState.status || {}).app_update || {}, repoUpdatesState);
+    const checkedAtEl = q("repo-updates-checked-at");
+    const countEl = q("repo-updates-count");
+    if (checkedAtEl) checkedAtEl.textContent = repoUpdatesState.checked_at || "-";
+    if (countEl) {
+      const n = repoUpdatesState.update_count;
+      countEl.textContent = n > 0 ? `${n} verfügbar` : (repoUpdatesState.checked_at ? "Keine" : "-");
+    }
   }
 
   function resolveRepoUpdateInfo(source = {}) {
@@ -7566,6 +7573,24 @@
       };
       updateMainTab.addEventListener("click", refreshUpdateTabData);
       updateMainTab.addEventListener("shown.bs.tab", refreshUpdateTabData);
+    }
+
+    const checkRepoUpdatesBtn = q("btn-check-repo-updates");
+    if (checkRepoUpdatesBtn) {
+      checkRepoUpdatesBtn.addEventListener("click", () => run(async () => {
+        const origHtml = checkRepoUpdatesBtn.innerHTML;
+        checkRepoUpdatesBtn.disabled = true;
+        checkRepoUpdatesBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Prüfe...';
+        try {
+          const data = await fetchJson("/api/status/check-updates", { method: "POST", cache: "no-store" });
+          renderStatus(data);
+          runQuiet(refreshManagedRepos);
+          toast("Update-Prüfung abgeschlossen", "success");
+        } finally {
+          checkRepoUpdatesBtn.disabled = false;
+          checkRepoUpdatesBtn.innerHTML = origHtml;
+        }
+      }));
     }
 
     initPlayerRepoFieldSync();
