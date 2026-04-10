@@ -5117,6 +5117,20 @@
 
     renderServiceBadges("system-portal-status-badges", portalStatus, true, true, true, portalUpdate);
     renderServiceBadges("system-player-status-badges", playerStatus, true, true, true, playerUpdate);
+    const portalCheckWrap = q("system-portal-update-check-wrap");
+    const playerCheckWrap = q("system-player-update-check-wrap");
+    if (portalCheckWrap) {
+      const hasUpdate = !!(portalUpdate && portalUpdate.available);
+      portalCheckWrap.classList.toggle("d-none", !hasUpdate);
+      const cb = portalCheckWrap.querySelector(".js-repo-update-check");
+      if (cb && !hasUpdate) cb.checked = false;
+    }
+    if (playerCheckWrap) {
+      const hasUpdate = !!(playerUpdate && playerUpdate.available);
+      playerCheckWrap.classList.toggle("d-none", !hasUpdate);
+      const cb = playerCheckWrap.querySelector(".js-repo-update-check");
+      if (cb && !hasUpdate) cb.checked = false;
+    }
     syncSystemRepoUpdateButtons(portalUpdate, playerUpdate);
     syncSystemUpdateToggleButtons(summary);
     renderHeroUpdateBadge((statusDashboardState.status || {}).app_update || {}, repoUpdatesState);
@@ -5736,11 +5750,20 @@
     let failed = 0;
     for (const id of ids) {
       try {
-        await startManagedRepoInstallUpdate(id);
+        if (id === "__portal__") {
+          await updatePortal();
+        } else if (id === "__display_player__") {
+          await startStreamPlayerInstallUpdate();
+        } else {
+          await startManagedRepoInstallUpdate(id);
+        }
       } catch (e) {
         failed += 1;
-        const target = getManagedRepoById(id);
-        toast(`Update fehlgeschlagen: ${String((target && target.name) || id)}`, "danger");
+        let name = id;
+        if (id === "__portal__") name = "Device-Portal";
+        else if (id === "__display_player__") name = "DisplayPlayer";
+        else { const target = getManagedRepoById(id); name = String((target && target.name) || id); }
+        toast(`Update fehlgeschlagen: ${name}`, "danger");
       }
     }
     await refreshStatus();
@@ -6195,6 +6218,8 @@
         const secs = Math.round((Date.now() - _updateModalStartTs) / 1000);
         footerInfo.textContent = `Dauer: ${secs}s`;
       }
+      const modal = _getUpdateModal();
+      if (modal) setTimeout(() => modal.hide(), 3000);
     }
   }
 
@@ -7993,6 +8018,12 @@
     if (bulkUpdateBtn) {
       bulkUpdateBtn.addEventListener("click", () => run(bulkUpdateSelectedRepos));
     }
+
+    // Also update toolbar when the fixed portal/player checkboxes change
+    ["repo-upd-chk-__portal__", "repo-upd-chk-__display_player__"].forEach((cbId) => {
+      const cb = document.getElementById(cbId);
+      if (cb) cb.addEventListener("change", updateBulkUpdateToolbar);
+    });
 
     const extraRepoList = q("extra-repos-list");
     if (extraRepoList) {
