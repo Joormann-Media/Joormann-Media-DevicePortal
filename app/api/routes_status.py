@@ -367,26 +367,28 @@ def api_runtime_warmup():
     _RUNTIME_SNAPSHOT_CACHE["updated_at"] = _iso_now()
     push_result = maybe_push_family_registry(cfg, "warmup")
 
-    # Capture screenshots for each connected display, save to loop drive /screenshots
+    # Screenshot capture on warmup — disabled, set to True to re-enable
+    _SCREENSHOTS_ON_WARMUP_ENABLED = False
     screenshot_results: dict[str, object] = {}
-    try:
-        display_snapshot = get_display_snapshot(cfg)
-        displays = display_snapshot.get("displays") if isinstance(display_snapshot, dict) else []
-        if isinstance(displays, list):
-            for item in displays:
-                if not bool(item.get("connected")):
-                    continue
-                connector = str(item.get("connector") or "").strip()
-                if not connector:
-                    continue
-                try:
-                    payload = capture_and_upload(cfg, connector, allow_upload=True)
-                    screenshot_results[connector] = payload.get("screenshot") or {"available": False}
-                except Exception as exc:
-                    screenshot_results[connector] = {"available": False, "error": str(exc)}
-        write_json(CONFIG_PATH, cfg, mode=0o600)
-    except Exception as exc:
-        screenshot_results["_error"] = str(exc)
+    if _SCREENSHOTS_ON_WARMUP_ENABLED:
+        try:
+            display_snapshot = get_display_snapshot(cfg)
+            displays = display_snapshot.get("displays") if isinstance(display_snapshot, dict) else []
+            if isinstance(displays, list):
+                for item in displays:
+                    if not bool(item.get("connected")):
+                        continue
+                    connector = str(item.get("connector") or "").strip()
+                    if not connector:
+                        continue
+                    try:
+                        payload = capture_and_upload(cfg, connector, allow_upload=True)
+                        screenshot_results[connector] = payload.get("screenshot") or {"available": False}
+                    except Exception as exc:
+                        screenshot_results[connector] = {"available": False, "error": str(exc)}
+            write_json(CONFIG_PATH, cfg, mode=0o600)
+        except Exception as exc:
+            screenshot_results["_error"] = str(exc)
 
     return jsonify(
         ok=True,
