@@ -23,7 +23,8 @@ from app.core.timeutil import utc_now
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _SCREENSHOT_DIR_NAME = "screenshots"
 _DEFAULT_TIMEOUT = 20
-_MIN_VALID_BYTES = 40 * 1024
+_MIN_VALID_BYTES = 12 * 1024
+_MAX_SOLID_BYTES = 220 * 1024
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,30 @@ def _run_capture(cmd: list[str] | str, *, shell: bool = False, env: dict | None 
     return True, ""
 
 
+def _is_likely_blank(path: Path, size_bytes: int) -> bool:
+    if size_bytes <= 0:
+        return True
+    if size_bytes < _MIN_VALID_BYTES:
+        return True
+    if size_bytes >= _MAX_SOLID_BYTES:
+        return False
+    if not _command_exists("identify"):
+        return False
+    try:
+        proc = subprocess.run(
+            ["identify", "-format", "%k", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode != 0:
+            return False
+        colors = int((proc.stdout or "").strip() or "0")
+        return colors <= 2
+    except Exception:
+        return False
+
+
 def capture_screenshot(connector: str) -> Path:
     file_path = get_screenshot_path(connector)
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +232,9 @@ def capture_screenshot(connector: str) -> Path:
 
     session_type = str(env.get("XDG_SESSION_TYPE") or "").lower()
     is_wayland = bool(env.get("WAYLAND_DISPLAY")) or session_type == "wayland"
+    has_x11 = bool(env.get("DISPLAY"))
 
+    # Prefer native desktop capture tools when a session is available.
     if is_wayland and _command_exists("gnome-screenshot"):
         attempts.append((["gnome-screenshot", "-f", output], False))
 
@@ -216,15 +243,66 @@ def capture_screenshot(connector: str) -> Path:
             attempts.append((["grim", "-o", safe_connector, output], False))
         attempts.append((["grim", output], False))
 
-    if _command_exists("import"):
+    if has_x11 and _command_exists("import"):
         attempts.append((["import", "-window", "root", output], False))
 
-    if _command_exists("scrot"):
+    if has_x11 and _command_exists("scrot"):
         attempts.append((["scrot", "-o", output], False))
         attempts.append((["scrot", "-o", "-u", output], False))
 
-    if _command_exists("xwd") and _command_exists("convert"):
+    if has_x11 and _command_exists("xwd") and _command_exists("convert"):
         attempts.append((f"xwd -root -silent | convert xwd:- '{output}'", True))
+
+    # ffmpeg x11grab (requires DISPLAY to be set)
+    if has_x11 and _command_exists("ffmpeg"):
+        display_env = env.get("DISPLAY", ":0")
+        attempts.append((
+            ["ffmpeg", "-y", "-f", "x11grab", "-i", f"{display_env}.0+0,0",
+             "-frames:v", "1", "-q:v", "2", output],
+            False,
+        ))
+
+    # Headless / DRM / framebuffer fallbacks (avoid using on desktops to prevent distorted output).
+    if not attempts and _command_exists("ffmpeg"):
+        card0 = Path("/dev/dri/card0")
+        if card0.exists():
+            attempts.append(
+                ([
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "kmsgrab",
+                    "-device",
+                    str(card0),
+                    "-i",
+                    "-",
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "hwdownload,format=bgra",
+                    output,
+                ], False)
+            )
+
+        fbdev_path = Path("/dev/fb0")
+        if fbdev_path.exists():
+            attempts.append(
+                ([
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "fbdev",
+                    "-i",
+                    str(fbdev_path),
+                    "-frames:v",
+                    "1",
+                    output,
+                ], False)
+            )
 
     if not attempts:
         raise NetControlError(
@@ -232,25 +310,6 @@ def capture_screenshot(connector: str) -> Path:
             message="Screenshot capture failed",
             detail="no_capture_tool_available",
         )
-
-    # ffmpeg x11grab (requires DISPLAY to be set)
-    if _command_exists("ffmpeg"):
-        display_env = os.environ.get("DISPLAY", ":0")
-        attempts.append((
-            ["ffmpeg", "-y", "-f", "x11grab", "-i", f"{display_env}.0+0,0",
-             "-frames:v", "1", "-q:v", "2", output],
-            False,
-        ))
-
-    # ffmpeg fbdev (framebuffer — works without X11)
-    if _command_exists("ffmpeg"):
-        fbdev = os.environ.get("FBDEV", "/dev/fb0")
-        if Path(fbdev).exists():
-            attempts.append((
-                ["ffmpeg", "-y", "-f", "fbdev", "-i", fbdev,
-                 "-frames:v", "1", "-q:v", "2", output],
-                False,
-            ))
 
     last_error = ""
     for cmd, use_shell in attempts:
@@ -260,7 +319,7 @@ def capture_screenshot(connector: str) -> Path:
                 size = tmp_path.stat().st_size
             except Exception:
                 size = 0
-            if size < _MIN_VALID_BYTES:
+            if _is_likely_blank(tmp_path, size):
                 last_error = f"screenshot_too_small({size}b)"
                 try:
                     tmp_path.unlink()
@@ -279,6 +338,40 @@ def capture_screenshot(connector: str) -> Path:
                 return file_path
         if err:
             last_error = err
+
+    # privileged fallback via netcontrol (root) if available
+    try:
+        for script_name in ("portal_capture_screenshot_user.sh", "portal_capture_screenshot.sh"):
+            script_path = netcontrol._resolve_script(script_name)
+            if not script_path:
+                continue
+            code, out, err = netcontrol._run_script(
+                script_name,
+                [output],
+                timeout=_DEFAULT_TIMEOUT,
+                use_sudo=True,
+            )
+            if code == 0 and tmp_path.exists():
+                try:
+                    size = tmp_path.stat().st_size
+                except Exception:
+                    size = 0
+                if not _is_likely_blank(tmp_path, size):
+                    try:
+                        tmp_path.replace(file_path)
+                    except Exception:
+                        try:
+                            shutil.copy2(tmp_path, file_path)
+                            tmp_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    if file_path.exists():
+                        return file_path
+                last_error = f"screenshot_too_small({size}b)"
+            elif err:
+                last_error = err
+    except Exception as exc:
+        last_error = str(exc)
 
     raise NetControlError(
         code="screenshot_capture_failed",

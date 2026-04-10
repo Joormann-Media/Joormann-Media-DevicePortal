@@ -9,11 +9,18 @@ fi
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 REPO_DIR="${1:-$DEFAULT_REPO_DIR}"
-SERVICE_USER="${2:-www-data}"
+SERVICE_USER="${2:-}"
 SRC_DIR="$REPO_DIR/scripts/net"
 DST_DIR="/opt/deviceportal/bin"
 SUDOERS_FILE="/etc/sudoers.d/deviceportal-netcontrol"
 LEGACY_SUDOERS_FILE="/etc/sudoers.d/deviceportal-net"
+
+if [[ -z "$SERVICE_USER" ]]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    SERVICE_USER="$(systemctl cat device-portal.service 2>/dev/null | awk -F= '/^User=/{print $2; exit}')"
+  fi
+fi
+SERVICE_USER="${SERVICE_USER:-www-data}"
 
 if [[ ! -d "$SRC_DIR" ]]; then
   echo "Netcontrol source directory not found: $SRC_DIR" >&2
@@ -122,6 +129,8 @@ install -m 0750 "$SRC_DIR/tailscale_dns_fix.sh" "$DST_DIR/tailscale_dns_fix.sh"
 install -m 0750 "$SRC_DIR/hostname_rename.sh" "$DST_DIR/hostname_rename.sh"
 install -m 0750 "$SRC_DIR/local_auth.sh" "$DST_DIR/local_auth.sh"
 install -m 0755 "$SRC_DIR/network_info.sh" "$DST_DIR/network_info.sh"
+install -m 0750 "$SRC_DIR/portal_capture_screenshot.sh" "$DST_DIR/portal_capture_screenshot.sh"
+install -m 0750 "$SRC_DIR/portal_capture_screenshot_user.sh" "$DST_DIR/portal_capture_screenshot_user.sh"
 
 if getent group netdev >/dev/null 2>&1; then
   usermod -aG netdev "$SERVICE_USER" || true
@@ -154,7 +163,7 @@ fi
 
 cat > "$SUDOERS_FILE" <<SUDO
 Defaults:${SERVICE_USER} !requiretty
-${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/bluetooth_ctl.sh *, ${DST_DIR}/bluetooth_pairing_feedback.sh *, ${DST_DIR}/bluetooth_pairing_session.sh *, ${DST_DIR}/bluetooth_pairing_action.sh *, ${DST_DIR}/bluetooth_paired_devices.sh *, ${DST_DIR}/bluetooth_audio.py *, ${DST_DIR}/audio_output_ctl.py *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_format.sh *, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/portal_restart.sh *, ${DST_DIR}/portal_service_install.sh *, ${DST_DIR}/player_update.sh *, ${DST_DIR}/player_service.sh *, ${DST_DIR}/player_service_install.sh *, ${DST_DIR}/spotify_connect_service.sh *, ${DST_DIR}/spotify_connect_install.sh *, ${DST_DIR}/tailscale_dns_fix.sh *, ${DST_DIR}/hostname_rename.sh *, ${DST_DIR}/local_auth.sh *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${DST_DIR}/wifi_toggle.sh *, ${DST_DIR}/wifi_profile.sh *, ${DST_DIR}/wifi_status.sh *, ${DST_DIR}/wifi_disconnect.sh *, ${DST_DIR}/wifi_dhcp.sh *, ${DST_DIR}/bluetooth_toggle.sh *, ${DST_DIR}/bluetooth_ctl.sh *, ${DST_DIR}/bluetooth_pairing_feedback.sh *, ${DST_DIR}/bluetooth_pairing_session.sh *, ${DST_DIR}/bluetooth_pairing_action.sh *, ${DST_DIR}/bluetooth_paired_devices.sh *, ${DST_DIR}/bluetooth_audio.py *, ${DST_DIR}/audio_output_ctl.py *, ${DST_DIR}/lan_toggle.sh *, ${DST_DIR}/wps_start.sh *, ${DST_DIR}/ap_enable.sh *, ${DST_DIR}/ap_disable.sh *, ${DST_DIR}/ap_status.sh *, ${DST_DIR}/ap_clients.sh *, ${DST_DIR}/storage_mount.sh *, ${DST_DIR}/storage_internal_mount.sh, ${DST_DIR}/storage_format.sh *, ${DST_DIR}/storage_unmount.sh *, ${DST_DIR}/portal_update.sh *, ${DST_DIR}/portal_restart.sh *, ${DST_DIR}/portal_service_install.sh *, ${DST_DIR}/player_update.sh *, ${DST_DIR}/player_service.sh *, ${DST_DIR}/player_service_install.sh *, ${DST_DIR}/spotify_connect_service.sh *, ${DST_DIR}/spotify_connect_install.sh *, ${DST_DIR}/tailscale_dns_fix.sh *, ${DST_DIR}/hostname_rename.sh *, ${DST_DIR}/local_auth.sh *, ${DST_DIR}/portal_capture_screenshot.sh *, ${DST_DIR}/portal_capture_screenshot_user.sh *
 SUDO
 
 chmod 0440 "$SUDOERS_FILE"
