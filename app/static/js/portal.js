@@ -1109,6 +1109,7 @@
     const status = statusDashboardState.status || {};
     const display = status.display || {};
     const displays = Array.isArray(display.displays) ? display.displays : [];
+    const screenshots = display.screenshots || {};
     const host = q("status-display-list");
     if (!host) return;
     clearNode(host);
@@ -1176,6 +1177,28 @@
         kv.append(dt, dd);
       }
 
+      const screenshotWrap = document.createElement("div");
+      screenshotWrap.className = "status-display-screenshot";
+      const shotInfo = connector ? screenshots[connector] : null;
+      const isConnected = !!item.connected;
+      if (shotInfo && shotInfo.available && shotInfo.url) {
+        const img = document.createElement("img");
+        img.alt = `Screenshot ${connector || "Display"}`;
+        img.src = String(shotInfo.url || "");
+        screenshotWrap.append(img);
+        if (shotInfo.updated_at) {
+          const metaLine = document.createElement("div");
+          metaLine.className = "status-display-screenshot-meta";
+          metaLine.textContent = `Update: ${shotInfo.updated_at}`;
+          screenshotWrap.append(metaLine);
+        }
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "status-display-screenshot-empty";
+        empty.textContent = isConnected ? "Kein Screenshot" : "Kein Monitor verbunden";
+        screenshotWrap.append(empty);
+      }
+
       const actions = document.createElement("div");
       actions.className = "status-display-actions";
       const row = document.createElement("div");
@@ -1223,10 +1246,55 @@
       });
       colSave.append(saveBtn);
 
+      const shotRow = document.createElement("div");
+      shotRow.className = "row g-2";
+      const shotColPrimary = document.createElement("div");
+      shotColPrimary.className = "col-md-6 d-grid";
+      const shotBtn = document.createElement("button");
+      shotBtn.className = "btn btn-outline-secondary btn-sm";
+      shotBtn.textContent = "Screenshot neu";
+      shotBtn.disabled = !connector || !isConnected;
+      shotBtn.addEventListener("click", () => {
+        run(async () => {
+          shotBtn.disabled = true;
+          try {
+            await fetchJson(`/api/display/screenshot/${encodeURIComponent(connector)}/capture`, { method: "POST" });
+            await refreshStatus();
+            toast("Screenshot erstellt", "success");
+          } finally {
+            shotBtn.disabled = !connector;
+          }
+        });
+      });
+      shotColPrimary.append(shotBtn);
+
+      const shotColSecondary = document.createElement("div");
+      shotColSecondary.className = "col-md-6 d-grid";
+      const shotDel = document.createElement("button");
+      shotDel.className = "btn btn-outline-danger btn-sm";
+      shotDel.textContent = "Screenshot löschen";
+      shotDel.disabled = !connector || !isConnected;
+      shotDel.addEventListener("click", () => {
+        run(async () => {
+          shotDel.disabled = true;
+          try {
+            await fetchJson(`/api/display/screenshot/${encodeURIComponent(connector)}/delete`, { method: "POST" });
+            await refreshStatus();
+            toast("Screenshot gelöscht", "success");
+          } finally {
+            shotDel.disabled = !connector;
+          }
+        });
+      });
+      shotColSecondary.append(shotDel);
+
+      shotRow.append(shotColPrimary, shotColSecondary);
+
       row.append(colSelect, colToggle, colSave);
       actions.append(row);
+      actions.append(shotRow);
 
-      card.append(head, kv, actions);
+      card.append(head, kv, screenshotWrap, actions);
       host.append(card);
     }
   }
@@ -7814,7 +7882,17 @@
       await refreshState();
       await refreshPanelFlagsLive();
     }));
-    q("btn-display-refresh").addEventListener("click", () => run(refreshStatus));
+  q("btn-display-refresh").addEventListener("click", () => run(refreshStatus));
+  const clearScreenshotsBtn = q("btn-display-screenshots-clear");
+  if (clearScreenshotsBtn) {
+    clearScreenshotsBtn.addEventListener("click", () => {
+      run(async () => {
+        await fetchJson("/api/display/screenshots/clear", { method: "POST" });
+        await refreshStatus();
+        toast("Screenshots gelöscht", "success");
+      });
+    });
+  }
     q("btn-link-register").addEventListener("click", () => run(panelRegister));
     q("btn-link-assign").addEventListener("click", () => openSetupWizard("assign"));
     q("btn-link-rebuild-fingerprint").addEventListener("click", () => run(rebuildFingerprintAndSync));

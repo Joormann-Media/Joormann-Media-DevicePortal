@@ -64,7 +64,7 @@ is_raspotify_installed() {
 }
 
 MISSING_PKGS=()
-for pkg in python3 python3-venv python3-pip curl mpg123; do
+for pkg in python3 python3-venv python3-pip curl mpg123 scrot imagemagick x11-utils gnome-screenshot; do
   if ! is_pkg_installed "$pkg"; then
     MISSING_PKGS+=("$pkg")
   fi

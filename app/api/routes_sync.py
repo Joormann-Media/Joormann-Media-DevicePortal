@@ -675,6 +675,7 @@ def _pull_config_from_admin(cfg: dict, dev: dict) -> tuple[bool, dict, str]:
         return False, {}, detail
 
     data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
+    routes_panel._apply_panel_screenshot_upload(cfg, resp)
     return True, data, ""
 
 
@@ -726,6 +727,7 @@ def _push_report_to_admin(cfg: dict, dev: dict, report: dict) -> tuple[bool, dic
                 else:
                     last_error = f"http {code}"
                 continue
+            routes_panel._apply_panel_screenshot_upload(cfg, resp)
             return True, resp, ""
         if only_not_implemented:
             return True, {"ok": True, "skipped": True, "reason": "hardware_sync_endpoint_missing"}, ""
@@ -749,6 +751,7 @@ def _push_report_to_admin(cfg: dict, dev: dict, report: dict) -> tuple[bool, dic
             detail = str(resp.get("message") or resp.get("error") or detail)
         return False, {}, detail
 
+    routes_panel._apply_panel_screenshot_upload(cfg, resp)
     return True, resp, ""
 
 
@@ -911,7 +914,7 @@ def api_sync_run():
         write_json(CONFIG_PATH, cfg, mode=0o600)
         registry_push = maybe_push_family_registry(cfg, _registry_trigger_for_sync(triggered_by))
         return jsonify(
-            ok=bool(registry_push.get("ok")),
+            ok=True,
             message="Sync-Profil ist deaktiviert. Registry-Meldung wurde separat ausgeführt.",
             warning="sync_profile_disabled",
             data={
@@ -929,7 +932,7 @@ def api_sync_run():
             write_json(CONFIG_PATH, cfg, mode=0o600)
             registry_push = maybe_push_family_registry(cfg, _registry_trigger_for_sync(triggered_by))
             return jsonify(
-                ok=bool(registry_push.get("ok")),
+                ok=True,
                 message="Portal-Sync ist nicht freigegeben. Registry-Meldung wurde separat ausgeführt.",
                 warning="portal_sync_not_allowed",
                 data={

@@ -16,12 +16,14 @@ from app.core.device import ensure_device
 from app.core.netcontrol import NetControlError
 from app.core.storage_config import ensure_storage_config
 from app.core.storage_file_manager import StorageFileManagerService
+from app.core import netcontrol
 from app.core.timeutil import utc_now
 
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _SCREENSHOT_DIR_NAME = "screenshots"
 _DEFAULT_TIMEOUT = 20
+_MIN_VALID_BYTES = 40 * 1024
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,8 @@ def _ensure_screenshot_dir() -> tuple[str, Path, Path]:
     device_id, mount_path = _resolve_internal_root()
     target = (mount_path / _SCREENSHOT_DIR_NAME).resolve()
     target.mkdir(parents=True, exist_ok=True)
+    if not target.exists() or not target.is_dir():
+        raise NetControlError(code="screenshot_storage_unavailable", message="Screenshot storage directory missing")
     return device_id, mount_path, target
 
 
@@ -145,7 +149,7 @@ def _command_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def _run_capture(cmd: list[str] | str, *, shell: bool = False) -> tuple[bool, str]:
+def _run_capture(cmd: list[str] | str, *, shell: bool = False, env: dict | None = None) -> tuple[bool, str]:
     try:
         proc = subprocess.run(
             cmd,
@@ -153,7 +157,7 @@ def _run_capture(cmd: list[str] | str, *, shell: bool = False) -> tuple[bool, st
             capture_output=True,
             text=True,
             timeout=_DEFAULT_TIMEOUT,
-            env=os.environ.copy(),
+            env=env or os.environ.copy(),
         )
     except Exception as exc:
         return False, str(exc)
@@ -166,16 +170,46 @@ def _run_capture(cmd: list[str] | str, *, shell: bool = False) -> tuple[bool, st
 def capture_screenshot(connector: str) -> Path:
     file_path = get_screenshot_path(connector)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    if file_path.exists():
+
+    tmp_path = file_path.with_suffix(".tmp.png")
+    if tmp_path.exists():
         try:
-            file_path.unlink()
+            tmp_path.unlink()
         except Exception:
             pass
 
-    output = str(file_path)
+    output = str(tmp_path)
     safe_connector = _sanitize_connector(connector)
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    if "XAUTHORITY" not in env:
+        try:
+            import pwd
+
+            home = pwd.getpwuid(os.getuid()).pw_dir
+            candidates = [
+                Path(home) / ".Xauthority",
+                Path(f"/run/user/{os.getuid()}/gdm/Xauthority"),
+                Path(f"/run/user/{os.getuid()}/Xauthority"),
+            ]
+            for candidate in candidates:
+                if candidate.exists():
+                    env["XAUTHORITY"] = str(candidate)
+                    break
+        except Exception:
+            pass
+
+    runtime_env = netcontrol._runtime_env_for_user()
+    if runtime_env:
+        env.update(runtime_env)
 
     attempts: list[tuple[list[str] | str, bool]] = []
+
+    session_type = str(env.get("XDG_SESSION_TYPE") or "").lower()
+    is_wayland = bool(env.get("WAYLAND_DISPLAY")) or session_type == "wayland"
+
+    if is_wayland and _command_exists("gnome-screenshot"):
+        attempts.append((["gnome-screenshot", "-f", output], False))
 
     if _command_exists("grim"):
         if safe_connector:
@@ -187,9 +221,17 @@ def capture_screenshot(connector: str) -> Path:
 
     if _command_exists("scrot"):
         attempts.append((["scrot", "-o", output], False))
+        attempts.append((["scrot", "-o", "-u", output], False))
 
     if _command_exists("xwd") and _command_exists("convert"):
         attempts.append((f"xwd -root -silent | convert xwd:- '{output}'", True))
+
+    if not attempts:
+        raise NetControlError(
+            code="screenshot_capture_failed",
+            message="Screenshot capture failed",
+            detail="no_capture_tool_available",
+        )
 
     # ffmpeg x11grab (requires DISPLAY to be set)
     if _command_exists("ffmpeg"):
@@ -212,9 +254,29 @@ def capture_screenshot(connector: str) -> Path:
 
     last_error = ""
     for cmd, use_shell in attempts:
-        ok, err = _run_capture(cmd, shell=use_shell)
-        if ok and file_path.exists():
-            return file_path
+        ok, err = _run_capture(cmd, shell=use_shell, env=env)
+        if ok and tmp_path.exists():
+            try:
+                size = tmp_path.stat().st_size
+            except Exception:
+                size = 0
+            if size < _MIN_VALID_BYTES:
+                last_error = f"screenshot_too_small({size}b)"
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
+                continue
+            try:
+                tmp_path.replace(file_path)
+            except Exception:
+                try:
+                    shutil.copy2(tmp_path, file_path)
+                    tmp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            if file_path.exists():
+                return file_path
         if err:
             last_error = err
 

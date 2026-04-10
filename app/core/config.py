@@ -63,6 +63,16 @@ DEFAULT_CONFIG: dict = {
         'last_ack_at': None,
         'last_error': '',
     },
+    'panel_screenshot_upload': {
+        'url': '',
+        'token': '',
+        'updated_at': None,
+    },
+    'panel_screenshot_settings': {
+        'min_interval_sec': 300,
+        'last_captured_at': None,
+        'warmup_enabled': True,
+    },
     'panel_sync': {
         'enabled': False,
         'profile': {},
@@ -234,6 +244,25 @@ def ensure_config() -> dict:
     if not isinstance(cfg.get('update_history'), list):
         cfg['update_history'] = []
         changed = True
+
+    if not isinstance(cfg.get('panel_screenshot_upload'), dict):
+        cfg['panel_screenshot_upload'] = dict(DEFAULT_CONFIG['panel_screenshot_upload'])
+        changed = True
+    else:
+        psu = cfg['panel_screenshot_upload']
+        for key, value in DEFAULT_CONFIG['panel_screenshot_upload'].items():
+            if key not in psu:
+                psu[key] = value
+                changed = True
+    if not isinstance(cfg.get('panel_screenshot_settings'), dict):
+        cfg['panel_screenshot_settings'] = dict(DEFAULT_CONFIG['panel_screenshot_settings'])
+        changed = True
+    else:
+        pss = cfg['panel_screenshot_settings']
+        for key, value in DEFAULT_CONFIG['panel_screenshot_settings'].items():
+            if key not in pss:
+                pss[key] = value
+                changed = True
 
     clamped = clamp_poll_seconds(cfg.get('poll_seconds', 60))
     if clamped != cfg.get('poll_seconds'):

@@ -1735,6 +1735,61 @@ def _extract_panel_device_flags(resp: dict | None) -> dict | None:
     return None
 
 
+def _extract_panel_screenshot_upload(resp: dict | None) -> dict | None:
+    if not isinstance(resp, dict):
+        return None
+    sources: list[dict] = [resp]
+    data = resp.get('data')
+    if isinstance(data, dict):
+        sources.append(data)
+
+    for source in sources:
+        block = source.get('screenshotUpload') or source.get('screenshot_upload') or source.get('screenshot_upload_config')
+        if isinstance(block, dict):
+            url = str(block.get('url') or block.get('uploadUrl') or block.get('upload_url') or '').strip()
+            token = str(block.get('token') or block.get('uploadToken') or block.get('upload_token') or '').strip()
+            settings = block.get('settings') if isinstance(block.get('settings'), dict) else None
+            if url or token:
+                return {'url': url, 'token': token, 'settings': settings}
+        url = str(source.get('screenshotUploadUrl') or source.get('screenshot_upload_url') or '').strip()
+        token = str(source.get('screenshotUploadToken') or source.get('screenshot_upload_token') or '').strip()
+        if url or token:
+            return {'url': url, 'token': token, 'settings': None}
+    return None
+
+
+def _apply_panel_screenshot_upload(cfg: dict, resp: dict | None) -> bool:
+    payload = _extract_panel_screenshot_upload(resp)
+    if not isinstance(payload, dict):
+        return False
+
+    if not isinstance(cfg.get('panel_screenshot_upload'), dict):
+        cfg['panel_screenshot_upload'] = {'url': '', 'token': '', 'updated_at': None}
+
+    updated = False
+    url = str(payload.get('url') or '').strip()
+    token = str(payload.get('token') or '').strip()
+    settings = payload.get('settings') if isinstance(payload.get('settings'), dict) else None
+    if url and url != str(cfg['panel_screenshot_upload'].get('url') or ''):
+        cfg['panel_screenshot_upload']['url'] = url
+        updated = True
+    if token and token != str(cfg['panel_screenshot_upload'].get('token') or ''):
+        cfg['panel_screenshot_upload']['token'] = token
+        updated = True
+    if settings:
+        if not isinstance(cfg.get('panel_screenshot_settings'), dict):
+            cfg['panel_screenshot_settings'] = {}
+        for key, value in settings.items():
+            if value is None:
+                continue
+            if cfg['panel_screenshot_settings'].get(key) != value:
+                cfg['panel_screenshot_settings'][key] = value
+                updated = True
+    if updated:
+        cfg['panel_screenshot_upload']['updated_at'] = utc_now()
+    return updated
+
+
 def _extract_panel_node_roles(resp: dict | None) -> list[str]:
     if not isinstance(resp, dict):
         return []
@@ -2252,6 +2307,7 @@ def api_panel_register():
             cfg['panel_register_target'] = 'jarvis'
             node_roles = _extract_panel_node_roles(resp if isinstance(resp, dict) else None)
             cfg['panel_node_roles'] = node_roles or ['jarvis']
+            _apply_panel_screenshot_upload(cfg, resp if isinstance(resp, dict) else None)
             cfg['updated_at'] = utc_now()
             write_json(CONFIG_PATH, cfg, mode=0o600)
 
@@ -2322,6 +2378,7 @@ def api_panel_register():
     if _response_indicates_success(code, resp):
         if isinstance(resp, dict):
             _apply_rotated_device_credentials(dev, resp)
+            _apply_panel_screenshot_upload(cfg, resp)
         cfg['registration_token'] = token
         cfg['panel_register_target'] = registration_target or 'smarthome'
         if node_type:
@@ -2451,6 +2508,7 @@ def api_panel_register_hardware():
         if 200 <= code < 300 and _response_indicates_success(code, resp):
             if isinstance(resp, dict):
                 _apply_rotated_device_credentials(dev, resp)
+                _apply_panel_screenshot_upload(cfg, resp)
             next_token = token
             cfg['node_runtime_type'] = node_type
             cfg['panel_register_target'] = 'hardware'

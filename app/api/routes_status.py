@@ -186,10 +186,22 @@ def _collect_status_payload(force_repo_updates: bool = False) -> dict:
     display_snapshot = get_display_snapshot(cfg)
     if isinstance(display_snapshot, dict):
         displays = display_snapshot.get("displays") if isinstance(display_snapshot.get("displays"), list) else []
+        primary = display_snapshot.get("primary_display") if isinstance(display_snapshot.get("primary_display"), dict) else {}
+        primary_connector = str(primary.get("connector") or "").strip()
+        primary_connected = bool(primary.get("connected"))
+        if primary_connector and primary_connected:
+            try:
+                if maybe_auto_capture(cfg, primary_connector):
+                    write_json(CONFIG_PATH, cfg, mode=0o600)
+            except Exception:
+                pass
         screenshots: dict[str, dict] = {}
         for item in displays:
             connector = str(item.get("connector") or "").strip()
             if not connector:
+                continue
+            if not bool(item.get("connected")):
+                screenshots[connector] = {"available": False}
                 continue
             info = get_screenshot_info(connector)
             screenshots[connector] = info.to_dict() if info else {"available": False}
@@ -362,16 +374,17 @@ def api_runtime_warmup():
         displays = display_snapshot.get("displays") if isinstance(display_snapshot, dict) else []
         if isinstance(displays, list):
             for item in displays:
+                if not bool(item.get("connected")):
+                    continue
                 connector = str(item.get("connector") or "").strip()
                 if not connector:
                     continue
                 try:
-                    from app.core.display_screenshots import capture_screenshot as _cap, get_screenshot_info
-                    _cap(connector)
-                    info = get_screenshot_info(connector)
-                    screenshot_results[connector] = info.to_dict() if info else {"available": False}
+                    payload = capture_and_upload(cfg, connector, allow_upload=True)
+                    screenshot_results[connector] = payload.get("screenshot") or {"available": False}
                 except Exception as exc:
                     screenshot_results[connector] = {"available": False, "error": str(exc)}
+        write_json(CONFIG_PATH, cfg, mode=0o600)
     except Exception as exc:
         screenshot_results["_error"] = str(exc)
 
@@ -424,6 +437,9 @@ def api_display_info():
             connector = str(item.get("connector") or "").strip()
             if not connector:
                 continue
+            if not bool(item.get("connected")):
+                screenshots[connector] = {"available": False}
+                continue
             info = get_screenshot_info(connector)
             screenshots[connector] = info.to_dict() if info else {"available": False}
         display_snapshot = dict(display_snapshot)
@@ -442,6 +458,16 @@ def api_display_screenshot(connector: str):
 @bp_status.post('/api/display/screenshot/<connector>/capture')
 def api_display_screenshot_capture(connector: str):
     cfg = ensure_config()
+    snapshot = get_display_snapshot(cfg)
+    displays = snapshot.get("displays") if isinstance(snapshot, dict) else []
+    is_connected = False
+    if isinstance(displays, list):
+        for item in displays:
+            if str(item.get("connector") or "").strip() == str(connector or "").strip():
+                is_connected = bool(item.get("connected"))
+                break
+    if not is_connected:
+        return jsonify(ok=False, error="display_not_connected", message="Display ist nicht verbunden."), 400
     try:
         payload = capture_and_upload(cfg, connector, allow_upload=True)
     except NetControlError as exc:

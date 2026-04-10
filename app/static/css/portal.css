@@ -421,6 +421,37 @@ body.portal-body {
   gap: 0.5rem;
 }
 
+.status-display-screenshot {
+  border-top: 1px dashed var(--portal-border);
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-display-screenshot img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  border: 1px solid var(--portal-border);
+  background: #0b1120;
+}
+
+.status-display-screenshot-meta {
+  font-size: 0.75rem;
+  color: var(--portal-muted);
+}
+
+.status-display-screenshot-empty {
+  font-size: 0.78rem;
+  color: var(--portal-muted);
+  border: 1px dashed var(--portal-border);
+  border-radius: 0.5rem;
+  padding: 0.6rem;
+  text-align: center;
+}
+
 .status-setup-trigger {
   cursor: pointer;
 }
