@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from app.api import routes_panel
 from app.api.routes_stream import refresh_llm_manager_from_runtime
@@ -11,6 +11,13 @@ from app.core.config import ensure_config
 from app.core.jsonio import write_json
 from app.core.paths import CONFIG_PATH
 from app.core.display import get_display_snapshot
+from app.core.display_screenshots import (
+    get_screenshot_info,
+    clear_all_screenshots,
+    delete_screenshot,
+    capture_and_upload,
+    maybe_auto_capture,
+)
 from app.core.device import ensure_device
 from app.core.family_registry_push import maybe_push_family_registry
 from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_fingerprint
@@ -176,11 +183,24 @@ def _collect_status_payload(force_repo_updates: bool = False) -> dict:
     player_update = get_repo_update_info(player_repo_path)
     repo_updates = _collect_repo_updates(cfg, force=force_repo_updates)
 
+    display_snapshot = get_display_snapshot(cfg)
+    if isinstance(display_snapshot, dict):
+        displays = display_snapshot.get("displays") if isinstance(display_snapshot.get("displays"), list) else []
+        screenshots: dict[str, dict] = {}
+        for item in displays:
+            connector = str(item.get("connector") or "").strip()
+            if not connector:
+                continue
+            info = get_screenshot_info(connector)
+            screenshots[connector] = info.to_dict() if info else {"available": False}
+        display_snapshot = dict(display_snapshot)
+        display_snapshot["screenshots"] = screenshots
+
     return {
         "config": cfg,
         "device": dev_view,
         "fingerprint": short_fingerprint(fp),
-        "display": get_display_snapshot(cfg),
+        "display": display_snapshot,
         "system": {
             "memory": parse_mem_stats_kb(),
             "load": parse_load_stats(),
@@ -334,6 +354,27 @@ def api_runtime_warmup():
     _RUNTIME_SNAPSHOT_CACHE["viewmodel"] = viewmodel
     _RUNTIME_SNAPSHOT_CACHE["updated_at"] = _iso_now()
     push_result = maybe_push_family_registry(cfg, "warmup")
+
+    # Capture screenshots for each connected display, save to loop drive /screenshots
+    screenshot_results: dict[str, object] = {}
+    try:
+        display_snapshot = get_display_snapshot(cfg)
+        displays = display_snapshot.get("displays") if isinstance(display_snapshot, dict) else []
+        if isinstance(displays, list):
+            for item in displays:
+                connector = str(item.get("connector") or "").strip()
+                if not connector:
+                    continue
+                try:
+                    from app.core.display_screenshots import capture_screenshot as _cap, get_screenshot_info
+                    _cap(connector)
+                    info = get_screenshot_info(connector)
+                    screenshot_results[connector] = info.to_dict() if info else {"available": False}
+                except Exception as exc:
+                    screenshot_results[connector] = {"available": False, "error": str(exc)}
+    except Exception as exc:
+        screenshot_results["_error"] = str(exc)
+
     return jsonify(
         ok=True,
         data={
@@ -341,6 +382,7 @@ def api_runtime_warmup():
             "progress": 100,
             "updated_at": _RUNTIME_SNAPSHOT_CACHE["updated_at"],
             "registry_push": push_result,
+            "screenshots": screenshot_results,
         },
     )
 
@@ -374,7 +416,49 @@ def api_runtime_refresh(section: str):
 @bp_status.get('/api/display/info')
 def api_display_info():
     cfg = ensure_config()
-    return jsonify(ok=True, display=get_display_snapshot(cfg))
+    display_snapshot = get_display_snapshot(cfg)
+    if isinstance(display_snapshot, dict):
+        displays = display_snapshot.get("displays") if isinstance(display_snapshot.get("displays"), list) else []
+        screenshots: dict[str, dict] = {}
+        for item in displays:
+            connector = str(item.get("connector") or "").strip()
+            if not connector:
+                continue
+            info = get_screenshot_info(connector)
+            screenshots[connector] = info.to_dict() if info else {"available": False}
+        display_snapshot = dict(display_snapshot)
+        display_snapshot["screenshots"] = screenshots
+    return jsonify(ok=True, display=display_snapshot)
+
+
+@bp_status.get('/api/display/screenshot/<connector>')
+def api_display_screenshot(connector: str):
+    info = get_screenshot_info(connector, cache_bust=False)
+    if not info:
+        return jsonify(ok=False, error="not_found"), 404
+    return send_file(info.file_path, mimetype="image/png")
+
+
+@bp_status.post('/api/display/screenshot/<connector>/capture')
+def api_display_screenshot_capture(connector: str):
+    cfg = ensure_config()
+    try:
+        payload = capture_and_upload(cfg, connector, allow_upload=True)
+    except NetControlError as exc:
+        return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), 400
+    return jsonify(ok=True, data=payload)
+
+
+@bp_status.post('/api/display/screenshot/<connector>/delete')
+def api_display_screenshot_delete(connector: str):
+    removed = delete_screenshot(connector)
+    return jsonify(ok=True, removed=bool(removed))
+
+
+@bp_status.post('/api/display/screenshots/clear')
+def api_display_screenshot_clear():
+    removed = clear_all_screenshots()
+    return jsonify(ok=True, removed=int(removed))
 
 
 @bp_status.get('/api/fingerprint')
@@ -469,4 +553,3 @@ def api_clear_update_history():
     cfg['update_history'] = []
     write_json(CONFIG_PATH, cfg, mode=0o600)
     return jsonify(ok=True)
-

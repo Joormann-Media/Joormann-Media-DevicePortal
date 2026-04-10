@@ -12,3 +12,4 @@ FINGERPRINT_PATH = os.getenv('FINGERPRINT_PATH', str(Path(DATA_DIR) / 'fingerpri
 STATE_PATH = os.getenv('STATE_PATH', str(Path(DATA_DIR) / 'state.json'))
 PLAN_PATH = os.getenv('PLAN_PATH', str(Path(DATA_DIR) / 'plan.json'))
 ASSET_DIR = os.getenv('ASSET_DIR', str(Path(PORTAL_DIR) / 'var' / 'assets'))
+SCREENSHOTS_DIR = os.getenv('SCREENSHOTS_DIR', '/mnt/deviceportal/media/screenshots')
