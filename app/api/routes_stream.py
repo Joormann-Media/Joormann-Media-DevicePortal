@@ -2110,6 +2110,120 @@ def api_stream_player_repos_set_path(repo_id: str):
     return jsonify(ok=True, data={'item': updated, 'repos': sorted(repos, key=lambda r: str(r.get('name') or '').lower())})
 
 
+@bp_stream.get('/api/stream/player/repos/base-path')
+def api_stream_player_repos_base_path_get():
+    """Liefert den gespeicherten Standard-Installationspfad."""
+    cfg = ensure_config()
+    base = str(cfg.get('managed_install_base') or '').strip()
+    return jsonify(ok=True, data={'managed_install_base': base})
+
+
+@bp_stream.post('/api/stream/player/repos/base-path')
+def api_stream_player_repos_base_path_set():
+    """Setzt Standard-Installationspfad und patcht install_dir aller managed Repos.
+
+    Berechnung: neuer_pfad = new_base / repo_folder_name
+    repo_folder_name = letztes Segment des aktuellen install_dir,
+                       Fallback: Repo-Name aus repo_link.
+    Repos ohne install_dir und ohne repo_link werden übersprungen.
+    """
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    new_base = str(data.get('managed_install_base') or '').strip()
+    if not new_base:
+        return jsonify(ok=False, error='base_path_missing', detail='Neuer Basis-Pfad fehlt.'), 400
+
+    base_path = Path(new_base)
+    repos = _managed_repos_from_config(cfg)
+    changes: list[dict] = []
+
+    for idx, repo in enumerate(repos):
+        old_dir = str(repo.get('install_dir') or '').strip()
+        repo_link = str(repo.get('repo_link') or '').strip()
+
+        # Ordner-Name: letztes Segment des alten Pfads, Fallback: Repo-Name aus Link
+        if old_dir:
+            folder_name = Path(old_dir).name
+        elif repo_link:
+            folder_name = _repo_default_name(repo_link)
+        else:
+            continue  # kein Anhaltspunkt — überspringen
+
+        if not folder_name:
+            continue
+
+        new_dir = str(base_path / folder_name)
+        if new_dir == old_dir:
+            continue
+
+        repos[idx] = dict(repo)
+        repos[idx]['install_dir'] = new_dir
+        repos[idx]['updated_at'] = utc_now()
+        changes.append({
+            'id': str(repo.get('id') or ''),
+            'name': str(repo.get('name') or repo_link or ''),
+            'old_dir': old_dir,
+            'new_dir': new_dir,
+        })
+
+    cfg['managed_install_repos'] = repos
+    cfg['managed_install_base'] = new_base
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    sorted_repos = sorted(repos, key=lambda r: str(r.get('name') or '').lower())
+    return jsonify(ok=True, data={
+        'managed_install_base': new_base,
+        'changes': changes,
+        'repos': sorted_repos,
+    })
+
+
+@bp_stream.post('/api/stream/player/repos/preview-base-path')
+def api_stream_player_repos_preview_base_path():
+    """Vorschau: welche Pfade würden sich bei einem neuen Basis-Pfad ändern?"""
+    cfg = ensure_config()
+    data = request.get_json(force=True, silent=True) or {}
+    new_base = str(data.get('managed_install_base') or '').strip()
+    if not new_base:
+        return jsonify(ok=False, error='base_path_missing', detail='Basis-Pfad fehlt.'), 400
+
+    base_path = Path(new_base)
+    repos = _managed_repos_from_config(cfg)
+    preview: list[dict] = []
+
+    for repo in repos:
+        old_dir = str(repo.get('install_dir') or '').strip()
+        repo_link = str(repo.get('repo_link') or '').strip()
+
+        if old_dir:
+            folder_name = Path(old_dir).name
+        elif repo_link:
+            folder_name = _repo_default_name(repo_link)
+        else:
+            continue
+
+        if not folder_name:
+            continue
+
+        new_dir = str(base_path / folder_name)
+        preview.append({
+            'id': str(repo.get('id') or ''),
+            'name': str(repo.get('name') or repo_link or ''),
+            'old_dir': old_dir or '-',
+            'new_dir': new_dir,
+            'changed': new_dir != old_dir,
+        })
+
+    return jsonify(ok=True, data={
+        'managed_install_base': new_base,
+        'current_base': str(cfg.get('managed_install_base') or '').strip(),
+        'preview': preview,
+    })
+
+
 @bp_stream.post('/api/stream/player/repos/<repo_id>/delete')
 def api_stream_player_repos_delete(repo_id: str):
     cfg = ensure_config()

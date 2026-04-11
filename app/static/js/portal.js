@@ -5976,6 +5976,98 @@
     await refreshManagedRepos(true);
   }
 
+  let _basePathPreviewData = null;
+
+  async function openRepoBasePathModal() {
+    _basePathPreviewData = null;
+    const previewWrap = q("base-path-preview-wrap");
+    if (previewWrap) previewWrap.classList.add("d-none");
+    const saveBtn = q("btn-base-path-save");
+    const saveReinstallBtn = q("btn-base-path-save-reinstall");
+    if (saveBtn) saveBtn.disabled = true;
+    if (saveReinstallBtn) saveReinstallBtn.disabled = true;
+
+    // Aktuellen Basis-Pfad laden
+    try {
+      const payload = await fetchJson("/api/stream/player/repos/base-path", { timeoutMs: 5000 });
+      const current = String(((payload || {}).data || {}).managed_install_base || "").trim();
+      const currentEl = q("base-path-current");
+      if (currentEl) currentEl.textContent = current || "(nicht gesetzt)";
+      const input = q("base-path-input");
+      if (input && !input.value) input.value = current;
+    } catch (_) {}
+
+    const modalEl = q("repoBasePathModal");
+    if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
+    window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  async function loadBasePathPreview() {
+    const newBase = String(q("base-path-input")?.value || "").trim();
+    if (!newBase) { toast("Bitte einen Basis-Pfad eingeben.", "warning"); return; }
+    const payload = await fetchJson("/api/stream/player/repos/preview-base-path", {
+      method: "POST", body: { managed_install_base: newBase }, timeoutMs: 8000,
+    });
+    const data = (payload || {}).data || {};
+    _basePathPreviewData = data;
+    const preview = Array.isArray(data.preview) ? data.preview : [];
+    const tbody = q("base-path-preview-body");
+    const noChanges = q("base-path-no-changes");
+    const previewWrap = q("base-path-preview-wrap");
+    if (previewWrap) previewWrap.classList.remove("d-none");
+
+    const changed = preview.filter((r) => r.changed);
+    if (noChanges) noChanges.classList.toggle("d-none", changed.length > 0);
+    if (tbody) {
+      tbody.innerHTML = preview.map((r) => {
+        const rowClass = r.changed ? "" : "text-secondary";
+        const arrow = r.changed
+          ? `<i class="bi bi-arrow-right text-warning"></i>`
+          : `<i class="bi bi-dash text-secondary"></i>`;
+        return `<tr class="${rowClass}">
+          <td class="fw-semibold">${escapeHtml(String(r.name || "-"))}</td>
+          <td class="font-monospace">${escapeHtml(String(r.old_dir || "-"))}</td>
+          <td class="text-center">${arrow}</td>
+          <td class="font-monospace ${r.changed ? "text-success" : ""}">${escapeHtml(String(r.new_dir || "-"))}</td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="4" class="text-secondary">Keine Module gefunden.</td></tr>`;
+    }
+    const hasChanges = changed.length > 0;
+    const saveBtn = q("btn-base-path-save");
+    const saveReinstallBtn = q("btn-base-path-save-reinstall");
+    if (saveBtn) saveBtn.disabled = !hasChanges;
+    if (saveReinstallBtn) saveReinstallBtn.disabled = !hasChanges;
+  }
+
+  async function saveBasePath(andReinstall = false) {
+    const newBase = String(q("base-path-input")?.value || "").trim();
+    if (!newBase) throw new Error("Basis-Pfad fehlt.");
+    const payload = await fetchJson("/api/stream/player/repos/base-path", {
+      method: "POST", body: { managed_install_base: newBase }, timeoutMs: 10000,
+    });
+    const data = (payload || {}).data || {};
+    const changes = Array.isArray(data.changes) ? data.changes : [];
+    if (Array.isArray(data.repos)) renderManagedRepos(data.repos);
+
+    const modalEl = q("repoBasePathModal");
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    }
+    toast(`Standard-Pfad gespeichert. ${changes.length} Modul-Pfad(e) aktualisiert.`, "success");
+
+    if (andReinstall && changes.length > 0) {
+      for (const change of changes) {
+        if (!change.id) continue;
+        try {
+          await startManagedRepoInstallUpdate(change.id);
+        } catch (err) {
+          toast(`ReInstall fehlgeschlagen: ${escapeHtml(String(change.name || change.id))} — ${escapeHtml(String(err?.message || err))}`, "danger");
+        }
+      }
+      await refreshManagedRepos(true);
+    }
+  }
+
   async function saveRepoPath(repoId, newPath, andReinstall = false) {
     if (!repoId || !newPath) throw new Error("Repo-ID oder Pfad fehlt.");
     const payload = await fetchJson(
@@ -8339,6 +8431,32 @@
         if (!newPath) throw new Error("Bitte einen Pfad eingeben.");
         await saveRepoPath(repoId, newPath, true);
       }));
+    }
+    const openBasePathModalBtn = q("btn-open-base-path-modal");
+    if (openBasePathModalBtn) {
+      openBasePathModalBtn.addEventListener("click", () => run(openRepoBasePathModal));
+    }
+    const basePathBrowseBtn = q("btn-base-path-browse");
+    if (basePathBrowseBtn) {
+      basePathBrowseBtn.addEventListener("click", () => run(async () => {
+        const baseModal = q("repoBasePathModal");
+        if (baseModal && window.bootstrap && window.bootstrap.Modal) {
+          window.bootstrap.Modal.getOrCreateInstance(baseModal).hide();
+        }
+        await openRepoInstallPathModal("base-path-input");
+      }));
+    }
+    const basePathPreviewBtn = q("btn-base-path-preview");
+    if (basePathPreviewBtn) {
+      basePathPreviewBtn.addEventListener("click", () => run(loadBasePathPreview));
+    }
+    const basePathSaveBtn = q("btn-base-path-save");
+    if (basePathSaveBtn) {
+      basePathSaveBtn.addEventListener("click", () => run(() => saveBasePath(false)));
+    }
+    const basePathSaveReinstallBtn = q("btn-base-path-save-reinstall");
+    if (basePathSaveReinstallBtn) {
+      basePathSaveReinstallBtn.addEventListener("click", () => run(() => saveBasePath(true)));
     }
     const reinstallBrowseBtn = q("btn-reinstall-browse");
     if (reinstallBrowseBtn) {

@@ -1393,9 +1393,14 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
             <div class="portal-card p-4">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                 <h3 class="h6 mb-0">Repository Update-Prüfung</h3>
-                <button id="btn-check-repo-updates" class="btn btn-outline-primary btn-sm">
-                  <i class="bi bi-arrow-clockwise me-1"></i>Jetzt prüfen
-                </button>
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="btn-open-base-path-modal" class="btn btn-outline-secondary btn-sm" title="Standard-Installationspfad setzen und alle Module neu installieren">
+                    <i class="bi bi-hdd-stack me-1"></i>Standard-Pfad / Bulk-ReInstall
+                  </button>
+                  <button id="btn-check-repo-updates" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Jetzt prüfen
+                  </button>
+                </div>
               </div>
               <div class="d-flex flex-wrap gap-3 mb-3 small text-secondary">
                 <span>Zuletzt geprüft: <span id="repo-updates-checked-at">-</span></span>
@@ -2219,6 +2224,70 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="repoBasePathModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-hdd-stack"></i>
+            Standard-Installationspfad &amp; Bulk-ReInstall
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-secondary small py-2 mb-3">
+            Setzt einen neuen Basis-Ordner für alle Module. Jedes Modul bekommt den Pfad
+            <code>Basis-Pfad / Repo-Ordner-Name</code>. Nützlich wenn ein Laufwerk unter einem
+            anderen Mount-Punkt erscheint.
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Aktueller Standard-Pfad</label>
+            <div id="base-path-current" class="font-monospace small text-secondary">-</div>
+          </div>
+          <div class="mb-3">
+            <label for="base-path-input" class="form-label small fw-semibold">Neuer Basis-Pfad</label>
+            <div class="input-group input-group-sm">
+              <input type="text" class="form-control font-monospace" id="base-path-input"
+                placeholder="/media/djanebmb/AI 512 GB SSD" autocomplete="off" spellcheck="false">
+              <button type="button" class="btn btn-outline-secondary" id="btn-base-path-browse">
+                <i class="bi bi-folder2-open"></i> Durchsuchen
+              </button>
+              <button type="button" class="btn btn-outline-primary" id="btn-base-path-preview">
+                <i class="bi bi-eye me-1"></i>Vorschau
+              </button>
+            </div>
+          </div>
+          <div id="base-path-preview-wrap" class="d-none">
+            <div class="small fw-semibold mb-2">Vorschau der Pfad-Änderungen</div>
+            <div class="table-responsive">
+              <table class="table table-sm small mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Modul</th>
+                    <th>Aktueller Pfad</th>
+                    <th></th>
+                    <th>Neuer Pfad</th>
+                  </tr>
+                </thead>
+                <tbody id="base-path-preview-body"></tbody>
+              </table>
+            </div>
+            <div id="base-path-no-changes" class="text-secondary small mt-2 d-none">Keine Pfade würden sich ändern.</div>
+          </div>
+        </div>
+        <div class="modal-footer flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-base-path-save" disabled>
+            <i class="bi bi-floppy me-1"></i>Pfade speichern
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-base-path-save-reinstall" disabled>
+            <i class="bi bi-arrow-repeat me-1"></i>Pfade speichern &amp; Alle ReInstallieren
+          </button>
         </div>
       </div>
     </div>
