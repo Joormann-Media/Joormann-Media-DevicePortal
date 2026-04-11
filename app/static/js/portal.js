@@ -5582,7 +5582,13 @@
     const query = new URLSearchParams();
     const targetPath = String(path || repoInstallPathState.currentPath || "").trim();
     if (targetPath) query.set("path", targetPath);
-    const payload = await fetchJson(`/api/stream/player/path-browser?${query.toString()}`, { timeoutMs: 10000 });
+    let payload;
+    try {
+      payload = await fetchJson(`/api/stream/player/path-browser?${query.toString()}`, { timeoutMs: 10000 });
+    } catch (_) {
+      // Pfad existiert nicht (z.B. Laufwerk anders gemountet) — Root öffnen
+      payload = await fetchJson(`/api/stream/player/path-browser`, { timeoutMs: 10000 });
+    }
     renderRepoInstallPathBrowser((payload || {}).data || {});
   }
 
