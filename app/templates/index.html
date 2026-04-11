@@ -2224,6 +2224,54 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
     </div>
   </div>
 
+  <div class="modal fade" id="repoReinstallModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-arrow-repeat"></i>
+            ReInstall
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="reinstall-repo-id" value="">
+          <div class="mb-3">
+            <div class="text-secondary small mb-1">Modul</div>
+            <div id="reinstall-repo-name" class="fw-semibold">-</div>
+            <div class="text-secondary small mt-1">Repo: <span id="reinstall-repo-link" class="font-monospace">-</span></div>
+          </div>
+          <div class="alert alert-secondary small py-2 mb-3">
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>Repo existiert am Zielpfad</strong> → <code>git pull</code> + Service-Datei neu schreiben. Vorhandene Config- und Datendateien bleiben erhalten.<br>
+            <strong>Repo fehlt am Zielpfad</strong> → <code>git clone</code> → Dependencies → Service installieren + starten.
+          </div>
+          <div class="mb-3">
+            <label for="reinstall-install-dir" class="form-label small fw-semibold">Installationspfad</label>
+            <div class="input-group input-group-sm">
+              <input type="text" class="form-control font-monospace" id="reinstall-install-dir"
+                placeholder="/media/user/Laufwerk/Repo-Name" autocomplete="off" spellcheck="false">
+              <button type="button" class="btn btn-outline-secondary" id="btn-reinstall-browse">
+                <i class="bi bi-folder2-open"></i> Durchsuchen
+              </button>
+            </div>
+            <div class="form-text">Pfad kann geändert werden — z.B. nach Remount eines Laufwerks.</div>
+          </div>
+          <div id="reinstall-path-changed-hint" class="alert alert-warning small py-2 mb-0 d-none">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Pfad wurde geändert — wird zuerst in der Konfiguration gespeichert, dann wird neu installiert.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-reinstall-confirm">
+            <i class="bi bi-arrow-repeat me-1"></i>ReInstall durchführen
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="repoChangePathModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">

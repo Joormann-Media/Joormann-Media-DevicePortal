@@ -5677,6 +5677,9 @@
       const installOrUninstallButtonHtml = isInstalled
         ? `<button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="uninstall" data-id="${escapeHtml(repoId)}">Uninstall</button>`
         : `<button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="install_update" data-id="${escapeHtml(repoId)}">Install</button>`;
+      const reinstallButtonHtml = isInstalled
+        ? `<button class="btn btn-outline-warning btn-sm js-extra-repo-action" data-action="reinstall" data-id="${escapeHtml(repoId)}" title="Service-Datei + git pull/clone neu durchführen (z.B. nach Laufwerk-Remount)"><i class="bi bi-arrow-repeat"></i> ReInstall</button>`
+        : ``;
       const updateButtonHtml = (isInstalled && hasRepoUpdate)
         ? `<button class="btn btn-outline-primary btn-sm js-extra-repo-action" data-action="update" data-id="${escapeHtml(repoId)}">Update</button>`
         : "";
@@ -5716,7 +5719,8 @@
           <div class="d-flex flex-wrap gap-2">
             ${openButtonHtml}
             <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
-            <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="change_path" data-id="${escapeHtml(repoId)}" title="Installationspfad ändern (z.B. nach Laufwerk-Remount)"><i class="bi bi-folder-symlink"></i> Pfad</button>
+            <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="change_path" data-id="${escapeHtml(repoId)}" title="Nur Installationspfad in der Konfiguration ändern"><i class="bi bi-folder-symlink"></i> Pfad</button>
+            ${reinstallButtonHtml}
             ${updateButtonHtml}
             ${installOrUninstallButtonHtml}
             <button class="btn btn-outline-success btn-sm js-extra-repo-action" data-action="service_action" data-service-action="${controlAction}" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>${controlLabel}</button>
@@ -5928,6 +5932,48 @@
     const modalEl = q("repoChangePathModal");
     if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
     window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  function openRepoReinstallModal(repoId) {
+    const target = getManagedRepoById(repoId);
+    if (!target) throw new Error("Repo nicht gefunden.");
+    const idInput = q("reinstall-repo-id");
+    if (idInput) idInput.value = repoId;
+    const nameEl = q("reinstall-repo-name");
+    if (nameEl) nameEl.textContent = String(target.name || "-");
+    const linkEl = q("reinstall-repo-link");
+    if (linkEl) linkEl.textContent = String(target.repo_link || "-");
+    const dirInput = q("reinstall-install-dir");
+    if (dirInput) {
+      dirInput.value = String(target.install_dir || "");
+      dirInput._originalValue = String(target.install_dir || "");
+    }
+    const hint = q("reinstall-path-changed-hint");
+    if (hint) hint.classList.add("d-none");
+    const modalEl = q("repoReinstallModal");
+    if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
+    window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  async function startRepoReinstall(repoId) {
+    const newPath = String(q("reinstall-install-dir")?.value || "").trim();
+    if (!repoId) throw new Error("Repo-ID fehlt.");
+    if (!newPath) throw new Error("Bitte einen Installationspfad eingeben.");
+    const target = getManagedRepoById(repoId);
+    const currentPath = String((target || {}).install_dir || "").trim();
+    const modalEl = q("repoReinstallModal");
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    }
+    if (newPath !== currentPath) {
+      await fetchJson(
+        `/api/stream/player/repos/${encodeURIComponent(repoId)}/set-path`,
+        { method: "POST", body: { install_dir: newPath }, timeoutMs: 8000 }
+      );
+      toast(`Pfad gespeichert: ${newPath}`, "success");
+    }
+    await startManagedRepoInstallUpdate(repoId);
+    await refreshManagedRepos(true);
   }
 
   async function saveRepoPath(repoId, newPath, andReinstall = false) {
@@ -8109,6 +8155,10 @@
             openRepoChangePathModal(repoId);
             return;
           }
+          if (action === "reinstall") {
+            openRepoReinstallModal(repoId);
+            return;
+          }
           if (action === "toggle_autostart") {
             const enabled = String(btn.dataset.enabled || "").trim() === "1";
             await toggleManagedRepoAutostart(repoId, enabled);
@@ -8289,6 +8339,33 @@
         if (!newPath) throw new Error("Bitte einen Pfad eingeben.");
         await saveRepoPath(repoId, newPath, true);
       }));
+    }
+    const reinstallBrowseBtn = q("btn-reinstall-browse");
+    if (reinstallBrowseBtn) {
+      reinstallBrowseBtn.addEventListener("click", () => run(async () => {
+        const reinstallModal = q("repoReinstallModal");
+        if (reinstallModal && window.bootstrap && window.bootstrap.Modal) {
+          window.bootstrap.Modal.getOrCreateInstance(reinstallModal).hide();
+        }
+        await openRepoInstallPathModal("reinstall-install-dir");
+      }));
+    }
+    const reinstallConfirmBtn = q("btn-reinstall-confirm");
+    if (reinstallConfirmBtn) {
+      reinstallConfirmBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(q("reinstall-repo-id")?.value || "").trim();
+        await startRepoReinstall(repoId);
+      }));
+    }
+    const reinstallDirInput = q("reinstall-install-dir");
+    if (reinstallDirInput) {
+      reinstallDirInput.addEventListener("input", () => {
+        const hint = q("reinstall-path-changed-hint");
+        if (!hint) return;
+        const current = String(reinstallDirInput.value || "").trim();
+        const original = String(reinstallDirInput._originalValue || "").trim();
+        hint.classList.toggle("d-none", current === original);
+      });
     }
     const streamAudioPathList = q("stream-audio-browser-list");
     if (streamAudioPathList) {
