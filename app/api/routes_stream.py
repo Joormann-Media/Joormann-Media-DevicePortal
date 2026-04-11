@@ -2078,6 +2078,38 @@ def api_stream_player_repos_set():
     return jsonify(ok=True, data={'item': item, 'repos': repos})
 
 
+@bp_stream.post('/api/stream/player/repos/<repo_id>/set-path')
+def api_stream_player_repos_set_path(repo_id: str):
+    """Aktualisiert nur install_dir eines Repos — keine Git-Operation."""
+    cfg = ensure_config()
+    target_id = str(repo_id or '').strip()
+    if not target_id:
+        return jsonify(ok=False, error='repo_id_missing', detail='Repo-ID fehlt.'), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    new_path = str(data.get('install_dir') or '').strip()
+    if not new_path:
+        return jsonify(ok=False, error='install_dir_missing', detail='Neuer Installationspfad fehlt.'), 400
+
+    repos = _managed_repos_from_config(cfg)
+    idx = next((i for i, item in enumerate(repos) if str(item.get('id') or '').strip() == target_id), -1)
+    if idx < 0:
+        return jsonify(ok=False, error='repo_not_found', detail='Repo nicht gefunden.'), 404
+
+    repos[idx] = dict(repos[idx])
+    repos[idx]['install_dir'] = new_path
+    repos[idx]['updated_at'] = utc_now()
+
+    cfg['managed_install_repos'] = repos
+    cfg['updated_at'] = utc_now()
+    ok, write_err = write_json(CONFIG_PATH, cfg, mode=0o600)
+    if not ok:
+        return jsonify(ok=False, error='config_write_failed', detail=write_err), 500
+
+    updated = _sanitize_managed_repo_entry(repos[idx])
+    return jsonify(ok=True, data={'item': updated, 'repos': sorted(repos, key=lambda r: str(r.get('name') or '').lower())})
+
+
 @bp_stream.post('/api/stream/player/repos/<repo_id>/delete')
 def api_stream_player_repos_delete(repo_id: str):
     cfg = ensure_config()

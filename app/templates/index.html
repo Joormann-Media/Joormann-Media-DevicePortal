@@ -2224,6 +2224,52 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
     </div>
   </div>
 
+  <div class="modal fade" id="repoChangePathModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-folder-symlink"></i>
+            Installationspfad ändern
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="change-path-repo-id" value="">
+          <div class="mb-3">
+            <div class="text-secondary small mb-1">Modul</div>
+            <div id="change-path-repo-name" class="fw-semibold">-</div>
+          </div>
+          <div class="mb-3">
+            <div class="text-secondary small mb-1">Aktueller Installationspfad</div>
+            <code id="change-path-current-dir" class="small text-warning">-</code>
+          </div>
+          <div class="mb-3">
+            <label for="change-path-install-dir" class="form-label small fw-semibold">Neuer Installationspfad</label>
+            <div class="input-group input-group-sm">
+              <input type="text" class="form-control font-monospace" id="change-path-install-dir"
+                placeholder="/media/djanebmb/AI 512 GB SSD/Modul-Name" autocomplete="off" spellcheck="false">
+              <button type="button" class="btn btn-outline-secondary" id="btn-change-path-browse">
+                <i class="bi bi-folder2-open"></i> Durchsuchen
+              </button>
+            </div>
+            <div class="form-text">Absoluter Pfad zum Repo-Verzeichnis auf dem gemounteten Laufwerk.</div>
+          </div>
+          <div class="alert alert-info small mb-0 py-2">
+            <strong>Nur Pfad speichern</strong> — aktualisiert nur den Pfad in der Konfiguration, kein Git-Vorgang.<br>
+            <strong>Pfad + Neu installieren</strong> — speichert den Pfad und führt danach einen Git-Clone/Pull aus.
+            Vorhandene Daten (Config-Dateien etc.) werden nicht überschrieben.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-change-path-save">Nur Pfad speichern</button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-change-path-save-reinstall">Pfad + Neu installieren</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="systemUpdateDetailsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">

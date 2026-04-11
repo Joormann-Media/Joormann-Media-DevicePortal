@@ -38,7 +38,9 @@
     rootPath: "",
     roots: [],
     modal: null,
+    targetInputId: "extra-repo-install-dir",
   };
+  let _repoChangePathRepoId = null;
   const DEFAULT_PLAYER_SERVICE_NAME = "joormann-media-jarvis-displayplayer.service";
   const streamAudioBrowserState = {
     currentPath: "",
@@ -5584,8 +5586,9 @@
     renderRepoInstallPathBrowser((payload || {}).data || {});
   }
 
-  async function openRepoInstallPathModal() {
-    const inputPath = String(q("extra-repo-install-dir")?.value || "").trim();
+  async function openRepoInstallPathModal(targetInputId = "extra-repo-install-dir") {
+    repoInstallPathState.targetInputId = targetInputId || "extra-repo-install-dir";
+    const inputPath = String(q(repoInstallPathState.targetInputId)?.value || "").trim();
     await refreshRepoInstallPathBrowser(inputPath);
     const modalEl = q("repoInstallPathModal");
     if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
@@ -5707,6 +5710,7 @@
           <div class="d-flex flex-wrap gap-2">
             ${openButtonHtml}
             <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
+            <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="change_path" data-id="${escapeHtml(repoId)}" title="Installationspfad ändern (z.B. nach Laufwerk-Remount)"><i class="bi bi-folder-symlink"></i> Pfad</button>
             ${updateButtonHtml}
             ${installOrUninstallButtonHtml}
             <button class="btn btn-outline-success btn-sm js-extra-repo-action" data-action="service_action" data-service-action="${controlAction}" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>${controlLabel}</button>
@@ -5901,6 +5905,44 @@
     await pollStreamPlayerUpdateStatus(streamPlayerUpdateJobId);
     await refreshManagedRepos(true);
     toast(`${repoName} Install/Update gestartet`, "success");
+  }
+
+  function openRepoChangePathModal(repoId) {
+    const target = getManagedRepoById(repoId);
+    if (!target) throw new Error("Repo nicht gefunden.");
+    _repoChangePathRepoId = repoId;
+    const idInput = q("change-path-repo-id");
+    if (idInput) idInput.value = repoId;
+    const nameEl = q("change-path-repo-name");
+    if (nameEl) nameEl.textContent = String(target.name || target.repo_link || "-");
+    const currentEl = q("change-path-current-dir");
+    if (currentEl) currentEl.textContent = String(target.install_dir || "-");
+    const newInput = q("change-path-install-dir");
+    if (newInput) newInput.value = String(target.install_dir || "");
+    const modalEl = q("repoChangePathModal");
+    if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
+    window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  async function saveRepoPath(repoId, newPath, andReinstall = false) {
+    if (!repoId || !newPath) throw new Error("Repo-ID oder Pfad fehlt.");
+    const payload = await fetchJson(
+      `/api/stream/player/repos/${encodeURIComponent(repoId)}/set-path`,
+      { method: "POST", body: { install_dir: newPath }, timeoutMs: 8000 }
+    );
+    const updated = ((payload || {}).data || {}).item || {};
+    const list = ((payload || {}).data || {}).repos;
+    if (Array.isArray(list)) renderManagedRepos(list);
+    const modalEl = q("repoChangePathModal");
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    }
+    toast(`Pfad gespeichert: ${newPath}`, "success");
+    if (andReinstall) {
+      await startManagedRepoInstallUpdate(repoId);
+    }
+    await refreshManagedRepos(true);
+    return updated;
   }
 
   async function setManagedRepoAsPlayer(repoId) {
@@ -8057,6 +8099,10 @@
             showManagedRepoDetails(repoId);
             return;
           }
+          if (action === "change_path") {
+            openRepoChangePathModal(repoId);
+            return;
+          }
           if (action === "toggle_autostart") {
             const enabled = String(btn.dataset.enabled || "").trim() === "1";
             await toggleManagedRepoAutostart(repoId, enabled);
@@ -8199,13 +8245,44 @@
     const repoInstallPathApplyBtn = q("btn-repo-install-path-apply");
     if (repoInstallPathApplyBtn) {
       repoInstallPathApplyBtn.addEventListener("click", () => {
-        const input = q("extra-repo-install-dir");
+        const targetId = repoInstallPathState.targetInputId || "extra-repo-install-dir";
+        const input = q(targetId);
         if (input) input.value = String(repoInstallPathState.currentPath || "").trim();
         const modalEl = q("repoInstallPathModal");
         if (modalEl && window.bootstrap && window.bootstrap.Modal) {
           window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
         }
       });
+    }
+    const changePathBrowseBtn = q("btn-change-path-browse");
+    if (changePathBrowseBtn) {
+      changePathBrowseBtn.addEventListener("click", () => run(async () => {
+        const changePathModal = q("repoChangePathModal");
+        if (changePathModal && window.bootstrap && window.bootstrap.Modal) {
+          window.bootstrap.Modal.getOrCreateInstance(changePathModal).hide();
+        }
+        await openRepoInstallPathModal("change-path-install-dir");
+      }));
+    }
+    const changePathSaveBtn = q("btn-change-path-save");
+    if (changePathSaveBtn) {
+      changePathSaveBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(q("change-path-repo-id")?.value || _repoChangePathRepoId || "").trim();
+        const newPath = String(q("change-path-install-dir")?.value || "").trim();
+        if (!repoId) throw new Error("Repo-ID fehlt.");
+        if (!newPath) throw new Error("Bitte einen Pfad eingeben.");
+        await saveRepoPath(repoId, newPath, false);
+      }));
+    }
+    const changePathSaveReinstallBtn = q("btn-change-path-save-reinstall");
+    if (changePathSaveReinstallBtn) {
+      changePathSaveReinstallBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(q("change-path-repo-id")?.value || _repoChangePathRepoId || "").trim();
+        const newPath = String(q("change-path-install-dir")?.value || "").trim();
+        if (!repoId) throw new Error("Repo-ID fehlt.");
+        if (!newPath) throw new Error("Bitte einen Pfad eingeben.");
+        await saveRepoPath(repoId, newPath, true);
+      }));
     }
     const streamAudioPathList = q("stream-audio-browser-list");
     if (streamAudioPathList) {
