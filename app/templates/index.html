@@ -2293,6 +2293,48 @@ Ein System für die komplette Infrastruktur: Raspberry Pi, Server und Workstatio
     </div>
   </div>
 
+  <div class="modal fade" id="repoEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title d-flex align-items-center gap-2">
+            <i class="bi bi-pencil-square"></i>
+            <span id="repo-edit-modal-title">Repo bearbeiten</span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="repo-edit-modal-repo-id" value="">
+          <div class="text-secondary small mb-3 font-monospace" id="repo-edit-modal-repo-link">-</div>
+          <div class="d-grid gap-2">
+            <button type="button" class="btn btn-outline-secondary text-start" id="btn-repo-edit-change-path">
+              <i class="bi bi-folder-symlink me-2"></i>Installationspfad ändern
+            </button>
+            <button type="button" class="btn btn-outline-warning text-start" id="btn-repo-edit-reinstall">
+              <i class="bi bi-arrow-repeat me-2"></i>ReInstall durchführen
+            </button>
+            <button type="button" class="btn btn-outline-primary text-start" id="btn-repo-edit-update" disabled>
+              <i class="bi bi-cloud-download me-2"></i>Update verfügbar – jetzt updaten
+            </button>
+            <button type="button" class="btn btn-outline-secondary text-start" id="btn-repo-edit-autostart">
+              <i class="bi bi-toggle-on me-2"></i><span id="repo-edit-autostart-label">Autostart</span>
+            </button>
+            <hr class="my-1">
+            <button type="button" class="btn btn-outline-danger text-start" id="btn-repo-edit-uninstall">
+              <i class="bi bi-box-arrow-down me-2"></i>Uninstall
+            </button>
+            <button type="button" class="btn btn-danger text-start" id="btn-repo-edit-delete">
+              <i class="bi bi-trash me-2"></i>Löschen
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="repoReinstallModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">

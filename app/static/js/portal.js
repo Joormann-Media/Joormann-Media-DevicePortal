@@ -5719,14 +5719,9 @@
           <div class="d-flex flex-wrap gap-2">
             ${openButtonHtml}
             <button class="btn btn-outline-dark btn-sm js-extra-repo-action" data-action="details" data-id="${escapeHtml(repoId)}">Details</button>
-            <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="change_path" data-id="${escapeHtml(repoId)}" title="Nur Installationspfad in der Konfiguration ändern"><i class="bi bi-folder-symlink"></i> Pfad</button>
-            ${reinstallButtonHtml}
-            ${updateButtonHtml}
-            ${installOrUninstallButtonHtml}
+            <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="edit" data-id="${escapeHtml(repoId)}"><i class="bi bi-pencil-square me-1"></i>Edit</button>
             <button class="btn btn-outline-success btn-sm js-extra-repo-action" data-action="service_action" data-service-action="${controlAction}" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>${controlLabel}</button>
             <button class="btn btn-outline-secondary btn-sm js-extra-repo-action" data-action="service_action" data-service-action="restart" data-id="${escapeHtml(repoId)}" ${canControlService ? "" : "disabled"}>Restart</button>
-            <button class="btn btn-outline-warning btn-sm js-extra-repo-action" data-action="toggle_autostart" data-enabled="${autostart ? "0" : "1"}" data-id="${escapeHtml(repoId)}">${autostartButtonLabel}</button>
-            <button class="btn btn-outline-danger btn-sm js-extra-repo-action" data-action="delete" data-id="${escapeHtml(repoId)}">Löschen</button>
           </div>
           ${idx < list.length - 1 ? '<hr class="my-3">' : ''}
         </section>
@@ -5932,6 +5927,67 @@
     const modalEl = q("repoChangePathModal");
     if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
     window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  function openRepoEditModal(repoId) {
+    const target = getManagedRepoById(repoId);
+    if (!target) throw new Error("Repo nicht gefunden.");
+
+    const idInput = q("repo-edit-modal-repo-id");
+    if (idInput) idInput.value = repoId;
+    const titleEl = q("repo-edit-modal-title");
+    if (titleEl) titleEl.textContent = String(target.name || "Repo bearbeiten");
+    const linkEl = q("repo-edit-modal-repo-link");
+    if (linkEl) linkEl.textContent = String(target.repo_link || "-");
+
+    // Autostart-Button Label
+    const autostart = target.autostart !== false;
+    const autostartLabelEl = q("repo-edit-autostart-label");
+    if (autostartLabelEl) autostartLabelEl.textContent = autostart ? "Autostart deaktivieren" : "Autostart aktivieren";
+    const autostartBtn = q("btn-repo-edit-autostart");
+    if (autostartBtn) {
+      autostartBtn.dataset.enabled = autostart ? "0" : "1";
+      autostartBtn.dataset.id = repoId;
+    }
+
+    // Update-Button: nur aktiv wenn Update verfügbar
+    const updateInfo = resolveRepoUpdateInfo(target);
+    const updateBtn = q("btn-repo-edit-update");
+    if (updateBtn) {
+      updateBtn.disabled = !(updateInfo && updateInfo.available);
+      updateBtn.dataset.id = repoId;
+    }
+
+    // Uninstall/Install-Button
+    const status = (target.service_status && typeof target.service_status === "object") ? target.service_status : {};
+    const isInstalled = !!(status.service_installed || status.service_running);
+    const uninstallBtn = q("btn-repo-edit-uninstall");
+    if (uninstallBtn) {
+      uninstallBtn.textContent = "";
+      const icon = document.createElement("i");
+      icon.className = isInstalled ? "bi bi-box-arrow-down me-2" : "bi bi-box-arrow-in-down me-2";
+      uninstallBtn.appendChild(icon);
+      uninstallBtn.appendChild(document.createTextNode(isInstalled ? "Uninstall" : "Install"));
+      uninstallBtn.dataset.action = isInstalled ? "uninstall" : "install";
+      uninstallBtn.dataset.id = repoId;
+    }
+
+    // Pfad + ReInstall + Delete Buttons dataset
+    for (const btnId of ["btn-repo-edit-change-path", "btn-repo-edit-reinstall", "btn-repo-edit-delete"]) {
+      const btn = q(btnId);
+      if (btn) btn.dataset.id = repoId;
+    }
+
+    const modalEl = q("repoEditModal");
+    if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
+    window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  function _closeEditModal() {
+    const modalEl = q("repoEditModal");
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    }
   }
 
   function openRepoReinstallModal(repoId) {
@@ -8243,6 +8299,10 @@
             showManagedRepoDetails(repoId);
             return;
           }
+          if (action === "edit") {
+            openRepoEditModal(repoId);
+            return;
+          }
           if (action === "change_path") {
             openRepoChangePathModal(repoId);
             return;
@@ -8430,6 +8490,62 @@
         if (!repoId) throw new Error("Repo-ID fehlt.");
         if (!newPath) throw new Error("Bitte einen Pfad eingeben.");
         await saveRepoPath(repoId, newPath, true);
+      }));
+    }
+    const repoEditChangePathBtn = q("btn-repo-edit-change-path");
+    if (repoEditChangePathBtn) {
+      repoEditChangePathBtn.addEventListener("click", () => run(() => {
+        const repoId = String(q("repo-edit-modal-repo-id")?.value || repoEditChangePathBtn.dataset.id || "").trim();
+        _closeEditModal();
+        openRepoChangePathModal(repoId);
+      }));
+    }
+    const repoEditReinstallBtn = q("btn-repo-edit-reinstall");
+    if (repoEditReinstallBtn) {
+      repoEditReinstallBtn.addEventListener("click", () => run(() => {
+        const repoId = String(q("repo-edit-modal-repo-id")?.value || repoEditReinstallBtn.dataset.id || "").trim();
+        _closeEditModal();
+        openRepoReinstallModal(repoId);
+      }));
+    }
+    const repoEditUpdateBtn = q("btn-repo-edit-update");
+    if (repoEditUpdateBtn) {
+      repoEditUpdateBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(q("repo-edit-modal-repo-id")?.value || repoEditUpdateBtn.dataset.id || "").trim();
+        _closeEditModal();
+        await startManagedRepoInstallUpdate(repoId);
+        await refreshStatus();
+      }));
+    }
+    const repoEditAutostartBtn = q("btn-repo-edit-autostart");
+    if (repoEditAutostartBtn) {
+      repoEditAutostartBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(q("repo-edit-modal-repo-id")?.value || repoEditAutostartBtn.dataset.id || "").trim();
+        const enabled = String(repoEditAutostartBtn.dataset.enabled || "").trim() === "1";
+        _closeEditModal();
+        await toggleManagedRepoAutostart(repoId, enabled);
+      }));
+    }
+    const repoEditUninstallBtn = q("btn-repo-edit-uninstall");
+    if (repoEditUninstallBtn) {
+      repoEditUninstallBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(q("repo-edit-modal-repo-id")?.value || repoEditUninstallBtn.dataset.id || "").trim();
+        const action = String(repoEditUninstallBtn.dataset.action || "uninstall").trim();
+        _closeEditModal();
+        if (action === "install") {
+          await startManagedRepoInstallUpdate(repoId);
+          await refreshStatus();
+        } else {
+          await uninstallManagedRepo(repoId);
+        }
+      }));
+    }
+    const repoEditDeleteBtn = q("btn-repo-edit-delete");
+    if (repoEditDeleteBtn) {
+      repoEditDeleteBtn.addEventListener("click", () => run(async () => {
+        const repoId = String(q("repo-edit-modal-repo-id")?.value || repoEditDeleteBtn.dataset.id || "").trim();
+        _closeEditModal();
+        await deleteManagedRepo(repoId);
       }));
     }
     const openBasePathModalBtn = q("btn-open-base-path-modal");
