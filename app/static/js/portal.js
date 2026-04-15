@@ -49,6 +49,7 @@
     modal: null,
   };
   let audioHubPollHandle = null;
+  let audioHubEndpointAvailable = true;
   const audioMixerState = {
     lastPayload: null,
     channelDebounce: new Map(),
@@ -246,6 +247,14 @@
       .replace(/<[^>]*>/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function isNotFoundError(err) {
+    const msg = String((err && err.message) ? err.message : err || "").toLowerCase();
+    return msg.includes(" not found")
+      || msg.includes("not_found")
+      || msg.includes("http 404")
+      || msg.includes("requested url was not found");
   }
 
   async function fetchJson(url, options = {}) {
@@ -4402,15 +4411,45 @@
     q("audio-tts-status").textContent = `Status: ${ttsStatus}`;
   }
 
+  function audioHubFallbackPayload() {
+    return {
+      ok: true,
+      data: {
+        active_source: "inactive",
+        updated_at: new Date().toISOString(),
+        bluetooth: { ok: false, connected_count: 0, error: "" },
+        outputs: { ok: false, current_output: "", saved: {} },
+        errors: [],
+        radio: { running: false, stream_url: "", rtsp_adapter: { active: false, target_url: "" } },
+        tts: { running: false },
+      },
+    };
+  }
+
   async function refreshAudioHubStatus() {
+    if (!streamFeatureState.hasAudioPlayer || !audioHubEndpointAvailable) {
+      const fallback = audioHubFallbackPayload();
+      renderAudioHubStatus(fallback);
+      return fallback;
+    }
     const warmupData = consumeWarmupData(["sections", "legacy", "audio_status"]);
     if (warmupData && typeof warmupData === "object") {
       renderAudioHubStatus(warmupData);
       return warmupData;
     }
-    const payload = await fetchJson("/api/audio/status", { cache: "no-store" });
-    renderAudioHubStatus(payload);
-    return payload;
+    try {
+      const payload = await fetchJson("/api/audio/status", { cache: "no-store" });
+      renderAudioHubStatus(payload);
+      return payload;
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        audioHubEndpointAvailable = false;
+        const fallback = audioHubFallbackPayload();
+        renderAudioHubStatus(fallback);
+        return fallback;
+      }
+      throw err;
+    }
   }
 
   async function primeAudioHubData() {
@@ -4849,6 +4888,7 @@
   }
 
   function startAudioHubPolling() {
+    if (!streamFeatureState.hasAudioPlayer || !audioHubEndpointAvailable) return;
     if (audioHubPollHandle) return;
     audioHubPollHandle = window.setInterval(() => {
       refreshAudioHubStatus().catch(() => {});
