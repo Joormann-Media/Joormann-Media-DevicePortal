@@ -287,8 +287,8 @@ def ensure_config() -> dict:
         cfg['managed_install_repos'] = []
         changed = True
     legacy_player_service = str(cfg.get('player_service_name') or '').strip().lower()
-    if legacy_player_service in {'', 'joormann-media-deviceplayer.service'}:
-        cfg['player_service_name'] = 'joormann-media-jarvis-audioplayer.service'
+    if legacy_player_service in {'', 'joormann-media-deviceplayer.service', 'joormann-media-jarvis-audioplayer.service'}:
+        cfg['player_service_name'] = 'joormann-media-jarvis-displayplayer.service'
         changed = True
     if not isinstance(cfg.get('panel_api_keys'), dict):
         cfg['panel_api_keys'] = dict(DEFAULT_CONFIG['panel_api_keys'])
@@ -314,14 +314,17 @@ def ensure_config() -> dict:
             if key not in cfg['panel_sync']:
                 cfg['panel_sync'][key] = value
                 changed = True
-    if not isinstance(cfg.get('radio_rtsp_adapter'), dict):
-        cfg['radio_rtsp_adapter'] = dict(DEFAULT_CONFIG['radio_rtsp_adapter'])
-        changed = True
-    else:
-        for key, value in DEFAULT_CONFIG['radio_rtsp_adapter'].items():
-            if key not in cfg['radio_rtsp_adapter']:
-                cfg['radio_rtsp_adapter'][key] = value
-                changed = True
+    # Optional legacy block: may not exist after audio/radio split.
+    radio_defaults = DEFAULT_CONFIG.get('radio_rtsp_adapter')
+    if isinstance(radio_defaults, dict):
+        if not isinstance(cfg.get('radio_rtsp_adapter'), dict):
+            cfg['radio_rtsp_adapter'] = dict(radio_defaults)
+            changed = True
+        else:
+            for key, value in radio_defaults.items():
+                if key not in cfg['radio_rtsp_adapter']:
+                    cfg['radio_rtsp_adapter'][key] = value
+                    changed = True
     if not isinstance(cfg.get('sentinel_settings'), dict):
         cfg['sentinel_settings'] = dict(DEFAULT_CONFIG['sentinel_settings'])
         changed = True

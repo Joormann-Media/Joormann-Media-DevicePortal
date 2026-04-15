@@ -92,7 +92,7 @@ cleanup_legacy_audio_player() {
     "joormann-media-deviceplayer.service"
     "joormann-media-jarvis-deviceplayer.service"
   )
-  local primary_audio_unit="${1:-joormann-media-jarvis-audioplayer.service}"
+  local primary_audio_unit="${1:-joormann-media-jarvis-displayplayer.service}"
 
   if ! service_exists "${primary_audio_unit}"; then
     echo "[cleanup] primary audio unit not found: ${primary_audio_unit} (skip legacy cleanup)"
@@ -568,7 +568,7 @@ EOF
 
     PLAYER_AUTO_UPDATE="${PLAYER_CFG[auto_update]:-true}"
     PLAYER_UPDATE_REPO="${PLAYER_CFG[repo_link]:-}"
-    PLAYER_UPDATE_SERVICE_NAME="${PLAYER_CFG[service_name]:-joormann-media-jarvis-audioplayer.service}"
+    PLAYER_UPDATE_SERVICE_NAME="${PLAYER_CFG[service_name]:-joormann-media-jarvis-displayplayer.service}"
     PLAYER_UPDATE_SERVICE_USER="${PLAYER_CFG[service_user]:-${SERVICE_USER}}"
     if [[ -z "${PLAYER_UPDATE_REPO}" ]]; then
       PLAYER_UPDATE_REPO="$(resolve_default_player_repo "${SERVICE_USER}" "${REPO_DIR}")"
