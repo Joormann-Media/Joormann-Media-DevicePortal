@@ -20,7 +20,10 @@ fi
 
 TMP_UNIT="$(mktemp)"
 trap 'rm -f "$TMP_UNIT"' EXIT
-sed "s|__SERVICE_USER__|$SERVICE_USER|g" "$SERVICE_TEMPLATE" > "$TMP_UNIT"
+sed \
+  -e "s|__SERVICE_USER__|$SERVICE_USER|g" \
+  -e "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" \
+  "$SERVICE_TEMPLATE" > "$TMP_UNIT"
 
 sudo install -m 644 "$TMP_UNIT" "$SERVICE_PATH"
 sudo systemctl daemon-reload
