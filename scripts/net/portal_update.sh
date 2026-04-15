@@ -49,7 +49,7 @@ else:
     auto = "true"
 
 repo = str(cfg.get("player_repo_link") or cfg.get("player_repo_dir") or "").strip()
-service = str(cfg.get("player_service_name") or "joormann-media-jarvis-audioplayer.service").strip() or "joormann-media-jarvis-audioplayer.service"
+service = str(cfg.get("player_service_name") or "joormann-media-jarvis-displayplayer.service").strip() or "joormann-media-jarvis-displayplayer.service"
 user = str(cfg.get("player_service_user") or "").strip()
 
 out("auto_update", auto)
@@ -318,7 +318,7 @@ EOF
   PLAYER_UPDATE_ERROR=""
   PLAYER_UPDATE_NEEDED="unknown"
   PLAYER_UPDATE_REPO=""
-  PLAYER_UPDATE_SERVICE_NAME="joormann-media-jarvis-audioplayer.service"
+  PLAYER_UPDATE_SERVICE_NAME="joormann-media-jarvis-displayplayer.service"
   PLAYER_UPDATE_SERVICE_USER="${SERVICE_USER}"
   BEFORE_COMMIT="$(runuser -u "${SERVICE_USER}" -- bash -lc "cd \"${REPO_DIR}\" && git rev-parse --short=12 HEAD" 2>/dev/null || true)"
   if [[ -n "${BEFORE_COMMIT}" ]]; then
@@ -479,6 +479,8 @@ EOF
   fi
 
   # Self-heal: if the portal unit does not exist yet, bootstrap it once.
+  # Note: during update we must not restart inside setup_portal.sh; otherwise
+  # this updater process can be killed before writing final state.
   if ! systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -Fxq "${SERVICE_NAME}"; then
     echo "[service] ${SERVICE_NAME} not found, bootstrapping service via install/setup_portal.sh"
     if [[ ! -x "${REPO_DIR}/install/setup_portal.sh" ]]; then
@@ -507,7 +509,7 @@ player_update_error=
 EOF
       exit 0
     fi
-    "${REPO_DIR}/install/setup_portal.sh" "${REPO_DIR}" "${SERVICE_USER}"
+    SETUP_PORTAL_SKIP_RESTART=1 "${REPO_DIR}/install/setup_portal.sh" "${REPO_DIR}" "${SERVICE_USER}"
     SETUP_PORTAL_RC=$?
     if [[ ${SETUP_PORTAL_RC} -ne 0 ]]; then
       echo "[service] setup_portal.sh failed rc=${SETUP_PORTAL_RC}"

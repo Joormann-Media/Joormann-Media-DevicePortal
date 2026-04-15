@@ -177,7 +177,11 @@ if [[ -x "$NETCONTROL_SETUP" ]]; then
   fi
 fi
 
-systemctl restart device-portal.service
+if [[ "${SETUP_PORTAL_SKIP_RESTART:-0}" != "1" ]]; then
+  systemctl restart device-portal.service
+else
+  echo "Skipping service restart (SETUP_PORTAL_SKIP_RESTART=1)."
+fi
 
 echo "Installed systemd unit: $SERVICE_FILE_DST"
 echo "Installed environment file: $ENV_FILE"
