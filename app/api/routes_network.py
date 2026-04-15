@@ -51,8 +51,6 @@ from app.core.netcontrol import (
     bluetooth_audio_scan,
     bluetooth_audio_devices,
     bluetooth_audio_action,
-    audio_outputs_status,
-    audio_output_set,
     bluetooth_pairing_action,
     set_bluetooth_enabled,
     set_bluetooth_runtime_settings,
@@ -783,15 +781,6 @@ def _has_uplink(network_info: dict) -> bool:
     return bool(lan_up or wifi_up or default_route_up or tailscale_up or any_interface_ip_up)
 
 
-def _get_audio_output_profile(cfg: dict) -> dict:
-    profile = cfg.get("audio_output") if isinstance(cfg.get("audio_output"), dict) else {}
-    selected = str(profile.get("selected_output") or "").strip()
-    return {
-        "selected_output": selected,
-        "updated_at": str(profile.get("updated_at") or ""),
-    }
-
-
 @bp_network.get("/api/network/info")
 def api_network_info():
     # NOTE: Legacy read endpoint with side effects in storage paths.
@@ -1386,19 +1375,6 @@ def api_bluetooth_scan():
 def api_bluetooth_devices():
     try:
         payload = bluetooth_audio_devices()
-        outputs = {}
-        try:
-            outputs = audio_outputs_status()
-        except NetControlError:
-            outputs = {}
-        current_output = str(outputs.get("current_output") or "")
-        devices = payload.get("devices") if isinstance(payload.get("devices"), list) else []
-        for item in devices:
-            if not isinstance(item, dict):
-                continue
-            mac = str(item.get("id") or "").upper()
-            item["is_current_output"] = bool(mac and current_output == f"bluetooth:{mac}")
-        payload["current_output"] = current_output
         return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
@@ -1441,14 +1417,6 @@ def api_bluetooth_disconnect():
         return _error("invalid_payload", "Field 'device_id' is required", status=400)
     try:
         payload = bluetooth_audio_action("disconnect", device_id=device_id)
-        if str((payload.get("result") or {}).get("device_id") or "").strip():
-            try:
-                outputs = audio_outputs_status()
-                current_output = str(outputs.get("current_output") or "")
-                if current_output.startswith("bluetooth:"):
-                    audio_output_set("local_hdmi")
-            except NetControlError:
-                pass
         return _ok(payload)
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
@@ -1467,94 +1435,6 @@ def api_bluetooth_forget():
     except NetControlError as exc:
         status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
         return _error(exc.code, exc.message, status=status, detail=exc.detail)
-
-
-@bp_network.get("/api/audio/outputs")
-def api_audio_outputs():
-    cfg = ensure_config()
-    profile = _get_audio_output_profile(cfg)
-    cache = profile.get("last_detected") if isinstance(profile.get("last_detected"), dict) else {}
-    try:
-        payload = audio_outputs_status()
-        available = payload.get("available_outputs") if isinstance(payload.get("available_outputs"), list) else []
-        has_available = any(bool(item.get("available")) for item in available if isinstance(item, dict))
-
-        if not has_available and isinstance(cache, dict):
-            cached_available = cache.get("available_outputs") if isinstance(cache.get("available_outputs"), list) else []
-            if cached_available:
-                payload["available_outputs"] = cached_available
-                if not str(payload.get("current_output") or "").strip():
-                    payload["current_output"] = str(cache.get("current_output") or profile.get("selected_output") or "").strip()
-                payload["warning"] = str(payload.get("warning") or "Using cached audio outputs (live detection empty).")
-        else:
-            profile["last_detected"] = {
-                "current_output": str(payload.get("current_output") or "").strip(),
-                "available_outputs": available,
-                "updated_at": utc_now(),
-            }
-            cfg["audio_output"] = profile
-            cfg["updated_at"] = utc_now()
-            write_json(CONFIG_PATH, cfg, mode=0o600)
-
-        if not str(payload.get("current_output") or "").strip():
-            payload["current_output"] = str(profile.get("selected_output") or "").strip()
-        payload["saved"] = profile
-        return _ok(payload)
-    except NetControlError as exc:
-        # Keep UI usable even when host audio backend probing fails.
-        fallback = {
-            "current_output": str(profile.get("selected_output") or ""),
-            "available_outputs": [
-                {
-                    "id": "local_hdmi",
-                    "label": "HDMI",
-                    "type": "local",
-                    "available": False,
-                    "sink_name": "",
-                },
-                {
-                    "id": "local_speaker",
-                    "label": "Lokale Lautsprecher / Klinke",
-                    "type": "local",
-                    "available": False,
-                    "sink_name": "",
-                },
-            ],
-            "saved": profile,
-            "warning": f"{exc.code}: {exc.detail or exc.message}",
-        }
-        if isinstance(cache, dict):
-            cached_available = cache.get("available_outputs") if isinstance(cache.get("available_outputs"), list) else []
-            if cached_available:
-                fallback["available_outputs"] = cached_available
-                fallback["current_output"] = str(cache.get("current_output") or fallback["current_output"] or "").strip()
-                fallback["warning"] = f"{fallback['warning']} (cached outputs applied)"
-        return _ok(fallback)
-
-
-@bp_network.post("/api/audio/output")
-def api_audio_output_set():
-    data = request.get_json(force=True, silent=True) or {}
-    output = str(data.get("output") or "").strip()
-    if not output:
-        return _error("invalid_payload", "Field 'output' is required", status=400)
-    cfg = ensure_config()
-    try:
-        payload = audio_output_set(output)
-    except NetControlError as exc:
-        status = 500 if exc.code in ("script_missing", "execution_failed", "timeout") else 400
-        return _error(exc.code, exc.message, status=status, detail=exc.detail)
-
-    profile = _get_audio_output_profile(cfg)
-    profile["selected_output"] = output
-    profile["updated_at"] = utc_now()
-    cfg["audio_output"] = profile
-    cfg["updated_at"] = utc_now()
-    ok, err = write_json(CONFIG_PATH, cfg, mode=0o600)
-    if not ok:
-        return _error("config_write_failed", "Could not persist audio output selection", status=500, detail=err)
-    payload["saved"] = profile
-    return _ok(payload)
 
 
 @bp_network.post("/api/network/lan/toggle")

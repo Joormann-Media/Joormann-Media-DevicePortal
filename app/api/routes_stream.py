@@ -22,12 +22,9 @@ from app.core.httpclient import http_get_json, http_post_json
 from app.core.jsonio import write_json
 from app.core.netcontrol import NetControlError, player_service_action, player_service_install, player_update, player_update_status
 from app.core.paths import PORTAL_DIR
-from app.core.netcontrol import spotify_connect_service_action
 from app.core.paths import CONFIG_PATH, DATA_DIR
 from app.core.storage_state import get_storage_state
 from app.core.timeutil import utc_now
-from app.services.audio_backend import request_audio_backend
-from app.services.audio_service import collect_status
 
 bp_stream = Blueprint('stream', __name__)
 
@@ -81,25 +78,6 @@ def _player_control_request(method: str, path: str, payload: dict | None = None,
     if not isinstance(data, dict):
         data = {'raw': data}
     return status, data, ''
-
-
-def _resolve_audio_allowed_root() -> Path:
-    explicit = str(os.getenv('DEVICEPLAYER_AUDIO_ALLOWED_ROOT') or '').strip()
-    if explicit:
-        return Path(explicit).expanduser().resolve()
-
-    if PLAYER_SOURCE_PATH.exists():
-        try:
-            payload = json.loads(PLAYER_SOURCE_PATH.read_text(encoding='utf-8'))
-            if isinstance(payload, dict):
-                manifest = payload.get('manifest') if isinstance(payload.get('manifest'), dict) else {}
-                manifest_path = str(manifest.get('path') or payload.get('manifest_path') or '').strip()
-                if manifest_path:
-                    return (Path(manifest_path).expanduser().resolve().parent / 'audio').resolve()
-        except Exception:
-            pass
-
-    return Path('/mnt/deviceportal/media/stream/current/audio').resolve()
 
 
 def _base_admin_url(cfg: dict, incoming: dict | None = None) -> str:
@@ -474,18 +452,6 @@ def api_stream_overview():
     except Exception as exc:
         player = {'ok': False, 'error': str(exc)}
 
-    spotify_connect = {}
-    try:
-        spotify_connect = spotify_connect_service_action(
-            'status',
-            str(cfg.get('spotify_connect_service_name') or '').strip(),
-            service_user=str(cfg.get('spotify_connect_service_user') or '').strip(),
-            service_scope=str(cfg.get('spotify_connect_service_scope') or '').strip(),
-            service_candidates=str(cfg.get('spotify_connect_service_candidates') or '').strip(),
-        )
-    except Exception as exc:
-        spotify_connect = {'ok': False, 'error': str(exc)}
-
     return jsonify(
         ok=True,
         status=status,
@@ -495,7 +461,6 @@ def api_stream_overview():
         storage=storage_info,
         storage_error=storage_error,
         player=player,
-        spotify_connect=spotify_connect,
     )
 
 
@@ -1607,29 +1572,6 @@ def _path_browser_resolve(raw_path: str, roots: list[Path]) -> tuple[Path, Path]
     return current, matched_root
 
 
-def _audio_path_browser_root() -> Path:
-    configured = str(os.getenv('DEVICEPLAYER_AUDIO_BROWSER_ROOT') or '').strip()
-    candidate = Path(configured).expanduser() if configured else Path('/mnt')
-    resolved = candidate.resolve()
-    if not resolved.exists() or not resolved.is_dir():
-        raise RuntimeError('Audio-Dateibrowser Root nicht verfügbar.')
-    return resolved
-
-
-def _audio_path_browser_resolve(raw_path: str, root: Path) -> Path:
-    selected = str(raw_path or '').strip()
-    current = root if not selected else Path(selected).expanduser()
-    current = current.resolve()
-    if not current.exists() or not current.is_dir():
-        raise RuntimeError('Verzeichnis existiert nicht.')
-    try:
-        if not current.is_relative_to(root):
-            raise RuntimeError('Pfad liegt außerhalb von /mnt.')
-    except Exception:
-        raise RuntimeError('Pfad liegt außerhalb von /mnt.')
-    return current
-
-
 def _managed_repo_service_status(repo: dict) -> dict:
     def _probe_runtime_health(target: dict) -> dict:
         urls: list[str] = []
@@ -2515,252 +2457,3 @@ def api_stream_player_install_update_status():
         status = 500 if exc.code in ('script_missing', 'execution_failed', 'update_state_read_failed') else 400
         return jsonify(ok=False, error=exc.code, detail=exc.detail or exc.message), status
     return jsonify(ok=True, data=payload)
-
-
-@bp_stream.get('/api/stream/player/audio/status')
-def api_stream_player_audio_status():
-    status, payload, err, _backend = request_audio_backend('GET', '/api/audio/status', timeout=6.0)
-    if status is None:
-        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
-    if status >= 400:
-        return jsonify(ok=False, error='audio_status_failed', detail=f'HTTP {status}', response=payload), status
-
-    backend_payload = payload if isinstance(payload, dict) else {}
-    backend_data = backend_payload.get('data') if isinstance(backend_payload.get('data'), dict) else backend_payload
-    active_source = str(backend_data.get('active_source') or '').strip().lower()
-    radio = backend_data.get('radio') if isinstance(backend_data.get('radio'), dict) else {}
-    tts = backend_data.get('tts') if isinstance(backend_data.get('tts'), dict) else {}
-    radio_running = bool(radio.get('running'))
-    tts_running = bool(tts.get('running'))
-    source_url = str(radio.get('stream_url') or radio.get('playback_url') or '').strip()
-    tts_source = str(tts.get('file_path') or '').strip()
-    has_playing = (active_source == 'radio' and radio_running) or (active_source == 'tts' and tts_running)
-    data = {
-        'state': 'playing' if has_playing else 'idle',
-        'source_type': active_source if active_source else ('radio' if radio_running else ('tts' if tts_running else 'none')),
-        'source': source_url if source_url else (tts_source if tts_source else ('radio' if radio_running else ('tts' if tts_running else ''))),
-        'output': '',
-        'volume': None,
-        'health': {'status': 'healthy'},
-    }
-    try:
-        hub_status = collect_status(include_bluetooth=False)
-    except Exception:
-        hub_status = {}
-
-    if isinstance(hub_status, dict):
-        active_source = str(hub_status.get('active_source') or 'idle').strip()
-        active_detail = hub_status.get('active_source_detail') if isinstance(hub_status.get('active_source_detail'), dict) else {}
-        outputs = hub_status.get('outputs') if isinstance(hub_status.get('outputs'), dict) else {}
-        current_output = str(outputs.get('current_output') or '').strip()
-        current_volume = None
-        available_outputs = outputs.get('available_outputs') if isinstance(outputs.get('available_outputs'), list) else []
-        for item in available_outputs:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get('id') or '').strip() != current_output:
-                continue
-            try:
-                current_volume = int(round(float(item.get('volume_percent'))))
-            except Exception:
-                current_volume = None
-            break
-
-        state = str(data.get('state') or '').strip().lower()
-        source_type = str(data.get('source_type') or '').strip().lower()
-        has_active_runtime_source = state in {'playing', 'buffering', 'paused'} and source_type not in {'', 'none', 'idle'}
-
-        if active_source in {'tts', 'radio'} and not has_active_runtime_source:
-            data['state'] = 'playing'
-            data['source_type'] = active_source
-            if active_source == 'tts':
-                data['source'] = str(active_detail.get('file_path') or data.get('source') or 'tts').strip() or 'tts'
-            elif active_source == 'radio':
-                data['source'] = (
-                    str(active_detail.get('stream_url') or '').strip()
-                    or str(active_detail.get('playback_url') or '').strip()
-                    or str(data.get('source') or 'radio').strip()
-                )
-
-        if current_output and not str(data.get('output') or '').strip():
-            data['output'] = current_output
-        if current_volume is not None and (data.get('volume') in (None, '', '-')):
-            data['volume'] = current_volume
-
-        data['hub_active_source'] = active_source
-        data['hub_active_source_detail'] = active_detail
-        data['hub_outputs'] = outputs
-        data['hub_sources'] = hub_status.get('sources') if isinstance(hub_status.get('sources'), dict) else {}
-        data['hub_updated_at'] = str(hub_status.get('updated_at') or '')
-
-    return jsonify(ok=True, data=data)
-
-
-@bp_stream.get('/api/stream/player/audio/files')
-def api_stream_player_audio_files():
-    requested_path = str(request.args.get('path') or '').strip()
-    root = _resolve_audio_allowed_root()
-    if requested_path:
-        try:
-            browser_root = _audio_path_browser_root()
-            candidate = Path(requested_path).expanduser().resolve()
-            if not candidate.exists() or not candidate.is_dir():
-                return jsonify(ok=False, error='invalid_path', detail='Verzeichnis existiert nicht.'), 400
-            if not candidate.is_relative_to(browser_root):
-                return jsonify(ok=False, error='invalid_path', detail='Pfad liegt außerhalb von /mnt.'), 400
-            root = candidate
-        except Exception:
-            return jsonify(ok=False, error='invalid_path', detail='Ungültiger Audio-Pfad.'), 400
-    if not root.exists() or not root.is_dir():
-        return jsonify(ok=True, root=str(root), current_path=str(root), files=[])
-
-    allowed_ext = {'.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac'}
-    files: list[dict] = []
-    for path in sorted(root.rglob('*')):
-        if not path.is_file():
-            continue
-        if path.suffix.lower() not in allowed_ext:
-            continue
-        try:
-            rel = str(path.relative_to(root))
-        except Exception:
-            rel = path.name
-        files.append(
-            {
-                'name': path.name,
-                'relative_path': rel,
-                'path': str(path.resolve()),
-                'size_bytes': int(path.stat().st_size or 0),
-            }
-        )
-    return jsonify(ok=True, root=str(root), current_path=str(root), files=files)
-
-
-@bp_stream.get('/api/stream/player/audio/path-browser')
-def api_stream_player_audio_path_browser():
-    try:
-        root = _audio_path_browser_root()
-        current = _audio_path_browser_resolve(str(request.args.get('path') or ''), root)
-    except RuntimeError as exc:
-        return jsonify(ok=False, error='invalid_path', detail=str(exc)), 400
-
-    allowed_ext = {'.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac'}
-    directories: list[dict] = []
-    files: list[dict] = []
-    try:
-        for child in sorted(current.iterdir(), key=lambda item: item.name.lower()):
-            name = child.name
-            if name.startswith('.'):
-                continue
-            try:
-                if child.is_dir():
-                    directories.append({'name': name, 'path': str(child.resolve())})
-                    continue
-                if not child.is_file():
-                    continue
-            except Exception:
-                continue
-            if child.suffix.lower() not in allowed_ext:
-                continue
-            size_bytes = 0
-            try:
-                size_bytes = int(child.stat().st_size or 0)
-            except Exception:
-                size_bytes = 0
-            files.append({'name': name, 'path': str(child.resolve()), 'size_bytes': size_bytes})
-    except Exception as exc:
-        return jsonify(ok=False, error='path_browser_failed', detail=str(exc)), 500
-
-    parent_path = ''
-    if current != root:
-        parent_candidate = current.parent.resolve()
-        try:
-            if parent_candidate.is_relative_to(root):
-                parent_path = str(parent_candidate)
-            else:
-                parent_path = str(root)
-        except Exception:
-            parent_path = str(root)
-
-    return jsonify(
-        ok=True,
-        data={
-            'current_path': str(current),
-            'root_path': str(root),
-            'parent_path': parent_path,
-            'directories': directories,
-            'files': files,
-        },
-    )
-
-
-@bp_stream.post('/api/stream/player/audio/play-file')
-def api_stream_player_audio_play_file():
-    return jsonify(
-        ok=False,
-        error='unsupported_operation',
-        detail='Lokales Datei-Playback im DevicePortal ist deaktiviert. Bitte externen Jarvis-AudioPlayer verwenden.',
-    ), 501
-
-
-@bp_stream.post('/api/stream/player/audio/play-stream')
-def api_stream_player_audio_play_stream():
-    data = request.get_json(force=True, silent=True) or {}
-    url = str(data.get('url') or '').strip()
-    if not url:
-        return jsonify(ok=False, error='missing_url', detail='url fehlt.'), 400
-    status, payload, err, _backend = request_audio_backend(
-        'POST',
-        '/api/audio/radio/start',
-        {'stream_url': url, 'streamUrl': url, 'url': url},
-        timeout=10.0,
-    )
-    if status is None:
-        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
-    return jsonify(ok=status < 400 and bool(payload.get('ok', True)), data=payload), (status if status >= 400 else 200)
-
-
-@bp_stream.post('/api/stream/player/audio/stop')
-def api_stream_player_audio_stop():
-    status, payload, err, _backend = request_audio_backend('POST', '/api/audio/radio/stop', {}, timeout=8.0)
-    if status is None:
-        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
-    return jsonify(ok=status < 400 and bool(payload.get('ok', True)), data=payload), (status if status >= 400 else 200)
-
-
-@bp_stream.post('/api/stream/player/audio/pause')
-def api_stream_player_audio_pause():
-    return jsonify(
-        ok=False,
-        error='unsupported_operation',
-        detail='Pause wird vom externen Jarvis-AudioPlayer aktuell nicht angeboten.',
-    ), 501
-
-
-@bp_stream.post('/api/stream/player/audio/resume')
-def api_stream_player_audio_resume():
-    return jsonify(
-        ok=False,
-        error='unsupported_operation',
-        detail='Resume wird vom externen Jarvis-AudioPlayer aktuell nicht angeboten.',
-    ), 501
-
-
-@bp_stream.post('/api/stream/player/audio/volume')
-def api_stream_player_audio_volume():
-    data = request.get_json(force=True, silent=True) or {}
-    if 'volume' not in data:
-        return jsonify(ok=False, error='missing_volume', detail='volume fehlt.'), 400
-    try:
-        volume = int(data.get('volume'))
-    except Exception:
-        return jsonify(ok=False, error='invalid_volume', detail='volume muss int sein.'), 400
-    status, payload, err, _backend = request_audio_backend(
-        'POST',
-        '/api/audio/volume',
-        {'volume_percent': volume, 'volume': volume},
-        timeout=8.0,
-    )
-    if status is None:
-        return jsonify(ok=False, error='audio_backend_unreachable', detail=err), 502
-    return jsonify(ok=status < 400 and bool(payload.get('ok', True)), data=payload), (status if status >= 400 else 200)

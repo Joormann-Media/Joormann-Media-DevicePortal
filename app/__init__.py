@@ -6,12 +6,10 @@ from ipaddress import ip_address
 from flask import Flask, jsonify, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
 
-from app.api.routes_audio import bp_audio
 from app.api.routes_network import bp_network
 from app.api.routes_overlay import bp_overlay
 from app.api.routes_panel import bp_panel
 from app.api.routes_plan import bp_plan
-from app.api.routes_spotify_connect import bp_spotify_connect
 from app.api.routes_sync import bp_sync
 from app.api.routes_status import bp_status
 from app.api.routes_stream import bp_stream
@@ -105,9 +103,7 @@ def create_app() -> Flask:
     app.register_blueprint(bp_panel)
     app.register_blueprint(bp_sync)
     app.register_blueprint(bp_plan)
-    app.register_blueprint(bp_audio)
     app.register_blueprint(bp_network)
-    app.register_blueprint(bp_spotify_connect)
     app.register_blueprint(bp_stream)
     app.register_blueprint(bp_overlay)
     app.register_blueprint(bp_auth)
@@ -144,14 +140,6 @@ def create_app() -> Flask:
             return None
 
         cfg = ensure_config()
-
-        # Allow smarthome/audio-node API calls without login (when explicitly enabled).
-        if cfg.get("audio_node_public") and (
-            path.startswith("/api/audio/")
-            or path.startswith("/api/radio/")
-            or path.startswith("/api/bluetooth/")
-        ):
-            return None
 
         # Allow local service-driven stream sync even when panel-remote auth is active.
         if _is_local_unauth_stream_sync():
