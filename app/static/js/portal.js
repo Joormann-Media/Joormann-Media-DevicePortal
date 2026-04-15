@@ -9121,12 +9121,45 @@
     await run(refreshWifiLogs);
     await run(refreshStorageStatus);
     await run(refreshStreamOverview);
-    await runQuiet(refreshSpotifyConnectStatus, ["spotify connect action failed", "sudo: ein passwort ist notwendig"]);
-    await runQuiet(refreshSpotifyConnectConfig, ["spotify connect action failed", "sudo: ein passwort ist notwendig"]);
-    await run(refreshStreamAudioFiles);
-    await runQuiet(refreshStreamAudioStatus, ["audio_control_unreachable", "connection refused"]);
+    await runQuiet(refreshSpotifyConnectStatus, [
+      "spotify connect action failed",
+      "sudo: ein passwort ist notwendig",
+      "not found",
+      "not_found",
+      "http 404",
+      "requested url was not found",
+    ]);
+    await runQuiet(refreshSpotifyConnectConfig, [
+      "spotify connect action failed",
+      "sudo: ein passwort ist notwendig",
+      "not found",
+      "not_found",
+      "http 404",
+      "requested url was not found",
+    ]);
+    await runQuiet(refreshStreamAudioFiles, [
+      "not found",
+      "not_found",
+      "http 404",
+      "requested url was not found",
+    ]);
+    await runQuiet(refreshStreamAudioStatus, [
+      "audio_control_unreachable",
+      "connection refused",
+      "not found",
+      "not_found",
+      "http 404",
+      "requested url was not found",
+    ]);
     await run(refreshBluetoothDevices);
-    await runQuiet(primeAudioHubData, ["audio_control_unreachable", "connection refused"]);
+    await runQuiet(primeAudioHubData, [
+      "audio_control_unreachable",
+      "connection refused",
+      "not found",
+      "not_found",
+      "http 404",
+      "requested url was not found",
+    ]);
     await run(loadPlayerRepoConfig);
     await run(refreshManagedRepos);
     await run(refreshAutodiscoverServices);
