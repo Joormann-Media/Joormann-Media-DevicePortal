@@ -21,3 +21,6 @@ var/data/link.json
 var/data/runtime/*
 # Local runtime backups
 var/data/*.bak.*
+
+# Portal link runtime config
+runtime/config/portal-link.json
