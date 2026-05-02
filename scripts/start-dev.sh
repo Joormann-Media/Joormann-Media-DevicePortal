@@ -27,6 +27,33 @@ PORTAL_PORT="${PORTAL_PORT:-5070}"
 FLASK_DEBUG="${FLASK_DEBUG:-0}"
 AUTO_PORT_FALLBACK="${AUTO_PORT_FALLBACK:-1}"
 
+get_local_ip() {
+  local ip
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [[ -z "${ip:-}" ]]; then
+    ip="127.0.0.1"
+  fi
+  printf '%s' "$ip"
+}
+
+print_status_banner() {
+  local local_ip="$1"
+  local app_log="$2"
+  cat <<EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Jarvis Deviceportal läuft
+
+  Dashboard:  http://${local_ip}:${PORTAL_PORT}/
+  Link:       http://${local_ip}:${PORTAL_PORT}/link
+  API-Doku:   http://${local_ip}:${PORTAL_PORT}/info
+  Health:     http://${local_ip}:${PORTAL_PORT}/health
+
+  App-Log:    ${app_log}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+}
+
 is_port_in_use() {
   local port="$1"
   python3 - "$port" <<'PY' >/dev/null 2>&1
@@ -83,8 +110,8 @@ fi
 if [[ -f "$PID_FILE" ]]; then
   existing_pid="$(cat "$PID_FILE")"
   if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null; then
-    echo "Bereits aktiv: deviceportal (PID $existing_pid)"
-    echo "URL: http://${PORTAL_HOST}:${PORTAL_PORT}"
+    echo "[Flask]    Bereits aktiv (PID $existing_pid) — übersprungen"
+    print_status_banner "$(get_local_ip)" "$LOG_FILE"
     exit 0
   fi
   rm -f "$PID_FILE"
@@ -117,11 +144,10 @@ fi
 sleep 1
 pid="$(cat "$PID_FILE")"
 if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-  echo "Gestartet: deviceportal (PID $pid)"
-  echo "URL: http://${PORTAL_HOST}:${PORTAL_PORT}"
-  echo "Log: $LOG_FILE"
+  echo "[Flask]    Gestartet (PID $pid)"
+  print_status_banner "$(get_local_ip)" "$LOG_FILE"
 else
   rm -f "$PID_FILE"
-  echo "Fehlgeschlagen. Siehe Log: $LOG_FILE"
+  echo "[Flask]    Fehlgeschlagen — siehe Log: $LOG_FILE"
   exit 1
 fi
