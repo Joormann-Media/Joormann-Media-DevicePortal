@@ -26,6 +26,7 @@ PORTAL_HOST="${PORTAL_HOST:-0.0.0.0}"
 PORTAL_PORT="${PORTAL_PORT:-5070}"
 FLASK_DEBUG="${FLASK_DEBUG:-0}"
 AUTO_PORT_FALLBACK="${AUTO_PORT_FALLBACK:-1}"
+PERSIST_PORT_FALLBACK="${PERSIST_PORT_FALLBACK:-0}"
 
 get_local_ip() {
   local ip
@@ -80,12 +81,24 @@ find_next_free_port() {
 }
 
 persist_ports_local() {
+  if [[ "$PERSIST_PORT_FALLBACK" != "1" && "$PERSIST_PORT_FALLBACK" != "true" && "$PERSIST_PORT_FALLBACK" != "yes" ]]; then
+    return 0
+  fi
   mkdir -p "$CONFIG_DIR"
   cat > "$PORTS_LOCAL_FILE" <<EOF
 PORTAL_HOST=$PORTAL_HOST
 PORTAL_PORT=$PORTAL_PORT
 FLASK_DEBUG=$FLASK_DEBUG
 EOF
+}
+
+list_running_pids() {
+  pgrep -af "$PROJECT_ROOT/.venv/bin/python -m app.main" 2>/dev/null | awk '{print $1}' || true
+}
+
+is_pid_alive() {
+  local pid="$1"
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
 mkdir -p "$LOG_DIR"
@@ -117,6 +130,17 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
 fi
 
+running_pids="$(list_running_pids | tr '\n' ' ' | xargs echo -n || true)"
+if [[ -n "${running_pids:-}" ]]; then
+  first_pid="$(awk '{print $1}' <<<"$running_pids")"
+  if is_pid_alive "$first_pid"; then
+    echo "$first_pid" > "$PID_FILE"
+    echo "[Flask]    Bereits aktiv (PID $first_pid) — übersprungen"
+    print_status_banner "$(get_local_ip)" "$LOG_FILE"
+    exit 0
+  fi
+fi
+
 if is_port_in_use "$PORTAL_PORT"; then
   if [ "$AUTO_PORT_FALLBACK" = "1" ] || [ "$AUTO_PORT_FALLBACK" = "true" ] || [ "$AUTO_PORT_FALLBACK" = "yes" ]; then
     next_port="$(find_next_free_port "$PORTAL_PORT")"
@@ -137,7 +161,7 @@ fi
   cd "$PROJECT_ROOT"
   nohup env PORTAL_HOST="$PORTAL_HOST" PORTAL_PORT="$PORTAL_PORT" FLASK_DEBUG="$FLASK_DEBUG" \
     PYTHONUNBUFFERED=1 \
-    "$PYTHON_BIN" app/main.py >>"$LOG_FILE" 2>&1 &
+    "$PYTHON_BIN" -m app.main >>"$LOG_FILE" 2>&1 &
   echo $! > "$PID_FILE"
 )
 
