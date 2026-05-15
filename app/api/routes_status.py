@@ -24,6 +24,7 @@ from app.core.fingerprint import collect_fingerprint, ensure_fingerprint, short_
 from app.core.gitinfo import get_repo_update_info, get_update_info
 from app.core.netcontrol import NetControlError, get_network_info
 from app.core.storage_state import get_storage_state
+from app.core.system_requirements import collect_system_requirements
 from app.core.state import get_state, update_state
 from app.core.systeminfo import format_uptime_human, parse_cpu_temp_c, parse_load_stats, parse_mem_stats_kb, parse_uptime_seconds
 
@@ -254,8 +255,17 @@ def _build_runtime_viewmodel() -> dict:
         legacy["llm_manager"] = llm_manager if isinstance(llm_manager, dict) else {}
     except Exception:
         legacy["llm_manager"] = {}
-    # DevicePortal classic UI expects these keys, even when empty.
-    legacy.setdefault("software_requirements", {})
+    try:
+        req_items = collect_system_requirements()
+        req_installed = sum(1 for item in req_items if bool(item.get("installed")))
+        legacy["software_requirements"] = {
+            "items": req_items,
+            "total": len(req_items),
+            "installed": req_installed,
+            "missing": max(0, len(req_items) - req_installed),
+        }
+    except Exception:
+        legacy.setdefault("software_requirements", {})
     legacy.setdefault("sentinels_status", {})
 
     return {

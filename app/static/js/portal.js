@@ -1035,7 +1035,10 @@
     const startBtn = (item.installed && item.startable)
       ? `<button type="button" class="btn btn-sm btn-outline-success js-software-req-action" data-action="start" data-key="${key}">Starten</button>`
       : "";
-    const actions = [installBtn, startBtn].filter(Boolean).join(" ");
+    const uninstallBtn = (item.installed && item.uninstallable)
+      ? `<button type="button" class="btn btn-sm btn-outline-danger js-software-req-action" data-action="uninstall" data-key="${key}">Deinstallieren</button>`
+      : "";
+    const actions = [installBtn, startBtn, uninstallBtn].filter(Boolean).join(" ");
     return actions || '<span class="text-secondary">-</span>';
   }
 
@@ -1077,7 +1080,7 @@
     const data = await fetchJson("/api/auth/system-requirements/action", {
       method: "POST",
       body: { action, key },
-      timeoutMs: action === "install" ? 300000 : 60000,
+      timeoutMs: action === "install" || action === "uninstall" ? 300000 : 60000,
     });
     renderSoftwareRequirementsSection(data);
     const msg = (((data || {}).result || {}).message || "").trim();

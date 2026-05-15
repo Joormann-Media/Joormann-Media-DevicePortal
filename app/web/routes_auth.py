@@ -27,6 +27,12 @@ from app.core.auth_session import (
 from app.core.config import ensure_config
 from app.core.device import ensure_device
 from app.core.family_registry_push import maybe_push_family_registry
+from app.core.network_events import log_event
+from app.core.system_requirements import (
+    SystemRequirementActionError,
+    collect_system_requirements,
+    run_system_requirement_action,
+)
 
 bp_auth = Blueprint("auth", __name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -610,3 +616,56 @@ def api_auth_local_users():
         return jsonify(ok=True, users=[], count=0, mode=mode_info["mode"], connectivity_setup_mode=setup_mode)
     users = list_interactive_users()
     return jsonify(ok=True, users=users, count=len(users), mode=mode_info["mode"], connectivity_setup_mode=setup_mode)
+
+
+@bp_auth.get("/api/auth/system-requirements")
+def api_auth_system_requirements():
+    items = collect_system_requirements()
+    installed_count = sum(1 for item in items if bool(item.get("installed")))
+    return jsonify(
+        ok=True,
+        items=items,
+        total=len(items),
+        installed=installed_count,
+        missing=max(0, len(items) - installed_count),
+    )
+
+
+@bp_auth.post("/api/auth/system-requirements/action")
+def api_auth_system_requirements_action():
+    payload = request.get_json(silent=True) if request.is_json else None
+    key = str((payload or {}).get("key") or request.form.get("key") or "").strip()
+    action = str((payload or {}).get("action") or request.form.get("action") or "").strip().lower()
+    try:
+        result = run_system_requirement_action(action=action, key=key)
+        log_event(
+            "system",
+            "System requirement action executed",
+            data={"action": action, "key": key, "ok": True, "code": result.get("code", "ok")},
+        )
+    except SystemRequirementActionError as exc:
+        log_event(
+            "system",
+            "System requirement action failed",
+            level="warning",
+            data={
+                "action": action,
+                "key": key,
+                "ok": False,
+                "error": exc.code,
+                "detail": str(exc),
+                "meta": getattr(exc, "detail", ""),
+            },
+        )
+        return jsonify(ok=False, error=exc.code, detail=str(exc), meta=getattr(exc, "detail", "")), 400
+
+    items = collect_system_requirements()
+    installed_count = sum(1 for item in items if bool(item.get("installed")))
+    return jsonify(
+        ok=True,
+        result=result,
+        items=items,
+        total=len(items),
+        installed=installed_count,
+        missing=max(0, len(items) - installed_count),
+    )
